@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../api';
+import { resetAuthProbe } from '../hooks/useAuth';
 
 export default function Login() {
   const nav = useNavigate();
@@ -15,6 +16,10 @@ export default function Login() {
     setError('');
     try {
       await login(username, password);
+      // Drop the cached /api/auth/me result — otherwise signing in as a
+      // different user keeps the previous role until a full page reload,
+      // and the sidebar shows the wrong menu.
+      resetAuthProbe();
       nav('/');
     } catch {
       setError('Invalid username or password.');

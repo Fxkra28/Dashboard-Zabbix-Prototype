@@ -12,9 +12,11 @@ export default function Overview() {
   const statsQ = useAsync<Stats>(() => api.stats(), [], 30_000);
   const groupsQ = useAsync<GroupProblems[]>(() => api.problemsByGroup(), [], 15_000);
 
-  // Live problems over SSE (falls back to polling).
+  // Live problems over SSE. The poll is a safety net for a dropped stream, not
+  // a second source of truth — at 10s it duplicated every SSE tick, so it runs
+  // slowly and only while the stream has given us nothing (plan_1.2 defect #3).
   const live = useSSE<Problem[]>(streamUrl(), 'problems');
-  const pollQ = useAsync<Problem[]>(() => api.problems(), [], 10_000);
+  const pollQ = useAsync<Problem[]>(() => api.problems(), [], live.data ? undefined : 60_000);
   const problems = live.data ?? pollQ.data ?? [];
 
   const stats = statsQ.data;

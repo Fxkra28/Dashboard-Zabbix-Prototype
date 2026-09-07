@@ -13,6 +13,20 @@ import type {
   GroupProblems,
   ZMap,
   MapDetail,
+  SitesResponse,
+  ServicesResponse,
+  Sla,
+  SlaSli,
+  ProblemExplanation,
+  SlaExplanation,
+  TopTriggersReport,
+  ScorecardResponse,
+  LinksResponse,
+  AvailabilityReport,
+  AgingReport,
+  CapacityReport,
+  NoiseReport,
+  Me,
 } from './types';
 
 const TOKEN_KEY = 'hcml_token';
@@ -33,13 +47,38 @@ async function request<T>(path: string): Promise<T> {
     throw new Error('Unauthorized');
   }
   if (!res.ok) {
-    // The BFF returns a typed body for a rejected Zabbix token — show the
-    // operator what to fix instead of a bare status code.
+    // The BFF returns a typed body for the failures an operator can act on —
+    // a rejected Zabbix token, the AI layer off or unreachable. Show that
+    // message instead of a bare status code.
     const body = (await res.json().catch(() => null)) as
       | { error?: string; message?: string }
       | null;
-    if (body?.error === 'zabbix_auth') throw new Error(body.message ?? 'Zabbix token rejected');
-    throw new Error(`${path}: HTTP ${res.status}`);
+    throw new Error(body?.message ?? body?.error ?? `${path}: HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`/bff${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401) {
+    clearToken();
+    if (location.pathname !== '/login') location.href = '/login';
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const b = (await res.json().catch(() => null)) as
+      | { error?: string; message?: string }
+      | null;
+    throw new Error(b?.message ?? b?.error ?? `${path}: HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }
@@ -53,7 +92,8 @@ const qs = (params: Record<string, string | number | undefined>) => {
 };
 
 export const api = {
-  health: () => request<{ ok: boolean; ts: number }>('/api/health'),
+  health: () =>
+    request<{ ok: boolean; ts: number; ai: boolean; writeBack: boolean }>('/api/health'),
   hosts: () => request<Host[]>('/api/hosts'),
   hostsOverview: () => request<HostOverview[]>('/api/hosts/overview'),
   hostgroups: () => request<HostGroup[]>('/api/hostgroups'),
@@ -67,11 +107,53 @@ export const api = {
   netDevices: () => request<NetDevice[]>('/api/net/devices'),
   netPorts: (hostid: string) => request<NetPort[]>(`/api/net/ports${qs({ hostid })}`),
   topTriggers: (days: number) =>
-    request<TopTrigger[]>(`/api/reports/top-triggers${qs({ days })}`),
+    request<TopTriggersReport>(`/api/reports/top-triggers${qs({ days })}`),
   stats: () => request<Stats>('/api/stats'),
   problemsByGroup: () => request<GroupProblems[]>('/api/reports/problems-by-group'),
   maps: () => request<ZMap[]>('/api/maps'),
   mapDetail: (mapid: string) => request<MapDetail[]>(`/api/maps/detail${qs({ mapid })}`),
+
+  // Who am I, and what may I see? Drives sidebar filtering.
+  me: () => request<Me>('/api/auth/me'),
+
+  /** The portal's ONLY write. Operator role + ZABBIX_WRITE_TOKEN required. */
+  acknowledge: (body: {
+    eventids: string[];
+    message?: string;
+    close?: boolean;
+    acknowledge?: boolean;
+  }) => post<{ ok: true; eventids: string[]; action: number }>('/api/problems/acknowledge', body),
+
+  // Site view — every host rolled up to the site it lives at.
+  sites: () => request<SitesResponse>('/api/sites'),
+
+  // Governance: how standardised is the estate? (admin)
+  inventory: () => request<ScorecardResponse>('/api/reports/inventory'),
+
+  // WAN / SD-WAN / radio link health (operator)
+  links: () => request<LinksResponse>('/api/links'),
+
+  // Automated reporting
+  availability: (days: number, severity: number) =>
+    request<AvailabilityReport>(`/api/reports/availability${qs({ days, severity })}`),
+  aging: () => request<AgingReport>('/api/reports/aging'),
+  capacity: (days: number) => request<CapacityReport>(`/api/reports/capacity${qs({ days })}`),
+  noise: (days: number, severity: number) =>
+    request<NoiseReport>(`/api/reports/noise${qs({ days, severity })}`),
+
+  // Services tree with roll-up status — the service-centric view.
+  services: () => request<ServicesResponse>('/api/services'),
+
+  // Services → SLA
+  sla: () => request<Sla[]>('/api/sla'),
+  slaSli: (slaid: string, serviceid?: string) =>
+    request<SlaSli[]>(`/api/sla/sli${qs({ slaid, serviceid })}`),
+
+  // Plain-language layer — on-demand only, never called on page load.
+  explainProblem: (eventid: string) =>
+    request<ProblemExplanation>(`/api/explain/problem${qs({ eventid })}`),
+  explainSla: (slaid: string, serviceid?: string) =>
+    request<SlaExplanation>(`/api/explain/sla${qs({ slaid, serviceid })}`),
 };
 
 /** EventSource can't set headers, so pass the token via query when auth is on. */

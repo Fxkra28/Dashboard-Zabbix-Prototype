@@ -3,10 +3,15 @@ import { zbx } from '../zabbix.js';
 import { cached } from '../cache.js';
 import { getProblems } from '../queries.js';
 
+/** One page of event history. Bounds the read and flags when it was hit. */
+const EVENT_LIMIT = 10_000;
+
 export async function reportRoutes(app: FastifyInstance): Promise<void> {
   // Reports → Top 100 triggers: count problem events per trigger over a window.
+  // The window is clamped and the fetch bounded — against real event history a
+  // 20k unbounded read is slow and grows without limit (plan_1.2 defect #4).
   app.get('/api/reports/top-triggers', (req) => {
-    const days = Number((req.query as { days?: string }).days ?? 7);
+    const days = Math.min(Math.max(Number((req.query as { days?: string }).days ?? 7), 1), 365);
     const from = Math.floor(Date.now() / 1000) - days * 86400;
     return cached(`toptrig:${days}`, 60_000, async () => {
       const events = await zbx<
@@ -25,7 +30,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         selectHosts: ['hostid', 'name'],
         sortfield: ['clock'],
         sortorder: 'DESC',
-        limit: 20000,
+        limit: EVENT_LIMIT,
       });
 
       const map: Record<
@@ -42,9 +47,13 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         });
         m.count++;
       }
-      return Object.values(map)
+      const top = Object.values(map)
         .sort((a, b) => b.count - a.count)
         .slice(0, 100);
+
+      // Say so when the window was busier than one page — otherwise the counts
+      // silently understate and look authoritative.
+      return { triggers: top, truncated: events.length >= EVENT_LIMIT, days };
     });
   });
 

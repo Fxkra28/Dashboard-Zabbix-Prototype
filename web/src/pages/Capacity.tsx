@@ -1,0 +1,147 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { api } from '../api';
+import { useAsync } from '../hooks/useAsync';
+import type { CapacityReport, CapacityRow } from '../types';
+import { Async, Empty } from '../components/states';
+
+/**
+ * Capacity trends (plan_1.2 Phase 6, HCML Goal 6). HCML's deck already shows a
+ * "Top Host by CPU / Memory" panel — this is that, over a period rather than a
+ * moment, so a creeping trend is visible before it becomes an incident.
+ *
+ * Reads Zabbix `trend.get` (hourly aggregates), falling back to raw history on
+ * an instance too young to have trends yet.
+ */
+
+const util = (pct: number) =>
+  pct >= 90 ? 'var(--danger)' : pct >= 75 ? '#e8a33d' : 'var(--good)';
+
+function MetricPanel({ label, rows, days }: { label: string; rows: CapacityRow[]; days: number }) {
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h2>{label}</h2>
+        {rows[0]?.source === 'history' && (
+          <span className="pill" title="No hourly trends yet — averaged from raw history">
+            from history
+          </span>
+        )}
+      </div>
+
+      {rows.length ? (
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>Item</th>
+                <th style={{ width: 150 }}>Average ({days}d)</th>
+                <th>Peak</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.itemid}>
+                  <td style={{ fontWeight: 500 }}>{r.host}</td>
+                  <td className="muted">{r.name}</td>
+                  <td>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="score-bar">
+                        <span
+                          style={{
+                            width: `${Math.min(100, Math.max(0, r.avg))}%`,
+                            background: util(r.avg),
+                          }}
+                        />
+                      </span>
+                      <strong style={{ fontSize: 12.5 }}>
+                        {r.avg.toFixed(1)}
+                        {r.units}
+                      </strong>
+                    </span>
+                  </td>
+                  <td className="muted">
+                    {r.max.toFixed(1)}
+                    {r.units}
+                  </td>
+                  <td>
+                    <Link className="btn ghost sm" to={`/graphs?hostid=${r.hostid}`}>
+                      Graph
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Empty>
+          No matching items.
+          <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+            Needs monitored items with these keys in Zabbix.
+          </div>
+        </Empty>
+      )}
+    </div>
+  );
+}
+
+export default function Capacity() {
+  const [days, setDays] = useState(7);
+  const q = useAsync<CapacityReport>(() => api.capacity(days), [days]);
+
+  return (
+    <>
+      <div className="controls">
+        <div className="field">
+          <label>Period</label>
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            <option value={1}>Last 24 hours</option>
+            <option value={7}>Last 7 days</option>
+            <option value={30}>Last 30 days</option>
+            <option value={90}>Last 90 days</option>
+          </select>
+        </div>
+      </div>
+
+      <Async loading={q.loading} error={q.error} data={q.data} loadingLabel="Reading trends…">
+        {(data) => {
+          const empty = data.metrics.every((m) => !m.rows.length);
+          if (empty) {
+            return (
+              <div className="panel">
+                <Empty>
+                  No capacity items found.
+                  <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                    This report reads <code>system.cpu.util</code>, <code>vm.memory.util</code> and{' '}
+                    <code>vfs.fs.*[…,pused]</code> from monitored hosts.
+                  </div>
+                </Empty>
+              </div>
+            );
+          }
+
+          const noData = data.metrics.some((m) => m.rows.some((r) => r.source === 'none'));
+
+          return (
+            <>
+              {noData && (
+                <div className="notice">
+                  Some items have no stored values for this period — the host may not have been
+                  reporting. Zeros below mean “no data”, not “idle”.
+                </div>
+              )}
+              <div className="grid" style={{ gap: 18 }}>
+                {data.metrics.map((m) => (
+                  <MetricPanel key={m.key} label={m.label} rows={m.rows} days={data.days} />
+                ))}
+              </div>
+            </>
+          );
+        }}
+      </Async>
+    </>
+  );
+}

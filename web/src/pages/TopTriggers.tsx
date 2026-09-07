@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
-import type { TopTrigger } from '../types';
+import type { TopTriggersReport } from '../types';
 import { SeverityBadge } from '../components/StatusBadge';
 import { Async } from '../components/states';
 
@@ -15,7 +15,7 @@ const RANGES = [
 // Reports → Top 100 triggers: which triggers fired most in the window.
 export default function TopTriggers() {
   const [days, setDays] = useState(7);
-  const q = useAsync<TopTrigger[]>(() => api.topTriggers(days), [days]);
+  const q = useAsync<TopTriggersReport>(() => api.topTriggers(days), [days]);
 
   return (
     <>
@@ -35,9 +35,16 @@ export default function TopTriggers() {
       <div className="panel">
         <h2>Top 100 triggers by number of problems</h2>
         <Async loading={q.loading} error={q.error} data={q.data} loadingLabel="Aggregating events…">
-          {(rows) =>
-            rows.length ? (
-              <div className="table-wrap">
+          {(data) =>
+            data.triggers.length ? (
+              <>
+                {data.truncated && (
+                  <div className="notice warn">
+                    This window filled a full page of events, so these counts are a{' '}
+                    <strong>floor</strong>. Choose a shorter period for exact figures.
+                  </div>
+                )}
+                <div className="table-wrap">
                 <table className="data">
                   <thead>
                     <tr>
@@ -49,7 +56,7 @@ export default function TopTriggers() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((t, i) => (
+                    {data.triggers.map((t, i) => (
                       <tr key={t.objectid}>
                         <td className="muted">{i + 1}</td>
                         <td>
@@ -62,7 +69,8 @@ export default function TopTriggers() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             ) : (
               <div className="state">No problem events in this window.</div>
             )

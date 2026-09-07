@@ -30,3 +30,22 @@ export async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>
   inflight.set(key, p);
   return p as Promise<T>;
 }
+
+/**
+ * Drop cached entries so the next read refetches. Used after a write-back
+ * (§20): without this an acknowledgement wouldn't show for up to the TTL, and
+ * the UI would look like it silently failed.
+ *
+ * `prefix` matches by string prefix, so `invalidate('avail:')` clears every
+ * parameterised availability report at once.
+ */
+export function invalidate(prefix: string): number {
+  let dropped = 0;
+  for (const key of store.keys()) {
+    if (key.startsWith(prefix)) {
+      store.delete(key);
+      dropped++;
+    }
+  }
+  return dropped;
+}

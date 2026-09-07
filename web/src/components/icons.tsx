@@ -81,6 +81,43 @@ export const IconReport = ({ size }: P) => (
   </svg>
 );
 
+export const IconLink = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.1" />
+    <path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.1" />
+  </svg>
+);
+
+export const IconShield = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="M12 3l7 3v5.5c0 4.3-3 8-7 9.5-4-1.5-7-5.2-7-9.5V6l7-3Z" />
+    <path d="M9.5 12l1.8 1.8L15 10" />
+  </svg>
+);
+
+export const IconService = ({ size }: P) => (
+  <svg {...base(size)}>
+    <rect x="9" y="3" width="6" height="5" rx="1.5" />
+    <rect x="3" y="16" width="6" height="5" rx="1.5" />
+    <rect x="15" y="16" width="6" height="5" rx="1.5" />
+    <path d="M12 8v4M6 16v-2h12v2" />
+  </svg>
+);
+
+export const IconSite = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z" />
+    <circle cx="12" cy="10" r="2.5" />
+  </svg>
+);
+
+export const IconSla = ({ size }: P) => (
+  <svg {...base(size)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.5 2" />
+  </svg>
+);
+
 export const IconChevron = ({ size = 14 }: P) => (
   <svg {...base(size)}>
     <path d="M6 9l6 6 6-6" />

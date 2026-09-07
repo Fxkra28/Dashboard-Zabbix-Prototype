@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useCapabilities } from '../hooks/useAi';
+import { useAuth, roleAllows } from '../hooks/useAuth';
 import type { Problem } from '../types';
 import { SEVERITIES } from '../theme';
 import { SeverityBadge } from '../components/StatusBadge';
 import { Async } from '../components/states';
+import { ProblemExplainPanel } from '../components/ExplainPanel';
+import AckDialog from '../components/AckDialog';
 import { fmtTime, duration } from '../lib/severity';
 
 export default function Problems() {
@@ -12,6 +16,14 @@ export default function Problems() {
   const [minSev, setMinSev] = useState(0);
   const [search, setSearch] = useState('');
   const [ackFilter, setAckFilter] = useState('all');
+  const caps = useCapabilities();
+  const { role } = useAuth();
+  const [explaining, setExplaining] = useState<Problem | null>(null);
+  const [acking, setAcking] = useState<Problem | null>(null);
+
+  // Both must hold: a write token on the BFF, and operator role or above.
+  // The BFF enforces this too — the UI just doesn't offer what would 403.
+  const canAck = caps.writeBack && roleAllows(role, 'operator');
 
   const filtered = useMemo(() => {
     const list = q.data ?? [];
@@ -79,6 +91,7 @@ export default function Problems() {
                       <th>Duration</th>
                       <th>Ack</th>
                       <th>Tags</th>
+                      {(caps.ai || canAck) && <th />}
                     </tr>
                   </thead>
                   <tbody>
@@ -119,6 +132,30 @@ export default function Problems() {
                             ))}
                           </span>
                         </td>
+                        {(caps.ai || canAck) && (
+                          <td>
+                            <span style={{ display: 'inline-flex', gap: 6 }}>
+                              {caps.ai && (
+                                <button
+                                  className="btn ghost sm"
+                                  onClick={() => setExplaining(p)}
+                                  title="Translate this alert and its tags into plain language"
+                                >
+                                  Explain
+                                </button>
+                              )}
+                              {canAck && !resolved(p) && (
+                                <button
+                                  className="btn ghost sm"
+                                  onClick={() => setAcking(p)}
+                                  title="Acknowledge or close this problem in Zabbix"
+                                >
+                                  Ack
+                                </button>
+                              )}
+                            </span>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -130,6 +167,18 @@ export default function Problems() {
           }
         </Async>
       </div>
+
+      {explaining && (
+        <ProblemExplainPanel problem={explaining} onClose={() => setExplaining(null)} />
+      )}
+
+      {acking && (
+        <AckDialog
+          problem={acking}
+          onClose={() => setAcking(null)}
+          onDone={q.reload}
+        />
+      )}
     </>
   );
 }
