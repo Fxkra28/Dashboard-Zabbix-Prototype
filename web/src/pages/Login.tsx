@@ -1,0 +1,72 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { login } from '../api';
+
+export default function Login() {
+  const nav = useNavigate();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await login(username, password);
+      nav('/');
+    } catch {
+      setError('Invalid username or password.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="login-wrap">
+      <form className="login-card" onSubmit={submit}>
+        <div
+          className="logo"
+          style={{
+            width: 46,
+            height: 46,
+            borderRadius: 12,
+            background: 'var(--primary)',
+            color: '#fff',
+            display: 'grid',
+            placeItems: 'center',
+            fontWeight: 700,
+          }}
+        >
+          HC
+        </div>
+        <h1>HCML Monitoring Portal</h1>
+        <p>Sign in to continue</p>
+
+        <div className="field">
+          <label>Username</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="field">
+          <label>Password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+
+        <button className="btn" type="submit" disabled={busy}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+        {error && <div className="login-error">{error}</div>}
+      </form>
+    </div>
+  );
+}

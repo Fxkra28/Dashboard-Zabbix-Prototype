@@ -1,0 +1,33 @@
+# HCML Monitoring Portal — deploy next to Zabbix.
+# portal-web (nginx) serves the built React app and reverse-proxies /bff -> portal-bff.
+# The browser only ever talks to portal-web; the Zabbix token stays inside portal-bff.
+
+services:
+  portal-bff:
+    build: ./server
+    environment:
+      ZBX_URL: ${ZBX_URL}
+      ZBX_TOKEN: ${ZBX_TOKEN}
+      PORT: "4000"
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8081}
+      NET_GROUP_IDS: ${NET_GROUP_IDS:-}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me}
+      PORTAL_USER: ${PORTAL_USER:-admin}
+      PORTAL_PASS: ${PORTAL_PASS:-admin}
+    expose:
+      - "4000"
+    restart: unless-stopped
+
+  portal-web:
+    build: ./web
+    depends_on:
+      - portal-bff
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+
+  # Enable when scaling the cache / SSE fan-out (see instruct.md §2).
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
