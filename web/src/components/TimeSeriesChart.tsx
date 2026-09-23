@@ -34,7 +34,42 @@ echarts.use([
   CanvasRenderer,
 ]);
 
-export const SERIES_COLORS = [theme.primary, '#E97659', '#2E9E5B', '#7C4DFF'];
+const SERIES_TOKENS = ['--series-1', '--series-2', '--series-3', '--series-4'];
+
+/**
+ * The four series colours, read out of the stylesheet rather than written here,
+ * because ECharts paints to a canvas and a canvas cannot resolve `var()`.
+ * Reading them at render means the dark theme gets its own set.
+ *
+ * A chart is the one place the palette allows a second hue: four shades of the
+ * brand blue on one line chart cannot be told apart, which is the whole point
+ * of plotting them separately. None of the four sits in severity's warm range,
+ * so a plotted line is never mistaken for an alarm.
+ */
+export function seriesColors(): string[] {
+  if (typeof window === 'undefined') return [theme.primary];
+  const style = getComputedStyle(document.documentElement);
+  return SERIES_TOKENS.map((t) => style.getPropertyValue(t).trim() || theme.primary);
+}
+
+/**
+ * Axis, gridline and tooltip colours, resolved the same way and for the same
+ * reason. Without this the chart keeps its light axes on a dark page, which is
+ * the usual way a canvas gets left out of a theme.
+ */
+function chartInk(): { muted: string; border: string; surface: string; text: string } {
+  if (typeof window === 'undefined') {
+    return { muted: theme.muted, border: theme.border, surface: theme.surface, text: theme.text };
+  }
+  const style = getComputedStyle(document.documentElement);
+  const read = (token: string, fallback: string) => style.getPropertyValue(token).trim() || fallback;
+  return {
+    muted: read('--muted', theme.muted),
+    border: read('--border', theme.border),
+    surface: read('--surface', theme.surface),
+    text: read('--text', theme.text),
+  };
+}
 
 type Meta = { kind: 'line' | 'low' | 'high'; s: GraphSeries; color: string };
 
@@ -70,11 +105,13 @@ export default function TimeSeriesChart({
     !series[0].step &&
     series[0].points.some((p) => p[2] !== null && p[3] !== null);
 
+  const palette = seriesColors();
+  const ink = chartInk();
   const metas: Meta[] = [];
   const chartSeries: Record<string, unknown>[] = [];
 
   series.forEach((s, i) => {
-    const color = SERIES_COLORS[i % SERIES_COLORS.length];
+    const color = palette[i % palette.length];
     metas.push({ kind: 'line', s, color });
     chartSeries.push({
       name: seriesLabel(s, series),
@@ -129,7 +166,7 @@ export default function TimeSeriesChart({
         ? {
             top: 0,
             data: metas.filter((m) => m.kind === 'line').map((m) => seriesLabel(m.s, series)),
-            textStyle: { color: theme.muted },
+            textStyle: { color: ink.muted },
           }
         : undefined,
     tooltip: {
@@ -146,7 +183,7 @@ export default function TimeSeriesChart({
             const value = point?.[1];
             const range =
               point && point[2] !== null && point[3] !== null && !m.s.step
-                ? ` <span style="color:${theme.muted}">(${esc(formatValue(point[2], m.s.units))} – ${esc(
+                ? ` <span style="color:${ink.muted}">(${esc(formatValue(point[2], m.s.units))} – ${esc(
                     formatValue(point[3], m.s.units),
                   )})</span>`
                 : '';
@@ -156,7 +193,7 @@ export default function TimeSeriesChart({
               value === null || value === undefined ? 'no data' : esc(formatValue(value, m.s.units))
             }</b>${range}</div>`;
           });
-        return `<div style="font-size:12px"><div style="margin-bottom:4px;color:${theme.muted}">${esc(
+        return `<div style="font-size:12px"><div style="margin-bottom:4px;color:${ink.muted}">${esc(
           new Date(t).toLocaleString(),
         )}</div>${rows.join('')}</div>`;
       },
@@ -169,23 +206,24 @@ export default function TimeSeriesChart({
         filterMode: 'none',
         height: 18,
         bottom: 12,
-        borderColor: theme.border,
-        textStyle: { color: theme.muted },
+        backgroundColor: ink.surface,
+        borderColor: ink.border,
+        textStyle: { color: ink.text },
       },
     ],
     xAxis: {
       type: 'time',
       min: from * 1000,
       max: to * 1000,
-      axisLabel: { color: theme.muted, hideOverlap: true },
-      axisLine: { lineStyle: { color: theme.border } },
+      axisLabel: { color: ink.muted, hideOverlap: true },
+      axisLine: { lineStyle: { color: ink.border } },
     },
     yAxis: (unitAxes.length ? unitAxes : ['']).map((units, i) => ({
       type: 'value',
       position: i === 0 ? 'left' : 'right',
       scale: false,
-      axisLabel: { color: theme.muted, formatter: (v: number) => formatAxis(v, units) },
-      splitLine: i === 0 ? { lineStyle: { color: theme.border } } : { show: false },
+      axisLabel: { color: ink.muted, formatter: (v: number) => formatAxis(v, units) },
+      splitLine: i === 0 ? { lineStyle: { color: ink.border } } : { show: false },
       ...(series.every((s) => s.step) ? { max: (v: { max: number }) => Math.max(1, v.max) } : {}),
     })),
     series: chartSeries,
@@ -197,7 +235,7 @@ export default function TimeSeriesChart({
       <div className="chart-summary">
         {series.map((s, i) => (
           <div key={s.itemid} className="chart-summary-row">
-            <span className="dot" style={{ background: SERIES_COLORS[i % SERIES_COLORS.length] }} />
+            <span className="dot" style={{ background: palette[i % palette.length] }} />
             <span className="chart-summary-name" title={`${s.host} — ${s.name}`}>
               {seriesLabel(s, series)}
             </span>

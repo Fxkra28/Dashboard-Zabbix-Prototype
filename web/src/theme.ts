@@ -1,15 +1,26 @@
-// HCML palette, primary #0067B1, Inter font (loaded in index.html), rounded cards.
+/**
+ * The light theme's values, duplicated here only as fallbacks for the canvas.
+ *
+ * styles.css is the source of truth: everything that can read a CSS custom
+ * property does, which is what lets the dark theme exist. ECharts paints to a
+ * canvas and cannot resolve `var()`, so TimeSeriesChart reads the tokens at
+ * render and falls back to these if it runs without a document.
+ *
+ * Keep them equal to the `:root` block. A value that drifts is only ever seen
+ * during server-side rendering, which makes it the kind of difference nobody
+ * notices until it is load-bearing.
+ */
 export const theme = {
-  primary: '#0067B1',
-  primaryDark: '#004A80',
-  primaryLight: '#3B8FCB',
+  primary: '#2B5584',
+  primaryDark: '#1E3B5C',
+  primaryLight: '#4681C3',
   bg: '#F4F7FB',
   surface: '#FFFFFF',
   text: '#1B2733',
-  muted: '#64748B',
+  muted: '#566577',
   border: '#E2E8F0',
   good: '#2E9E5B',
-  ok: '#0067B1',
+  ok: '#2B5584',
 };
 
 // Zabbix severities 0..5, names + colors matching Zabbix's own palette.

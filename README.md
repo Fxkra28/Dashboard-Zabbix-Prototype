@@ -53,7 +53,7 @@ component library** (the UI is plain CSS, so the app runs with zero extra setup)
 | **Vite** | ^5.4 | Dev server proxies `/bff` → `:4000`, so dev and prod hit the same paths. The production build is static files |
 | `react-router-dom` | ^6.26 | All 18 pages are `lazy()`. The initial bundle is **182 kB JS + 26 kB CSS**; a page after that costs between 1 and 16 kB |
 | **ECharts** + `echarts-for-react` | ^5.5 / ^3.0 | Registered selectively (line chart, grid, tooltip, legend, data zoom, canvas renderer) instead of the barrel, which pulls in roughly a megabyte of chart types nothing draws. Imported only by `TimeSeriesChart`, so its 539 kB chunk loads on **Graphs** and **Network** and nowhere else |
-| **Custom CSS** | — | One `styles.css`, 2 000 lines, HCML palette `#0067B1`, Inter. Light and dark come from one set of CSS variables |
+| **Custom CSS** | — | One `styles.css`, HCML palette `#0067B1`, Inter plus IBM Plex Mono. Light and dark come from one set of CSS variables, per [`DESIGN.md`](DESIGN.md). `web/scripts/tokens.check.mjs` computes the contrast of every pair in both themes and fails on a raw value used where a token exists |
 | **Hand-rolled, on purpose** | — | `hooks/useSSE.ts` over native `EventSource`; `hooks/useAsync.ts` for server state, in place of a query library; `lib/markdown.ts` in 141 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
 
 ### Around it
@@ -103,11 +103,14 @@ hcml-portal/
 │       ├── routes/          # 17 modules → 38 endpoints (41 with health, login, auth/me)
 │       └── __tests__/       # vitest suite (336 tests)
 ├── web/                     # React + TypeScript + Vite
-│   └── src/
-│       ├── pages/           # 18, all lazy-loaded
-│       ├── components/      # Layout, Sidebar, ExplainPanel, AckDialog, …
-│       ├── hooks/           # useAsync, useSSE, useAuth, useAi, useUrlState, …
-│       └── api.ts, types.ts, theme.ts, styles.css
+│   ├── src/
+│   │   ├── pages/           # 18, all lazy-loaded
+│   │   ├── components/      # Layout, Sidebar, ExplainPanel, AckDialog, …
+│   │   ├── hooks/           # useAsync, useSSE, useAuth, useUiPrefs, useUrlState, …
+│   │   └── api.ts, types.ts, theme.ts, styles.css
+│   ├── scripts/             # css.check.mjs, tokens.check.mjs, markdown.check.ts, units.check.ts
+│   ├── public/              # logo.png · logo-mark.png · logo-icon.png (served at /)
+│   └── brand/               # the supplied original, kept for provenance, not served
 ├── docs/                    # everything documentary lives here
 │   ├── index.md             # what is documented, and in what order to read it
 │   ├── getting-started.md   # clone → running portal
@@ -116,8 +119,10 @@ hcml-portal/
 │   ├── architecture/adr/    # 8 Architecture Decision Records (MADR)
 │   ├── schema/              # the data model on three pages: CDM · ERD · PDM (start here)
 │   ├── flow/                # how it runs: WebFlow · ServerFlow · DataFlow, and nine one-line flows
+│   ├── ux/                  # who uses this: roles, the acknowledge journey (derived, not interviewed)
 │   └── erd/                 # the exhaustive reference set behind it
-├── .github/workflows/       # docs.yml: typechecks, tests and the six checkers
+├── .github/workflows/       # docs.yml: typechecks, tests and the seven checkers
+├── DESIGN.md                # the design direction: identity, palette, typography, mood
 ├── erd.md                   # the data model in full, and the three-levels index
 ├── setup.md                 # how each subsystem works and why, 29 sections
 ├── AUDIT_REPORT.md          # security + documentation audits

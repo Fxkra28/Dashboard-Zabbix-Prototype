@@ -43,7 +43,7 @@ import { dur } from '../lib/units';
 
 /** Zabbix-style: 99.9%+ is fine, 99%+ is watch, below that is a problem. */
 const availColor = (pct: number) =>
-  pct >= 99.9 ? 'var(--good)' : pct >= 99 ? '#e8a33d' : 'var(--danger)';
+  pct >= 99.9 ? 'var(--good)' : pct >= 99 ? 'var(--warn)' : 'var(--danger)';
 
 function Aging() {
   const q = useAsync<AgingReport>(() => api.aging(), [], 30_000);
@@ -398,7 +398,7 @@ export default function Availability() {
                       </table>
                     </div>
                   ) : (
-                    <Empty>No problems at this severity in the period. 🎉</Empty>
+                    <Empty>No problems at this severity in the period.</Empty>
                   )}
                 </div>
 

@@ -25,7 +25,7 @@ const STATE_LABEL: Record<LinkState, string> = {
 
 const STATE_COLOR: Record<LinkState, string> = {
   up: 'var(--good)',
-  degraded: '#e8a33d',
+  degraded: 'var(--warn)',
   down: 'var(--danger)',
   unknown: 'var(--muted)',
 };

@@ -13,8 +13,8 @@ const ELEMENT_LABEL: Record<string, string> = {
   '4': 'Image',
 };
 
-const OK = '#2E9E5B';
-const NEUTRAL = '#6b7c8f';
+const OK = 'var(--good)';
+const NEUTRAL = 'var(--muted)';
 
 /** Host elements: green when clear, else the colour of their worst open problem. */
 function elementColor(s: MapSelement): string {
@@ -123,7 +123,7 @@ function MapCanvas({ map }: { map: MapDetail }) {
           overflow: 'visible',
           border: '1px solid var(--border)',
           borderRadius: 10,
-          background: '#fbfdff',
+          background: 'var(--surface)',
         }}
       >
         {(map.links ?? []).map((l) => {
@@ -137,7 +137,7 @@ function MapCanvas({ map }: { map: MapDetail }) {
               y1={Number(a.y) + 16}
               x2={Number(b.x) + 24}
               y2={Number(b.y) + 16}
-              stroke={l.color ? `#${l.color}` : '#9db4c9'}
+              style={{ stroke: l.color ? `#${l.color}` : 'var(--border-strong)' }}
               strokeOpacity={0.7}
               strokeWidth={1.5}
             />
@@ -161,16 +161,21 @@ function MapCanvas({ map }: { map: MapDetail }) {
                 width={48}
                 height={32}
                 rx={6}
-                fill={color}
+                style={{ fill: color, stroke: color }}
                 fillOpacity={0.14}
-                stroke={color}
                 strokeWidth={s.problems ? 2 : 1}
               />
-              <circle cx={24} cy={16} r={5} fill={color} />
+              <circle cx={24} cy={16} r={5} style={{ fill: color }} />
               {isHost && s.problems ? (
                 <g transform="translate(46, 0)">
-                  <circle r={8} fill={color} stroke="#fff" strokeWidth={1.5} />
-                  <text y={3.5} textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff">
+                  <circle r={8} style={{ fill: color, stroke: 'var(--surface)' }} strokeWidth={1.5} />
+                  <text
+                    y={3.5}
+                    textAnchor="middle"
+                    fontSize={9}
+                    fontWeight={700}
+                    style={{ fill: 'var(--surface)' }}
+                  >
                     {s.problems > 99 ? '99+' : s.problems}
                   </text>
                 </g>
@@ -181,8 +186,8 @@ function MapCanvas({ map }: { map: MapDetail }) {
                   x={24}
                   y={46 + i * 12}
                   textAnchor="middle"
-                  fontSize={i === 0 ? 10.5 : 9.5}
-                  fill={i === 0 ? '#1b2733' : '#5b6b7a'}
+                  fontSize={i === 0 ? 11 : 10}
+                  style={{ fill: i === 0 ? 'var(--text)' : 'var(--muted)' }}
                 >
                   {line.length > 26 ? `${line.slice(0, 25)}…` : line}
                 </text>

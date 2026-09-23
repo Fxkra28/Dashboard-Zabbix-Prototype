@@ -72,6 +72,9 @@ jobs:
       - name: The stylesheet is structurally sound
         run: node web/scripts/css.check.mjs web/src/styles.css
 
+      - name: The design tokens are legible and nothing reaches past them
+        run: node web/scripts/tokens.check.mjs web/src/styles.css
+
       - name: The assistant's markdown parser
         run: ./server/node_modules/.bin/tsx web/scripts/markdown.check.ts
 

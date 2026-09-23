@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../api';
 import { resetAuthProbe } from '../hooks/useAuth';
+import BrandMark from '../components/BrandMark';
 
 export default function Login() {
   const nav = useNavigate();
@@ -39,21 +40,7 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit} noValidate>
-        <div
-          className="logo"
-          style={{
-            width: 46,
-            height: 46,
-            borderRadius: 12,
-            background: 'var(--primary)',
-            color: '#fff',
-            display: 'grid',
-            placeItems: 'center',
-            fontWeight: 700,
-          }}
-        >
-          HC
-        </div>
+        <BrandMark />
         <h1>HCML Monitoring Portal</h1>
         <p>Sign in to continue</p>
 

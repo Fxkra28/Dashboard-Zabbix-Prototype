@@ -8,12 +8,20 @@ in an untracked `.env`, not in code ([ADR-0005](architecture/adr/0005-provider-n
 Every change to shared code lands in **both** folders, in the same commit-shaped unit of work.
 
 ```bash
-diff -rq -x node_modules -x dist ../hcml-portal ../hcml-portal-ollama
+diff -rq -x node_modules -x dist -x .DS_Store -x '*.tsbuildinfo' \
+  -x vite.config.js -x vite.config.d.ts -x .git \
+  ../hcml-portal ../hcml-portal-ollama
 ```
 
 That must print exactly **21** files, all of them configuration or per-repo perspective. If it prints
 22, you changed something in one folder and not the other. The full list of the 21 is in both
 `README.md` files.
+
+The exclusions are not cosmetic. Every one of them is already in `.gitignore`, so none is a
+divergence anyone can commit, but `diff` does not read `.gitignore`. Without them the command prints
+30 and the number stops meaning anything: `vite.config.js` and the two `.tsbuildinfo` files are
+written by whichever folder you last ran `npm run build` in, so they differ whenever you have worked
+in one and not the other.
 
 ---
 
@@ -47,7 +55,7 @@ cd server && cp .env.example .env    # set ZBX_URL and ZABBIX_API_TOKEN
 npm install && npm run dev           # BFF on :4000
 
 cd ../web
-npm install && npm run dev           # Vite on :5173, proxying /api to :4000
+npm install && npm run dev           # Vite on :5173, proxying /bff to :4000
 ```
 
 You need Node 20+, npm, and a reachable Zabbix 7.0. You do **not** need a database: there isn't one
@@ -58,7 +66,7 @@ are working on the plain-language layer.
 
 ## The checks
 
-Six committed checkers, each one written because something specific broke. Run the ones your change
+Seven committed checkers, each one written because something specific broke. Run the ones your change
 can affect; run all of them before you call a change finished.
 
 | Check | Run it | What it exists to prevent |
@@ -68,9 +76,10 @@ can affect; run all of them before you call a change finished.
 | API contract | `npx tsx scripts/openapi.check.ts` in `server/` | The endpoint table drifted twice: it claimed 35 endpoints while listing all of them, and 23 of 35 line citations pointed at unrelated lines after the route files grew. A third hand-written list would drift the same way |
 | Database ERD | `npx tsx scripts/erd.check.ts` in `server/` | The database ERD exists twice, as `ERD-Database.mmd` and as `ERD-Database.erd`. Two hand-maintained copies of one model is the shape that has drifted every previous time here |
 | Stylesheet | `node scripts/css.check.mjs` in `web/` | A lost `}` once left about 50 rules silently unapplied in one portal while the other looked fine. Vite's build fails on none of this |
+| Design tokens | `node scripts/tokens.check.mjs` in `web/` | The sheet held 42 padding values, 16 font sizes and 14 radii against 13 tokens, and three of its colours failed WCAG unnoticed: `--muted` sat 0.07 short of AA for as long as the file existed. Contrast is computed here, not asserted, so a token edited to an illegible colour fails instead of shipping |
 | Parsers | `npx tsx scripts/markdown.check.ts` and `units.check.ts` in `web/` | The assistant's markdown renderer and the unit/duration formatters, neither of which has a test runner |
 
-`server/scripts/validate-sli.ts` is a seventh, but it is **not** part of the routine set: it needs
+`server/scripts/validate-sli.ts` is an eighth, but it is **not** part of the routine set: it needs
 HCML's real Availability Report spreadsheets in `~/Downloads` and a running BFF. It compares the
 derived SLA against HCML's own published figures, and it never runs in CI.
 
@@ -78,10 +87,13 @@ derived SLA against HCML's own published figures, and it never runs in CI.
 
 ### Writing a new checker
 
-Follow the six that exist. The house pattern, in order of how often it has mattered:
+Follow the seven that exist. The house pattern, in order of how often it has mattered:
 
-1. **A self-test over fixtures, before it touches a real file.** `openapi.check.ts` and
-   `css.check.mjs` both do this. A checker that has never failed has never been tested.
+1. **A self-test over fixtures, before it touches a real file.** `openapi.check.ts`,
+   `css.check.mjs` and `tokens.check.mjs` all do this. A checker that has never failed has never
+   been tested, and this is not a formality: `tokens.check.mjs` failed its own first run because the
+   expected contrast in one fixture was wrong, which is exactly the arithmetic the checker exists to
+   stop anyone doing by hand.
 2. **A header comment naming the regression it prevents**: the specific one, with what it cost.
 3. **Zero npm dependencies.** See below.
 4. **`console.error` per problem, then a count**, then an explicit `process.exit(1)`.
@@ -104,6 +116,20 @@ library, and no second HTTP client: the Zabbix client and the model client are b
 around native `fetch`.
 
 ---
+
+## Design
+
+`DESIGN.md` at each repo root is the design direction: identity, palette, typography, mood. It is the
+portal owner's, and it is the input to every visual decision. `antislop.md` is the filter that checks
+work against it. The two are not interchangeable, and a filter never supplies taste.
+
+Colours, spacing, type sizes, radii and elevation all come from the token block at the top of
+`web/src/styles.css`. Reaching past it to a raw value fails `tokens.check.mjs`, which is the point:
+dark mode works only because every colour resolves through a token, so one hardcoded hex is one
+element that stays light on a dark page.
+
+The exception is a canvas. ECharts cannot resolve `var()`, so `TimeSeriesChart.tsx` reads the tokens
+with `getComputedStyle` at render time. Anything else drawn to a canvas has to do the same.
 
 ## Diagrams
 

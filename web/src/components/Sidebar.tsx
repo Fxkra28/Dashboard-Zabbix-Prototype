@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth, roleAllows } from '../hooks/useAuth';
+import BrandMark from './BrandMark';
 import type { Role } from '../types';
 import {
   IconOverview,
@@ -67,7 +68,15 @@ const SECTIONS: Section[] = [
   },
 ];
 
-function MenuSection({ section, role }: { section: Section; role: Role | null }) {
+function MenuSection({
+  section,
+  role,
+  collapsed,
+}: {
+  section: Section;
+  role: Role | null;
+  collapsed: boolean;
+}) {
   const [open, setOpen] = useState(true);
 
   // Hide what this role can't reach: the BFF enforces it regardless, but
@@ -75,25 +84,36 @@ function MenuSection({ section, role }: { section: Section; role: Role | null })
   const items = section.items.filter((i) => !i.role || roleAllows(role, i.role));
   if (!items.length) return null;
 
+  // A rail has no room for a section heading, and collapsing a section you
+  // cannot see the name of is not a control worth offering.
+  const shown = collapsed || open;
+
   return (
     <div className="nav-section">
-      <button className="nav-section-title" onClick={() => setOpen((o) => !o)}>
-        <span>{section.title}</span>
-        <span className={`chev${open ? '' : ' collapsed'}`}>
-          <IconChevron />
-        </span>
-      </button>
-      {open && (
-        <nav className="nav-items">
+      {!collapsed && (
+        <button
+          className="nav-section-title"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+        >
+          <span>{section.title}</span>
+          <span className={`chev${open ? '' : ' collapsed'}`}>
+            <IconChevron />
+          </span>
+        </button>
+      )}
+      {shown && (
+        <nav className="nav-items" aria-label={section.title}>
           {items.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
+              title={collapsed ? label : undefined}
               className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
             >
               <Icon />
-              {label}
+              <span className="nav-label">{label}</span>
             </NavLink>
           ))}
         </nav>
@@ -102,27 +122,47 @@ function MenuSection({ section, role }: { section: Section; role: Role | null })
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
   const { role } = useAuth();
 
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="logo">HC</div>
-        <div>
-          <div className="title">HCML</div>
-          <div className="subtitle">Monitoring Portal</div>
-        </div>
+        {/* The rail hides the wordmark beside it, so there the image carries the name. */}
+        <BrandMark variant={collapsed ? 'mark' : 'lockup'} alt={collapsed ? 'HCML' : ''} />
+        {!collapsed && (
+          <div>
+            <div className="title">HCML</div>
+            <div className="subtitle">Monitoring Portal</div>
+          </div>
+        )}
       </div>
 
       <div className="nav-scroll">
         {SECTIONS.map((s) => (
-          <MenuSection key={s.title} section={s} role={role} />
+          <MenuSection key={s.title} section={s} role={role} collapsed={collapsed} />
         ))}
       </div>
 
       <div className="spacer" />
-      <div className="foot">Read-only · powered by Zabbix API</div>
+      {!collapsed && <div className="foot">Read-only · powered by Zabbix API</div>}
+
+      <button
+        type="button"
+        className="rail-toggle"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+        title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+      >
+        <IconChevron />
+      </button>
     </aside>
   );
 }

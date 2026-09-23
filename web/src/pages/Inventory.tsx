@@ -25,7 +25,7 @@ const LABELS: Record<DimensionKey, string> = {
 /** Red below a third, amber below three quarters, green above. */
 function barColor(pct: number): string {
   if (pct >= 75) return 'var(--good)';
-  if (pct >= 33) return '#e8a33d';
+  if (pct >= 33) return 'var(--warn)';
   return 'var(--danger)';
 }
 
@@ -215,7 +215,7 @@ export default function Inventory() {
                 </table>
               </div>
             ) : (
-              <Empty>Nothing missing. 🎉</Empty>
+              <Empty>Nothing missing.</Empty>
             )}
           </div>
         </>

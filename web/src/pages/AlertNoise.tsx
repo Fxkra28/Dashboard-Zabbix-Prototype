@@ -133,7 +133,7 @@ export default function AlertNoise() {
           if (!data.totalEvents) {
             return (
               <div className="panel">
-                <Empty>No problem events in this period. 🎉</Empty>
+                <Empty>No problem events in this period.</Empty>
               </div>
             );
           }
@@ -161,7 +161,7 @@ export default function AlertNoise() {
                   label="Never acknowledged"
                   value={data.counts.unactioned}
                   sub={`${data.thresholds.minCount}+ firings, no response`}
-                  accent={data.counts.unactioned ? '#e8a33d' : undefined}
+                  accent={data.counts.unactioned ? 'var(--warn)' : undefined}
                 />
               </div>
 

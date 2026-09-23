@@ -40,14 +40,14 @@ export default function Overview() {
       {/* System information (Zabbix "System information" report) */}
       <div className="grid kpis">
         <KpiCard label="Hosts" value={stats?.hosts ?? '…'} sub="monitored" />
-        <KpiCard label="Items" value={stats?.items ?? '…'} sub="collecting" accent="#3B8FCB" />
-        <KpiCard label="Triggers" value={stats?.triggers ?? '…'} accent="#7C4DFF" />
-        <KpiCard label="Host groups" value={stats?.groups ?? '…'} accent="#2E9E5B" />
+        <KpiCard label="Items" value={stats?.items ?? '…'} sub="collecting" />
+        <KpiCard label="Triggers" value={stats?.triggers ?? '…'} />
+        <KpiCard label="Host groups" value={stats?.groups ?? '…'} />
       </div>
 
       {/* Problem KPIs */}
       <div className="grid kpis">
-        <KpiCard label="Open problems" value={count(problems.length)} accent="#0067B1" />
+        <KpiCard label="Open problems" value={count(problems.length)} />
         <KpiCard
           label="High / Disaster"
           value={count(high)}
@@ -119,7 +119,7 @@ export default function Overview() {
                   </tbody>
                 </table>
               ) : (
-                <div className="state">No problems across any host group. 🎉</div>
+                <div className="state">No problems across any host group.</div>
               )
             }
           </Async>

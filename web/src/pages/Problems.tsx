@@ -196,7 +196,7 @@ export default function Problems() {
                 )}
               </>
             ) : (
-              <div className="state">No problems match the filter. 🎉</div>
+              <div className="state">No problems match the filter.</div>
             )
           }
         </Async>

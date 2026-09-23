@@ -39,8 +39,12 @@ cd server && cp .env.example .env    # then set ZBX_URL and ZABBIX_API_TOKEN
 npm install && npm run dev           # BFF on :4000
 
 cd ../web
-npm install && npm run dev           # Vite on :5173, proxying /api to :4000
+npm install && npm run dev           # Vite on :5173, proxying /bff to :4000
 ```
+
+The prefix is `/bff`, not `/api`: Vite strips it and forwards to the BFF, so the browser only ever
+talks to one origin and never sees Zabbix. Calling `localhost:5173/api/...` by hand does not reach
+the BFF at all, it returns `index.html`, which looks like a working 200 until you read the body.
 
 Check the BFF before opening the browser:
 
@@ -87,6 +91,7 @@ npm run typecheck
 npx tsx scripts/markdown.check.ts
 npx tsx scripts/units.check.ts
 node scripts/css.check.mjs
+node scripts/tokens.check.mjs             # contrast, and no raw values past the tokens
 ```
 
 All of them add **zero dependencies**: they are standalone scripts, not a second test runner.

@@ -16,7 +16,7 @@ import { Async, Empty } from '../components/states';
  */
 
 const util = (pct: number) =>
-  pct >= 90 ? 'var(--danger)' : pct >= 75 ? '#e8a33d' : 'var(--good)';
+  pct >= 90 ? 'var(--danger)' : pct >= 75 ? 'var(--warn)' : 'var(--good)';
 
 /** Panel titles; `ifutil` rows are one interface each (host + port). */
 const PANEL_TITLE: Record<string, string> = {

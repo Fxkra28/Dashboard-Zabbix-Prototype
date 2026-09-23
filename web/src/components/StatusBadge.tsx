@@ -40,7 +40,7 @@ const PILL_CLASS: Record<HostStatusKind, string> = {
 const DOT_COLOR: Record<HostStatusKind, string> = {
   up: 'var(--good)',
   down: 'var(--danger)',
-  degraded: '#e8a33d',
+  degraded: 'var(--warn)',
   nodata: 'var(--muted)',
   disabled: 'var(--muted)',
   unknown: 'var(--muted)',

@@ -3,7 +3,7 @@ import { SeverityBadge } from './StatusBadge';
 import { ago } from '../lib/severity';
 
 export default function ProblemsTable({ problems }: { problems: Problem[] }) {
-  if (!problems.length) return <div className="state">No open problems. 🎉</div>;
+  if (!problems.length) return <div className="state">No open problems.</div>;
 
   return (
     <div className="table-wrap">

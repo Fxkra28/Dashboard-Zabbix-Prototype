@@ -63,7 +63,7 @@ docs/
   architecture/adr/        why it is the way it is: 8 decisions
   schema/  flow/  erd/     the diagrams
 .github/workflows/
-  docs.yml                 typechecks, tests and the six checkers
+  docs.yml                 typechecks, tests and the seven checkers
 ```
 
 ## A note on trusting these documents
