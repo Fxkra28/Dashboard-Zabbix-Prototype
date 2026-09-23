@@ -1,51 +1,313 @@
-import ReactECharts from 'echarts-for-react';
-import type { HistoryPoint } from '../types';
+import { useEffect, useState } from 'react';
+import * as echarts from 'echarts/core';
+import { LineChart } from 'echarts/charts';
+import {
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import type { GraphRange, GraphResponse, GraphSeries } from '../types';
 import { theme } from '../theme';
+import { formatAxis, formatValue } from '../lib/units';
+import { api } from '../api';
+import { useAsync } from '../hooks/useAsync';
+import StaleNote from './StaleNote';
+import { Async, Loading } from './states';
+import { isLiveRange, rangeKey } from './RangePicker';
 
-export interface Series {
-  name: string;
-  points: HistoryPoint[];
-  color?: string;
-}
+/**
+ * Register only what this chart draws.
+ *
+ * The convenience import (`echarts-for-react` → the `echarts` barrel) pulls in
+ * every chart type, coordinate system and renderer ECharts ships, roughly a
+ * megabyte. This registers the pieces actually used and leaves the rest out.
+ */
+echarts.use([
+  LineChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  DataZoomComponent,
+  CanvasRenderer,
+]);
 
-/** Line chart for one or more Zabbix history series (time on X, value on Y). */
+export const SERIES_COLORS = [theme.primary, '#E97659', '#2E9E5B', '#7C4DFF'];
+
+type Meta = { kind: 'line' | 'low' | 'high'; s: GraphSeries; color: string };
+
+/**
+ * Line chart for 1–4 /api/graph series.
+ *
+ * - The x-axis is pinned to the requested window, so a sparse item doesn't
+ *   stretch its few points across the whole width.
+ * - Straight segments (no smoothing), step lines for 0/1 states, and a break
+ *   wherever the BFF marked a collection gap (null), never a line across it.
+ * - A single series from trends gets a shaded min–max band.
+ * - No `notMerge`: a refresh merges new data and keeps the user's zoom. The
+ *   parent remounts the chart (React `key`) when the selection or range changes.
+ */
 export default function TimeSeriesChart({
   series,
-  units,
+  from,
+  to,
   height = 320,
 }: {
-  series: Series[];
-  units?: string;
+  series: GraphSeries[];
+  from: number;
+  to: number;
   height?: number;
 }) {
-  const colors = [theme.primary, theme.primaryLight, '#E97659', '#2E9E5B', '#7C4DFF'];
+  // Up to two unit families get their own axis (e.g. bps left, % right).
+  const unitAxes: string[] = [];
+  for (const s of series) if (!unitAxes.includes(s.units) && unitAxes.length < 2) unitAxes.push(s.units);
+  const axisOf = (s: GraphSeries) => Math.max(0, unitAxes.indexOf(s.units));
+
+  const band =
+    series.length === 1 &&
+    !series[0].step &&
+    series[0].points.some((p) => p[2] !== null && p[3] !== null);
+
+  const metas: Meta[] = [];
+  const chartSeries: Record<string, unknown>[] = [];
+
+  series.forEach((s, i) => {
+    const color = SERIES_COLORS[i % SERIES_COLORS.length];
+    metas.push({ kind: 'line', s, color });
+    chartSeries.push({
+      name: seriesLabel(s, series),
+      type: 'line',
+      yAxisIndex: axisOf(s),
+      smooth: false,
+      step: s.step ? 'end' : false,
+      connectNulls: false,
+      showSymbol: s.points.length < 40,
+      symbolSize: 4,
+      sampling: undefined,
+      lineStyle: { width: 1.6, color },
+      itemStyle: { color },
+      areaStyle: series.length === 1 && !band ? { opacity: 0.07, color } : undefined,
+      data: s.points.map((p) => [p[0], p[1]]),
+      z: 3,
+    });
+    if (band && i === 0) {
+      metas.push({ kind: 'low', s, color });
+      chartSeries.push({
+        name: '__low',
+        type: 'line',
+        stack: 'band',
+        symbol: 'none',
+        connectNulls: false,
+        lineStyle: { opacity: 0 },
+        data: s.points.map((p) => [p[0], p[2]]),
+        silent: true,
+        z: 1,
+      });
+      metas.push({ kind: 'high', s, color });
+      chartSeries.push({
+        name: '__high',
+        type: 'line',
+        stack: 'band',
+        symbol: 'none',
+        connectNulls: false,
+        lineStyle: { opacity: 0 },
+        areaStyle: { color, opacity: 0.14 },
+        data: s.points.map((p) => [p[0], p[2] !== null && p[3] !== null ? p[3] - p[2] : null]),
+        silent: true,
+        z: 1,
+      });
+    }
+  });
 
   const option = {
-    grid: { left: 56, right: 20, top: 30, bottom: 40 },
-    tooltip: { trigger: 'axis' },
-    legend: series.length > 1 ? { top: 0, textStyle: { color: theme.muted } } : undefined,
+    animation: false,
+    grid: { left: 64, right: unitAxes.length > 1 ? 64 : 20, top: series.length > 1 ? 34 : 16, bottom: 64 },
+    legend:
+      series.length > 1
+        ? {
+            top: 0,
+            data: metas.filter((m) => m.kind === 'line').map((m) => seriesLabel(m.s, series)),
+            textStyle: { color: theme.muted },
+          }
+        : undefined,
+    tooltip: {
+      trigger: 'axis',
+      confine: true,
+      formatter: (params: { seriesIndex: number; dataIndex: number; value: [number, number | null] }[]) => {
+        if (!params.length) return '';
+        const t = params[0].value[0];
+        const rows = params
+          .filter((p) => metas[p.seriesIndex]?.kind === 'line')
+          .map((p) => {
+            const m = metas[p.seriesIndex];
+            const point = m.s.points[p.dataIndex];
+            const value = point?.[1];
+            const range =
+              point && point[2] !== null && point[3] !== null && !m.s.step
+                ? ` <span style="color:${theme.muted}">(${esc(formatValue(point[2], m.s.units))} – ${esc(
+                    formatValue(point[3], m.s.units),
+                  )})</span>`
+                : '';
+            return `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${
+              m.color
+            };margin-right:6px"></span>${esc(seriesLabel(m.s, series))}: <b>${
+              value === null || value === undefined ? 'no data' : esc(formatValue(value, m.s.units))
+            }</b>${range}</div>`;
+          });
+        return `<div style="font-size:12px"><div style="margin-bottom:4px;color:${theme.muted}">${esc(
+          new Date(t).toLocaleString(),
+        )}</div>${rows.join('')}</div>`;
+      },
+    },
+    dataZoom: [
+      { type: 'inside', xAxisIndex: 0, filterMode: 'none' },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        filterMode: 'none',
+        height: 18,
+        bottom: 12,
+        borderColor: theme.border,
+        textStyle: { color: theme.muted },
+      },
+    ],
     xAxis: {
       type: 'time',
-      axisLabel: { color: theme.muted },
+      min: from * 1000,
+      max: to * 1000,
+      axisLabel: { color: theme.muted, hideOverlap: true },
       axisLine: { lineStyle: { color: theme.border } },
     },
-    yAxis: {
+    yAxis: (unitAxes.length ? unitAxes : ['']).map((units, i) => ({
       type: 'value',
-      name: units,
-      nameTextStyle: { color: theme.muted },
-      axisLabel: { color: theme.muted },
-      splitLine: { lineStyle: { color: theme.border } },
-    },
-    series: series.map((s, i) => ({
-      name: s.name,
-      type: 'line',
-      smooth: true,
-      showSymbol: false,
-      lineStyle: { width: 2, color: s.color ?? colors[i % colors.length] },
-      areaStyle: series.length === 1 ? { opacity: 0.08, color: s.color ?? colors[0] } : undefined,
-      data: s.points.map((p) => [Number(p.clock) * 1000, Number(p.value)]),
+      position: i === 0 ? 'left' : 'right',
+      scale: false,
+      axisLabel: { color: theme.muted, formatter: (v: number) => formatAxis(v, units) },
+      splitLine: i === 0 ? { lineStyle: { color: theme.border } } : { show: false },
+      ...(series.every((s) => s.step) ? { max: (v: { max: number }) => Math.max(1, v.max) } : {}),
     })),
+    series: chartSeries,
   };
 
-  return <ReactECharts option={option} style={{ height }} notMerge lazyUpdate />;
+  return (
+    <div className="tsc">
+      <ReactEChartsCore echarts={echarts} option={option} style={{ height }} lazyUpdate />
+      <div className="chart-summary">
+        {series.map((s, i) => (
+          <div key={s.itemid} className="chart-summary-row">
+            <span className="dot" style={{ background: SERIES_COLORS[i % SERIES_COLORS.length] }} />
+            <span className="chart-summary-name" title={`${s.host} — ${s.name}`}>
+              {seriesLabel(s, series)}
+            </span>
+            {s.stats ? (
+              <span className="chart-summary-stats">
+                <span>
+                  <em>min</em> {formatValue(s.stats.min, s.units)}
+                </span>
+                <span>
+                  <em>avg</em> {formatValue(s.stats.avg, s.units)}
+                </span>
+                <span>
+                  <em>max</em> {formatValue(s.stats.max, s.units)}
+                </span>
+                <span>
+                  <em>last</em> {formatValue(s.stats.last, s.units)}
+                </span>
+              </span>
+            ) : (
+              <span className="muted">no data in this range</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Name without the shared "Interface X(alias): " prefix when every series has it. */
+function seriesLabel(s: GraphSeries, all: GraphSeries[]): string {
+  const prefix = /^(Interface [^:]+:\s*)/.exec(s.name)?.[1];
+  if (prefix && all.length > 1 && all.every((o) => o.name.startsWith(prefix))) {
+    return s.name.slice(prefix.length);
+  }
+  const hosts = new Set(all.map((o) => o.host));
+  return hosts.size > 1 ? `${s.host}: ${s.name}` : s.name;
+}
+
+function esc(text: string): string {
+  return text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+}
+
+const SOURCE_LABEL: Record<GraphResponse['source'], string> = {
+  history: 'raw history',
+  trend: 'hourly trends',
+  'trend+history': 'hourly trends + recent history',
+};
+
+/**
+ * Fetch + stale note + chart for a set of items over a range. Refreshes only
+ * for windows ending now, at the items' own update interval (30 s – 5 min).
+ * The chart is keyed on selection + range, so a refresh keeps the zoom.
+ */
+export function GraphView({
+  itemids,
+  range,
+  height,
+  empty = 'No data in this range.',
+}: {
+  itemids: string[];
+  range: GraphRange;
+  height?: number;
+  empty?: string;
+}) {
+  const idsKey = itemids.join(',');
+  const rk = rangeKey(range);
+  const live = isLiveRange(range);
+  // Poll at the items' own interval once it is known. useAsync only moves its
+  // timer when the interval changes, so learning it doesn't refetch.
+  const [pollMs, setPollMs] = useState(30_000);
+  const q = useAsync<(GraphResponse & { requestKey: string }) | null>(
+    () =>
+      itemids.length
+        ? api.graph(itemids, range).then((g) => ({ ...g, requestKey: `${idsKey}|${rk}` }))
+        : Promise.resolve(null),
+    [idsKey, rk],
+    live && itemids.length ? pollMs : undefined,
+  );
+  const delay = Math.max(0, ...(q.data?.series.map((s) => s.delaySeconds) ?? [0]));
+  const intervalMs = Math.min(Math.max(delay * 1000, 30_000), 300_000);
+  useEffect(() => setPollMs(intervalMs), [intervalMs]);
+
+  if (!itemids.length) return <div className="state">Pick an item to graph.</div>;
+  // Data for a previous selection is still in hand while the new one loads.
+  const current = q.data?.requestKey === `${idsKey}|${rk}` ? q.data : null;
+  if (!current && !q.error) return <Loading label="Loading graph…" />;
+
+  return (
+    <Async
+      loading={q.loading}
+      error={q.error}
+      data={current}
+      updatedAt={q.updatedAt}
+      loadingLabel="Loading graph…"
+    >
+      {(g) => (
+        <>
+          <div className="graph-meta">
+            <span className="pill">{SOURCE_LABEL[g.source]}</span>
+            {g.downsampled && <span className="muted">downsampled</span>}
+            {live && <span className="muted">refreshes every {Math.round(intervalMs / 1000)} s</span>}
+          </div>
+          <StaleNote from={g.from} to={g.to} series={g.series} latestClock={g.latestClock} />
+          {g.series.some((s) => s.points.length) ? (
+            <TimeSeriesChart key={`${idsKey}|${rk}`} series={g.series} from={g.from} to={g.to} height={height} />
+          ) : (
+            <div className="state">{empty}</div>
+          )}
+        </>
+      )}
+    </Async>
+  );
 }

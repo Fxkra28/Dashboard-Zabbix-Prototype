@@ -1,33 +1,55 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useUrlState } from '../hooks/useUrlState';
 import type { CapacityReport, CapacityRow } from '../types';
 import { Async, Empty } from '../components/states';
 
 /**
  * Capacity trends (plan_1.2 Phase 6, HCML Goal 6). HCML's deck already shows a
- * "Top Host by CPU / Memory" panel — this is that, over a period rather than a
+ * "Top Host by CPU / Memory" panel: this is that, over a period rather than a
  * moment, so a creeping trend is visible before it becomes an incident.
  *
  * Reads Zabbix `trend.get` (hourly aggregates), falling back to raw history on
- * an instance too young to have trends yet.
+ * an instance too young to have trends yet. Covers agent hosts and SNMP devices
+ * (Cisco, FortiGate), plus a "busiest interfaces" panel (`ifutil`).
  */
 
 const util = (pct: number) =>
   pct >= 90 ? 'var(--danger)' : pct >= 75 ? '#e8a33d' : 'var(--good)';
 
-function MetricPanel({ label, rows, days }: { label: string; rows: CapacityRow[]; days: number }) {
+/** Panel titles; `ifutil` rows are one interface each (host + port). */
+const PANEL_TITLE: Record<string, string> = {
+  ifutil: 'Busiest interfaces',
+};
+
+function MetricPanel({
+  metric,
+  label,
+  rows,
+  days,
+}: {
+  metric: string;
+  label: string;
+  rows: CapacityRow[];
+  days: number;
+}) {
+  const iface = metric === 'ifutil';
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>{label}</h2>
+        <h2>{PANEL_TITLE[metric] ?? label}</h2>
         {rows[0]?.source === 'history' && (
           <span className="pill" title="No hourly trends yet — averaged from raw history">
             from history
           </span>
         )}
       </div>
+      {iface && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          Traffic in the busier direction (in or out) as a share of the port’s speed.
+        </div>
+      )}
 
       {rows.length ? (
         <div className="table-wrap">
@@ -35,7 +57,7 @@ function MetricPanel({ label, rows, days }: { label: string; rows: CapacityRow[]
             <thead>
               <tr>
                 <th>Host</th>
-                <th>Item</th>
+                <th>{iface ? 'Port' : 'Item'}</th>
                 <th style={{ width: 150 }}>Average ({days}d)</th>
                 <th>Peak</th>
                 <th />
@@ -45,7 +67,7 @@ function MetricPanel({ label, rows, days }: { label: string; rows: CapacityRow[]
               {rows.map((r) => (
                 <tr key={r.itemid}>
                   <td style={{ fontWeight: 500 }}>{r.host}</td>
-                  <td className="muted">{r.name}</td>
+                  <td className={iface ? 'mono' : 'muted'}>{r.name}</td>
                   <td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="score-bar">
@@ -67,7 +89,7 @@ function MetricPanel({ label, rows, days }: { label: string; rows: CapacityRow[]
                     {r.units}
                   </td>
                   <td>
-                    <Link className="btn ghost sm" to={`/graphs?hostid=${r.hostid}`}>
+                    <Link className="btn ghost sm" to={`/graphs?hostid=${r.hostid}&itemid=${r.itemid}`}>
                       Graph
                     </Link>
                   </td>
@@ -89,15 +111,16 @@ function MetricPanel({ label, rows, days }: { label: string; rows: CapacityRow[]
 }
 
 export default function Capacity() {
-  const [days, setDays] = useState(7);
+  // In the URL, so Back from a graph keeps the period.
+  const [days, setDays] = useUrlState<number>('days', 7, { options: [1, 7, 30, 90] });
   const q = useAsync<CapacityReport>(() => api.capacity(days), [days]);
 
   return (
     <>
       <div className="controls">
         <div className="field">
-          <label>Period</label>
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+          <label htmlFor="capacity-days">Period</label>
+          <select id="capacity-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={1}>Last 24 hours</option>
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
@@ -106,7 +129,14 @@ export default function Capacity() {
         </div>
       </div>
 
-      <Async loading={q.loading} error={q.error} data={q.data} loadingLabel="Reading trends…">
+      <Async
+        loading={q.loading}
+        error={q.error}
+        data={q.data}
+        stale={q.stale}
+        updatedAt={q.updatedAt}
+        loadingLabel="Reading trends…"
+      >
         {(data) => {
           const empty = data.metrics.every((m) => !m.rows.length);
           if (empty) {
@@ -115,8 +145,9 @@ export default function Capacity() {
                 <Empty>
                   No capacity items found.
                   <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                    This report reads <code>system.cpu.util</code>, <code>vm.memory.util</code> and{' '}
-                    <code>vfs.fs.*[…,pused]</code> from monitored hosts.
+                    This report reads <code>system.cpu.util</code>, <code>vm.memory.util</code>,{' '}
+                    <code>vfs.fs.*[…,pused]</code> and <code>net.if.*</code> interface traffic from
+                    monitored hosts, including SNMP switches and firewalls.
                   </div>
                 </Empty>
               </div>
@@ -133,9 +164,9 @@ export default function Capacity() {
                   reporting. Zeros below mean “no data”, not “idle”.
                 </div>
               )}
-              <div className="grid" style={{ gap: 18 }}>
+              <div className="grid sli-grid" style={{ gap: 18 }}>
                 {data.metrics.map((m) => (
-                  <MetricPanel key={m.key} label={m.label} rows={m.rows} days={data.days} />
+                  <MetricPanel key={m.key} metric={m.key} label={m.label} rows={m.rows} days={data.days} />
                 ))}
               </div>
             </>

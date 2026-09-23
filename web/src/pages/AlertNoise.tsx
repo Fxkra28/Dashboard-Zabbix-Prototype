@@ -6,12 +6,13 @@ import { SEVERITIES } from '../theme';
 import { SeverityBadge } from '../components/StatusBadge';
 import { Async, Empty } from '../components/states';
 import KpiCard from '../components/KpiCard';
+import { dur } from '../lib/units';
 
 /**
- * Alert noise (plan_1.2 Goal 4) — *"the main issue is not the number of
+ * Alert noise (plan_1.2 Goal 4): *"the main issue is not the number of
  * alarms, but the quality of information needed to act."*
  *
- * Top 100 triggers answers *how often*. This answers *was it worth knowing* —
+ * Top 100 triggers answers *how often*. This answers *was it worth knowing*:
  * a trigger firing six times and self-clearing in four seconds is noise; one
  * firing twice and staying open for two days is a real fault. Count alone
  * ranks the noisy one higher, which is exactly the trap.
@@ -29,13 +30,8 @@ const FLAG_WHY: Record<NoiseFlag, string> = {
   chronic: 'Still open after more than a day — not noise, but nobody has cleared it.',
 };
 
-function dur(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.round(s / 60)}m`;
-  if (s < 86400) return `${(s / 3600).toFixed(1)}h`;
-  return `${(s / 86400).toFixed(1)}d`;
-}
+/** Rows the BFF returns, most alerts first; `total` says how many there were in all. */
+const TOPS = [100, 250, 500];
 
 function csv(rows: NoisyTrigger[]): string {
   const out = [
@@ -58,7 +54,8 @@ export default function AlertNoise() {
   const [days, setDays] = useState(7);
   const [severity, setSeverity] = useState(0);
   const [flag, setFlag] = useState<NoiseFlag | 'all' | 'flagged'>('all');
-  const q = useAsync<NoiseReport>(() => api.noise(days, severity), [days, severity]);
+  const [top, setTop] = useState(TOPS[0]);
+  const q = useAsync<NoiseReport>(() => api.noise(days, severity, top), [days, severity, top]);
 
   const rows = useMemo(() => {
     const list = q.data?.triggers ?? [];
@@ -112,9 +109,26 @@ export default function AlertNoise() {
             <option value="chronic">Chronic</option>
           </select>
         </div>
+        <div className="field">
+          <label htmlFor="noise-top">Rows</label>
+          <select id="noise-top" value={top} onChange={(e) => setTop(Number(e.target.value))}>
+            {TOPS.map((n) => (
+              <option key={n} value={n}>
+                Top {n}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <Async loading={q.loading} error={q.error} data={q.data} loadingLabel="Replaying event history…">
+      <Async
+        loading={q.loading}
+        error={q.error}
+        data={q.data}
+        stale={q.stale}
+        updatedAt={q.updatedAt}
+        loadingLabel="Replaying event history…"
+      >
         {(data) => {
           if (!data.totalEvents) {
             return (
@@ -171,7 +185,15 @@ export default function AlertNoise() {
 
               <div className="panel">
                 <div className="panel-head">
-                  <h2>{rows.length} triggers</h2>
+                  <h2>
+                    {rows.length} triggers
+                    {data.total !== undefined && data.total > data.triggers.length && (
+                      <span className="muted noise-top">
+                        {' '}
+                        · top {data.triggers.length} of {data.total} by alerts raised
+                      </span>
+                    )}
+                  </h2>
                   <button className="btn ghost sm" onClick={() => download(data)}>
                     Download CSV
                   </button>

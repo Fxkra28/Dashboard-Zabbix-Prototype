@@ -2,19 +2,21 @@ import type { FastifyInstance } from 'fastify';
 import { zbx } from '../zabbix.js';
 import { cached } from '../cache.js';
 import { config } from '../config.js';
+import { wanPairKey } from '../naming.js';
+import { isFresh } from '../reachability.js';
 
 /**
  * Link & WAN health (plan_1.2 Phase 5, HCML Goal 3).
  *
  * HCML runs 12 main + 10 redundant SD-WAN links, 10 P2P radio links, 18
  * internet accesses and Starlink at the offshore sites. Their own topology
- * slide flags *"SD-WAN (to_mda_via_sapudi)(internal4): High packet loss"* —
+ * slide flags *"SD-WAN (to_mda_via_sapudi)(internal4): High packet loss"*,
  * that class of fault deserves a first-class view, not a row buried in Latest
  * data.
  *
  * A "link" here is one ICMP-monitored path: the `icmpping` / `icmppingloss` /
  * `icmppingsec` triplet Zabbix collects per target. The portal never speaks
- * ICMP itself — Zabbix polls, this reads the items.
+ * ICMP itself, Zabbix polls, this reads the items.
  */
 
 export type LinkState = 'up' | 'degraded' | 'down' | 'unknown';
@@ -34,7 +36,7 @@ export interface Link {
   /** max − min RTT, milliseconds. Only when min/max mode items exist. */
   jitter?: number;
   state: LinkState;
-  /** From the item tag `link_group` — pairs a main link with its standby. */
+  /** From the item tag `link_group`, pairs a main link with its standby. */
   group?: string;
   /** From the item tag `link_role`, e.g. main / redundant. */
   role?: string;
@@ -44,7 +46,7 @@ export interface Link {
 export interface LinkPath {
   name: string;
   links: Link[];
-  /** A redundant path survives one leg failing — up if ANY member is up. */
+  /** A redundant path survives one leg failing, up if ANY member is up. */
   state: LinkState;
 }
 
@@ -61,6 +63,10 @@ interface ZItem {
   key_: string;
   lastvalue?: string;
   lastclock?: string;
+  /** '1' = not supported: the value is stale, whatever it says. */
+  state?: string;
+  /** Update interval ("1m", "30s"); how old a value may be and still count. */
+  delay?: string;
   units?: string;
   hosts?: { hostid: string; name: string }[];
   tags?: { tag: string; value: string }[];
@@ -83,6 +89,10 @@ const num = (v?: string) => {
   return Number.isFinite(n) ? n : undefined;
 };
 
+/** Seconds → milliseconds, rounded to 2 dp so float tails never reach the API. */
+export const toMs = (seconds?: number) =>
+  seconds === undefined ? undefined : Math.round(seconds * 1000 * 100) / 100;
+
 function classify(up: boolean | undefined, loss: number | undefined): LinkState {
   if (up === false) return 'down';
   if (loss !== undefined) {
@@ -99,8 +109,12 @@ export async function getLinks(): Promise<LinksResponse> {
   // `monitored: true` matters: without it Zabbix also returns TEMPLATE items,
   // and the page fills with hundreds of identical unassigned prototypes.
   const items = await zbx<ZItem[]>('item.get', {
-    output: ['itemid', 'name', 'key_', 'lastvalue', 'lastclock', 'units'],
+    output: ['itemid', 'name', 'key_', 'lastvalue', 'lastclock', 'units', 'state', 'delay'],
     search: { key_: 'icmpping' },
+    // A key prefix, not a substring: without startSearch Zabbix runs
+    // LIKE '%icmpping%' and scans every item (~52k on HCML, ~105 ms a call);
+    // with it the items key index applies. parseKey() below still checks.
+    startSearch: true,
     monitored: true,
     selectHosts: ['hostid', 'name'],
     selectTags: 'extend',
@@ -123,6 +137,7 @@ export async function getLinks(): Promise<LinksResponse> {
     groups.set(id, g);
   }
 
+  const now = Math.floor(Date.now() / 1000);
   const links: Link[] = [];
   for (const [id, g] of groups) {
     let up: boolean | undefined;
@@ -136,16 +151,24 @@ export async function getLinks(): Promise<LinksResponse> {
 
     for (const item of g.items) {
       const { name, params } = parseKey(item.key_);
-      const v = num(item.lastvalue);
+      // No collected value is not a value of 0. Zabbix reports lastvalue "0"
+      // with lastclock "0" for an item that has never collected, and keeps the
+      // last value of an unsupported item, both used to classify as DOWN,
+      // which put 42 links that had simply never been polled at the top of the
+      // list as outages. Without fresh data the metric is unknown. "Fresh" is
+      // also recent: a value hours old (the poller stopped, the host was
+      // unreachable to Zabbix) is the same rule the Sites page applies.
+      const fresh = isFresh(item, now);
+      const v = fresh ? num(item.lastvalue) : undefined;
       for (const t of item.tags ?? []) tags[t.tag] = t.value;
-      if (item.lastclock && (!lastclock || item.lastclock > lastclock)) lastclock = item.lastclock;
+      if (fresh && (!lastclock || Number(item.lastclock) > Number(lastclock))) lastclock = item.lastclock;
 
       if (name === 'icmpping') {
         up = v === undefined ? undefined : v === 1;
         label ||= item.name;
       } else if (name === 'icmppingloss') {
         loss = v;
-        // The loss item usually carries the most descriptive name — HCML's own
+        // The loss item usually carries the most descriptive name, HCML's own
         // example is "SD-WAN (to_mda_via_sapudi)(internal4)".
         if (item.name) label = item.name;
       } else if (name === 'icmppingsec') {
@@ -156,6 +179,9 @@ export async function getLinks(): Promise<LinksResponse> {
       }
     }
 
+    // HCML tags no item with link_group, so fall back to the host name:
+    // `INET : SAMPANG WAN 1` and `INET : SAMPANG WAN 2` are one redundant path.
+    const wan = wanPairKey(g.host.name);
     const link: Link = {
       id,
       hostid: g.host.hostid,
@@ -165,18 +191,21 @@ export async function getLinks(): Promise<LinksResponse> {
       up,
       loss,
       // Zabbix stores ICMP response time in seconds; humans read milliseconds.
-      latency: latency === undefined ? undefined : latency * 1000,
+      // Rounded here rather than in the view: seconds-scale floats scaled by
+      // 1000 produce tails like 27.999999999999996, and the API is consumed by
+      // more than the Links table.
+      latency: toMs(latency),
       jitter:
-        rttMin !== undefined && rttMax !== undefined ? (rttMax - rttMin) * 1000 : undefined,
+        rttMin !== undefined && rttMax !== undefined ? toMs(rttMax - rttMin) : undefined,
       state: classify(up, loss),
-      group: tags['link_group'] || undefined,
-      role: tags['link_role'] || undefined,
+      group: tags['link_group'] || wan?.path || undefined,
+      role: tags['link_role'] || (wan ? `WAN ${wan.leg}${wan.provider ? ` (${wan.provider})` : ''}` : undefined),
       lastclock,
     };
     links.push(link);
   }
 
-  // Worst first, then noisiest by loss — a NOC reads the top of this list.
+  // Worst first, then noisiest by loss: a NOC reads the top of this list.
   links.sort(
     (a, b) => RANK[b.state] - RANK[a.state] || (b.loss ?? 0) - (a.loss ?? 0) || a.label.localeCompare(b.label),
   );

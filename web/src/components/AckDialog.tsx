@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { api } from '../api';
 import type { Problem } from '../types';
 import { SeverityBadge } from './StatusBadge';
 
 /**
- * Acknowledge / close write-back (plan_1.2 D8) — the portal's only write.
+ * Acknowledge / close write-back (plan_1.2 D8): the portal's only write.
  *
  * Deliberately explicit: this is the one place a click changes something in
  * Zabbix, so it confirms rather than acting on a single tap, and it never
@@ -24,6 +24,7 @@ export default function AckDialog({
   const [close, setClose] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const titleId = useId();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose();
@@ -49,7 +50,7 @@ export default function AckDialog({
       onClose();
     } catch (err) {
       // Zabbix rejects a close on a trigger without manual_close, among other
-      // things — show what it actually said rather than a generic failure.
+      // things, show what it actually said rather than a generic failure.
       setError(String((err as Error)?.message ?? err));
     } finally {
       setBusy(false);
@@ -58,10 +59,17 @@ export default function AckDialog({
 
   return (
     <div className="drawer-overlay" onClick={() => !busy && onClose()}>
-      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+      <form
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+      >
         <header className="drawer-head">
           <div>
-            <h2>Acknowledge problem</h2>
+            <h2 id={titleId}>Acknowledge problem</h2>
             <div className="drawer-sub">
               <SeverityBadge level={problem.severity} />
               <span style={{ marginLeft: 8 }}>{problem.name}</span>

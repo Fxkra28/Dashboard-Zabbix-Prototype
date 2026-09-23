@@ -2,14 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { zbxWrite } from '../zabbix.js';
 import { invalidate } from '../cache.js';
 import { config } from '../config.js';
+import { notifyProblemsChanged } from './stream.js';
 
 /**
- * Acknowledge / close write-back (plan_1.2 D8) — the portal's ONLY write path.
+ * Acknowledge / close write-back (plan_1.2 D8): the portal's ONLY write path.
  *
- * Everything else in this BFF is read-only by design (`instruct.md` §0 rule 2).
+ * Everything else in this BFF is read-only by design (`setup.md` §20).
  * These two routes deliberately break that, so they are fenced three ways:
  *
- *   1. a SEPARATE `ZABBIX_WRITE_TOKEN` — the read token never gains write power
+ *   1. a SEPARATE `ZABBIX_WRITE_TOKEN`: the read token never gains write power
  *   2. `operator` role or above, enforced in auth.ts ROUTE_RULES
  *   3. blank write token ⇒ 503, and the UI hides the buttons entirely
  *
@@ -38,8 +39,30 @@ interface AckBody {
   acknowledge?: boolean;
 }
 
-/** Caches that show problem/acknowledgement state and go stale after a write. */
-const STALE_AFTER_WRITE = ['problems', 'stats', 'probsByGroup', 'sites', 'aging', 'services'];
+/**
+ * Caches that show problem/acknowledgement state and go stale after a write.
+ * Prefixes: `map:` is every map's detail, `services` both service trees.
+ * `chat:snapshot` exists only in the portal with the assistant; elsewhere it
+ * matches nothing.
+ */
+const STALE_AFTER_WRITE = [
+  'problems',
+  'stats',
+  'probsByGroup',
+  'sites',
+  'aging',
+  'services',
+  'hosts:overview',
+  'map:',
+  'chat:snapshot',
+];
+
+/**
+ * How long those keys stay on a short TTL after a write. Zabbix applies a
+ * close a few seconds after `event.acknowledge` returns, so the first refetch
+ * can still read the problem as open.
+ */
+const WRITE_HOLD_MS = 15_000;
 
 export async function actionRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/problems/acknowledge', async (req, reply) => {
@@ -51,11 +74,17 @@ export async function actionRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const body = (req.body ?? {}) as AckBody;
-    const eventids = (Array.isArray(body.eventids) ? body.eventids : [body.eventids])
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    const raw = Array.isArray(body.eventids) ? body.eventids : [body.eventids];
+    const eventids = raw.filter((id): id is string => typeof id === 'string' && id.length > 0);
 
     if (!eventids.length) {
-      return reply.code(400).send({ error: 'eventids is required' });
+      return reply
+        .code(400)
+        .send({ error: 'bad_request', message: 'eventids is required — one or more Zabbix event ids.' });
+    }
+    // Ids go straight into a write against Zabbix; refuse anything that is not one.
+    if (eventids.some((id) => !/^\d+$/.test(id))) {
+      return reply.code(400).send({ error: 'bad_request', message: 'eventids must be numeric Zabbix event ids.' });
     }
 
     const message = (body.message ?? '').trim().slice(0, MAX_MESSAGE);
@@ -68,9 +97,10 @@ export async function actionRoutes(app: FastifyInstance): Promise<void> {
     if (message) action |= ACTION_MESSAGE;
 
     if (action === 0) {
-      return reply
-        .code(400)
-        .send({ error: 'Nothing to do — supply acknowledge, close, or a message.' });
+      return reply.code(400).send({
+        error: 'bad_request',
+        message: 'Nothing to do — supply acknowledge, close, or a message.',
+      });
     }
 
     const result = await zbxWrite<{ eventids: string[] }>('event.acknowledge', {
@@ -81,7 +111,9 @@ export async function actionRoutes(app: FastifyInstance): Promise<void> {
 
     // Without this the change wouldn't surface until the 5s cache expired, and
     // the click would look like it did nothing.
-    for (const key of STALE_AFTER_WRITE) invalidate(key);
+    for (const key of STALE_AFTER_WRITE) invalidate(key, { holdMs: WRITE_HOLD_MS });
+    // Live screens get the new list now, not on the stream's next tick.
+    void notifyProblemsChanged();
 
     app.log.info(
       { eventids, action, close, acknowledge, user: (req.user as { sub?: string })?.sub },

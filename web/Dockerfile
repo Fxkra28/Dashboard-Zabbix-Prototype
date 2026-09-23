@@ -1,7 +1,9 @@
 FROM node:20-alpine AS build
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+# Copy the lockfile too and use `npm ci`: `npm install` resolves fresh versions
+# at build time, so two builds of the same commit can ship different code.
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
 RUN npm run build
 

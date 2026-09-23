@@ -2,18 +2,27 @@ import type { FastifyInstance } from 'fastify';
 import { cached } from '../cache.js';
 import { config } from '../config.js';
 import { getProblems, getHostsWithMeta, type ZHostMeta } from '../queries.js';
+import { siteFromHostName } from '../naming.js';
+import {
+  getIcmpByHost,
+  hostState,
+  rollUpAvailability,
+  type Availability,
+  type HostState,
+  type StateReason,
+} from '../reachability.js';
 
 /**
  * Site view (plan_1.2 Phase 1, HCML Goal 5). HCML's estate is organised by
- * site — JKT HQ, SBY, SSB, FPSO KAS3, BD-WHP, MOPU, MBH, MDA, Sumenep, ORF
- * Porong, TWSB, GMS Pasuruan — but the dashboard only ever showed one flat
+ * site, JKT HQ, SBY, SSB, FPSO KAS3, BD-WHP, MOPU, MBH, MDA, Sumenep, ORF
+ * Porong, TWSB, GMS Pasuruan, but the dashboard only ever showed one flat
  * list. This rolls every host up to the site it lives at.
  *
  * Read-only: it derives sites from what Zabbix already knows, and never writes.
  */
 
-/** Where a host's site name came from — weakest last. */
-export type SiteSource = 'tag' | 'inventory' | 'group';
+/** Where a host's site name came from, weakest last. */
+export type SiteSource = 'tag' | 'name' | 'inventory' | 'group';
 
 export interface SiteHost {
   hostid: string;
@@ -21,7 +30,11 @@ export interface SiteHost {
   status: string;
   maintenance_status?: string;
   interfaces?: { ip: string; type?: string; available?: string }[];
-  availability: 'available' | 'unavailable' | 'unknown';
+  /** The interface flags alone. `state` is what to show. */
+  availability: Availability;
+  /** Reachability, ping first (reachability.ts). Never carries loss or latency. */
+  state: HostState;
+  reason: StateReason;
   siteSource: SiteSource;
   problems: { total: number; bySeverity: Record<string, number> };
 }
@@ -29,9 +42,15 @@ export interface SiteHost {
 export interface Site {
   name: string;
   total: number;
+  /** Hosts by interface flags, as before `state` existed. */
   available: number;
   unavailable: number;
   unknown: number;
+  /** Hosts by `state`; disabled hosts are counted in `disabled` only. */
+  up: number;
+  down: number;
+  degraded: number;
+  nodata: number;
   maintenance: number;
   disabled: number;
   problems: number;
@@ -49,29 +68,25 @@ export interface SitesResponse {
    * group. This is HCML's Goal 1 ("site mapping is not standardised") turned
    * into a number that can go up over time.
    */
-  coverage: { hosts: number; tag: number; inventory: number; group: number };
-}
-
-/**
- * Zabbix 7.0 tracks availability per interface. Roll up to a host state the
- * same way the UI does elsewhere: worst wins.
- */
-function rollUpAvailability(interfaces?: { available?: string }[]): SiteHost['availability'] {
-  if (!interfaces?.length) return 'unknown';
-  if (interfaces.some((i) => i.available === '2')) return 'unavailable';
-  if (interfaces.some((i) => i.available === '1')) return 'available';
-  return 'unknown';
+  coverage: { hosts: number; tag: number; name: number; inventory: number; group: number };
 }
 
 /**
  * Resolve one host to a site, most explicit signal first:
- *   1. a `site` host tag        — deliberate, unambiguous
- *   2. inventory site_city/location — Zabbix's own field for this
- *   3. a host group             — always present, so this always resolves
+ *   1. a `site` host tag:       deliberate, unambiguous
+ *   2. the site code in the name, HCML's own convention (`4.3.3 FPSO ARUBA 3`
+ *      is site 4); no HCML host carries a site tag, so this is what places
+ *      most of the estate, where host groups ("ARUBA", "FIREWALL DEVICES HCML")
+ *      describe the kind of device rather than where it is
+ *   3. inventory site_city/location, Zabbix's own field for this
+ *   4. a host group:            always present, so this always resolves
  */
 export function resolveSite(host: ZHostMeta): { site: string; source: SiteSource } {
   const tag = host.tags?.find((t) => t.tag === config.site.tag)?.value?.trim();
   if (tag) return { site: tag, source: 'tag' };
+
+  const named = siteFromHostName(host.name);
+  if (named) return { site: named.name, source: 'name' };
 
   // Zabbix returns [] (not an object) for a host with inventory disabled.
   const inv = Array.isArray(host.inventory) ? undefined : host.inventory;
@@ -91,10 +106,12 @@ export function resolveSite(host: ZHostMeta): { site: string; source: SiteSource
 }
 
 export async function getSites(): Promise<SitesResponse> {
-  // Shares the `hosts:meta` cache entry with the inventory scorecard.
-  const [hosts, problems] = await Promise.all([
+  // Shares the `hosts:meta` cache entry with the inventory scorecard, and
+  // `problems` with every other problem reader.
+  const [hosts, problems, icmp] = await Promise.all([
     cached('hosts:meta', 30_000, getHostsWithMeta),
-    getProblems(),
+    cached('problems', 5_000, getProblems),
+    getIcmpByHost(),
   ]);
 
   const byHost: Record<string, { total: number; bySeverity: Record<string, number>; unack: number }> =
@@ -108,7 +125,7 @@ export async function getSites(): Promise<SitesResponse> {
   }
 
   const sites = new Map<string, Site>();
-  const coverage = { hosts: hosts.length, tag: 0, inventory: 0, group: 0 };
+  const coverage = { hosts: hosts.length, tag: 0, name: 0, inventory: 0, group: 0 };
 
   for (const h of hosts) {
     const { site: name, source } = resolveSite(h);
@@ -122,6 +139,10 @@ export async function getSites(): Promise<SitesResponse> {
         available: 0,
         unavailable: 0,
         unknown: 0,
+        up: 0,
+        down: 0,
+        degraded: 0,
+        nodata: 0,
         maintenance: 0,
         disabled: 0,
         problems: 0,
@@ -134,12 +155,14 @@ export async function getSites(): Promise<SitesResponse> {
     }
 
     const availability = rollUpAvailability(h.interfaces);
+    const { state, reason } = hostState(h, icmp.get(h.hostid));
     const p = byHost[h.hostid] ?? { total: 0, bySeverity: {}, unack: 0 };
 
     site.total++;
     if (availability === 'available') site.available++;
     else if (availability === 'unavailable') site.unavailable++;
     else site.unknown++;
+    if (state !== 'disabled') site[state]++;
     if (h.maintenance_status === '1') site.maintenance++;
     if (h.status === '1') site.disabled++;
     site.problems += p.total;
@@ -156,15 +179,18 @@ export async function getSites(): Promise<SitesResponse> {
       maintenance_status: h.maintenance_status,
       interfaces: h.interfaces,
       availability,
+      state,
+      reason,
       siteSource: source,
       problems: { total: p.total, bySeverity: p.bySeverity },
     });
   }
 
-  // Worst first — a NOC wall should lead with the site that needs attention;
-  // ties break on unreachable hosts, then name for a stable order.
+  // Worst first: a NOC wall should lead with the site that needs attention;
+  // ties break on hosts down (by ping first, not SNMP silence), then name for a
+  // stable order.
   const ordered = [...sites.values()].sort(
-    (a, b) => b.worst - a.worst || b.unavailable - a.unavailable || a.name.localeCompare(b.name),
+    (a, b) => b.worst - a.worst || b.down - a.down || a.name.localeCompare(b.name),
   );
 
   return { sites: ordered, coverage };

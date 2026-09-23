@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { zbx } from '../zabbix.js';
 import { cached } from '../cache.js';
+import { intParam } from '../validate.js';
 import { getProblems } from '../queries.js';
 
 /** One page of event history. Bounds the read and flags when it was hit. */
@@ -8,10 +9,10 @@ const EVENT_LIMIT = 10_000;
 
 export async function reportRoutes(app: FastifyInstance): Promise<void> {
   // Reports → Top 100 triggers: count problem events per trigger over a window.
-  // The window is clamped and the fetch bounded — against real event history a
+  // The window is clamped and the fetch bounded, against real event history a
   // 20k unbounded read is slow and grows without limit (plan_1.2 defect #4).
   app.get('/api/reports/top-triggers', (req) => {
-    const days = Math.min(Math.max(Number((req.query as { days?: string }).days ?? 7), 1), 365);
+    const days = intParam((req.query as { days?: string }).days, 7, 1, 365);
     const from = Math.floor(Date.now() / 1000) - days * 86400;
     return cached(`toptrig:${days}`, 60_000, async () => {
       const events = await zbx<
@@ -51,7 +52,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         .sort((a, b) => b.count - a.count)
         .slice(0, 100);
 
-      // Say so when the window was busier than one page — otherwise the counts
+      // Say so when the window was busier than one page, otherwise the counts
       // silently understate and look authoritative.
       return { triggers: top, truncated: events.length >= EVENT_LIMIT, days };
     });
@@ -64,8 +65,10 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         zbx<string>('host.get', { countOutput: true }),
         zbx<string>('item.get', { countOutput: true, monitored: true }),
         zbx<string>('trigger.get', { countOutput: true }),
-        zbx<string>('hostgroup.get', { countOutput: true, real_hosts: true }),
-        getProblems(),
+        // `with_hosts`: its older name was deprecated in Zabbix 6.2.
+        zbx<string>('hostgroup.get', { countOutput: true, with_hosts: true }),
+        // The entry /api/problems and the stream already share, not another read.
+        cached('problems', 5_000, getProblems),
       ]);
 
       const bySeverity: Record<string, number> = {};
@@ -90,10 +93,10 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         zbx<{ groupid: string; name: string; hosts?: { hostid: string }[] }[]>('hostgroup.get', {
           output: ['groupid', 'name'],
           selectHosts: ['hostid'],
-          real_hosts: true,
+          with_hosts: true,
           sortfield: 'name',
         }),
-        getProblems(),
+        cached('problems', 5_000, getProblems),
       ]);
 
       const sevByHost: Record<string, string[]> = {};

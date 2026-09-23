@@ -34,7 +34,14 @@ export default function TopTriggers() {
 
       <div className="panel">
         <h2>Top 100 triggers by number of problems</h2>
-        <Async loading={q.loading} error={q.error} data={q.data} loadingLabel="Aggregating events…">
+        <Async
+          loading={q.loading}
+          error={q.error}
+          data={q.data}
+          stale={q.stale}
+          updatedAt={q.updatedAt}
+          loadingLabel="Aggregating events…"
+        >
           {(data) =>
             data.triggers.length ? (
               <>

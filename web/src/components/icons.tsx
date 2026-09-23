@@ -118,6 +118,13 @@ export const IconSla = ({ size }: P) => (
   </svg>
 );
 
+export const IconChat = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H9l-5 3 1.3-4.4A8.5 8.5 0 1 1 21 11.5Z" />
+    <path d="M8.5 10.5h7M8.5 14h4" />
+  </svg>
+);
+
 export const IconChevron = ({ size = 14 }: P) => (
   <svg {...base(size)}>
     <path d="M6 9l6 6 6-6" />

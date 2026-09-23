@@ -12,17 +12,25 @@ export default function Login() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Checked here, not only by `required`, so a whitespace-only username is
+    // refused without a round trip to the BFF.
+    if (!username.trim() || !password) {
+      setError('Enter a username and password.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      await login(username, password);
-      // Drop the cached /api/auth/me result — otherwise signing in as a
+      await login(username.trim(), password);
+      // Drop the cached /api/auth/me result: otherwise signing in as a
       // different user keeps the previous role until a full page reload,
       // and the sidebar shows the wrong menu.
       resetAuthProbe();
       nav('/');
-    } catch {
-      setError('Invalid username or password.');
+    } catch (err) {
+      // login() distinguishes wrong credentials from a rate limit or a BFF
+      // that is down; every failure used to read "Invalid username or password".
+      setError(err instanceof Error ? err.message : 'Sign-in failed.');
     } finally {
       setBusy(false);
     }
@@ -30,7 +38,7 @@ export default function Login() {
 
   return (
     <div className="login-wrap">
-      <form className="login-card" onSubmit={submit}>
+      <form className="login-card" onSubmit={submit} noValidate>
         <div
           className="logo"
           style={{
@@ -50,27 +58,37 @@ export default function Login() {
         <p>Sign in to continue</p>
 
         <div className="field">
-          <label>Username</label>
+          <label htmlFor="login-username">Username</label>
           <input
+            id="login-username"
             type="text"
+            autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            required
             autoFocus
           />
         </div>
         <div className="field">
-          <label>Password</label>
+          <label htmlFor="login-password">Password</label>
           <input
+            id="login-password"
             type="password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            required
           />
         </div>
 
         <button className="btn" type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        {error && <div className="login-error">{error}</div>}
+        {error && (
+          <div className="login-error" role="alert">
+            {error}
+          </div>
+        )}
       </form>
     </div>
   );

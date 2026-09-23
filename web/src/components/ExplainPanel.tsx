@@ -1,14 +1,14 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
-import type { Problem, ProblemExplanation, Sla, SlaExplanation } from '../types';
+import type { Problem, ProblemExplanation, Sla, SlaExplanation, SliProfile } from '../types';
 import { Async } from './states';
 import { SeverityBadge } from './StatusBadge';
 import { fmtTime } from '../lib/severity';
 
 /**
  * The plain-language layer's UI (plan_1.1). A slide-over that translates one
- * Zabbix artifact — a problem's tags and notification wording, or an SLA —
+ * Zabbix artifact (a problem's tags and notification wording, or an SLA)
  * for a reader who doesn't speak Zabbix.
  *
  * Nothing here runs until the user clicks "Explain"; the BFF caches each
@@ -26,6 +26,9 @@ function Drawer({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const titleId = useId();
+  const panel = useRef<HTMLElement>(null);
+
   // Escape closes, matching how Zabbix's own overlays behave.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -33,12 +36,30 @@ function Drawer({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Take focus on open, so a keyboard or screen-reader user lands in the
+  // drawer; give it back to whatever opened it (the Explain button) on close.
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panel.current?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
+  }, []);
+
   return (
     <div className="drawer-overlay" onClick={onClose}>
-      <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+      <aside
+        ref={panel}
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="drawer-head">
           <div>
-            <h2>{title}</h2>
+            <h2 id={titleId}>{title}</h2>
             {subtitle && <div className="drawer-sub">{subtitle}</div>}
           </div>
           <button className="drawer-close" onClick={onClose} aria-label="Close">
@@ -49,7 +70,8 @@ function Drawer({
         <div className="drawer-body">{children}</div>
 
         <footer className="drawer-foot">
-          Written by Claude from the Zabbix data on this page — it rephrases, it doesn’t diagnose.
+          Written by an AI model from the Zabbix data on this page — it rephrases, it
+          doesn’t diagnose.
           Confirm before acting.
         </footer>
       </aside>
@@ -96,6 +118,8 @@ export function ProblemExplainPanel({
         loading={q.loading}
         error={q.error}
         data={q.data}
+        stale={q.stale}
+        updatedAt={q.updatedAt}
         loadingLabel="Reading the alert…"
       >
         {(x) => (
@@ -140,39 +164,78 @@ export function ProblemExplainPanel({
  * One SLA's current-period standing. Takes only the fields it renders, so the
  * services tree can open it from a `ServiceSla` without inventing a full `Sla`.
  */
-export function SlaExplainPanel({
-  sla,
-  serviceid,
-  onClose,
-}: {
-  sla: Pick<Sla, 'slaid' | 'name'> & { slo: Sla['slo'] | number };
-  serviceid?: string;
-  onClose: () => void;
-}) {
-  const q = useAsync<SlaExplanation>(() => api.explainSla(sla.slaid, serviceid), [
-    sla.slaid,
-    serviceid,
-  ]);
+/** One scope of the portal-derived monthly SLA (source=derived on the BFF). */
+export interface DerivedSlaScope {
+  /** overall | site:N | category:NAME */
+  scope: string;
+  month?: string;
+  profile?: SliProfile;
+  /** Shown in the drawer header, e.g. "3 · SSB / Sampang". */
+  name: string;
+  target: number;
+  /** e.g. "Strict" / "HCML report method" */
+  methodLabel?: string;
+}
+
+export function SlaExplainPanel(
+  props:
+    | {
+        sla: Pick<Sla, 'slaid' | 'name'> & { slo: Sla['slo'] | number };
+        serviceid?: string;
+        derived?: undefined;
+        onClose: () => void;
+      }
+    | { derived: DerivedSlaScope; sla?: undefined; serviceid?: undefined; onClose: () => void },
+) {
+  const { sla, serviceid, derived, onClose } = props;
+  const q = useAsync<SlaExplanation>(
+    () =>
+      derived
+        ? api.explainSla({
+            source: 'derived',
+            month: derived.month,
+            profile: derived.profile,
+            scope: derived.scope,
+          })
+        : api.explainSla(sla.slaid, serviceid),
+    [sla?.slaid, serviceid, derived?.scope, derived?.month, derived?.profile],
+  );
+
+  const name = derived ? derived.name : sla.name;
+  const target = derived ? derived.target : sla.slo;
 
   return (
     <Drawer
       title="In plain language"
       subtitle={
         <>
-          {sla.name}
+          {name}
           <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
-            Target {sla.slo}% availability
+            Target {target}% availability
+            {derived?.month ? ` · ${derived.month}` : ''}
+            {derived?.methodLabel ? ` · ${derived.methodLabel}` : ''}
           </div>
         </>
       }
       onClose={onClose}
     >
-      <Async loading={q.loading} error={q.error} data={q.data} loadingLabel="Reading the SLA…">
+      <Async
+        loading={q.loading}
+        error={q.error}
+        data={q.data}
+        stale={q.stale}
+        updatedAt={q.updatedAt}
+        loadingLabel="Reading the SLA…"
+      >
         {(x) => (
           <>
             <Section label="Where this stands">
               <p className="explain-lead">
-                <span className={`pill ${x.meetingTarget ? 'up' : 'down'}`}>{x.status}</span>
+                {x.noData ? (
+                  <span className="pill nodata">{x.status || 'No data'}</span>
+                ) : (
+                  <span className={`pill ${x.meetingTarget ? 'up' : 'down'}`}>{x.status}</span>
+                )}
               </p>
               <p>{x.plain}</p>
             </Section>

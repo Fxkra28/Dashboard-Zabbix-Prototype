@@ -1,4 +1,6 @@
 import { SEVERITIES } from '../theme';
+import type { HostState, StateReason } from '../types';
+import { formatValue } from './units';
 
 export function severity(level: string | number) {
   const n = Number(level);
@@ -31,23 +33,12 @@ function humanizeSeconds(s: number): string {
   return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
 }
 
-/** Human-friendly number with an optional unit (bytes/bps → auto-scale). */
+/** Human-friendly number with an optional unit. See lib/units.ts for the unit families. */
 export function fmtValue(v: number | string | undefined | null, units?: string): string {
   if (v === undefined || v === '' || v === null) return '—';
   const n = Number(v);
   if (!Number.isFinite(n)) return String(v);
-  const scaled = ['bps', 'Bps', 'B', 'B/s'].includes(units ?? '');
-  if (scaled) return scale(n) + (units ? ` ${units}` : '');
-  const rounded = Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 100) / 100;
-  return `${rounded}${units ? ` ${units}` : ''}`;
-}
-
-function scale(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return (n / 1e9).toFixed(2) + 'G';
-  if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
-  if (abs >= 1e3) return (n / 1e3).toFixed(2) + 'K';
-  return String(Math.round(n));
+  return formatValue(n, units);
 }
 
 /** Interface availability (Zabbix): 0 unknown, 1 available, 2 unavailable. */
@@ -68,6 +59,64 @@ export function hostAvailability(interfaces?: { available?: string }[]) {
   if (interfaces.some((i) => i.available === '2')) return availability('2');
   if (interfaces.some((i) => i.available === '1')) return availability('1');
   return availability(undefined);
+}
+
+export type HostStatusKind = HostState | 'unknown';
+
+/** Tooltip for a host's state (server reachability.ts): the ping check first, interface flags as the fallback. */
+const REASON_TEXT: Record<StateReason, (state: HostState) => string> = {
+  ping: (state) => (state === 'down' ? 'No reply to ping' : 'Answers ping'),
+  interface: (state) =>
+    state === 'degraded'
+      ? 'Answers ping, but a Zabbix interface is unavailable'
+      : state === 'nodata'
+        ? 'No fresh ping value, and Zabbix doesn’t know whether the interface is available'
+        : `No fresh ping value — Zabbix marks the interface ${state === 'down' ? 'unavailable' : 'available'}`,
+  'snmp-silent': () => 'Answers ping, but SNMP polling gets no reply',
+  'agent-silent': () => 'Answers ping, but the Zabbix agent is not reporting',
+  stale: () => 'No recent ping value — the last one is too old to trust',
+  'no-interface': () => 'No interface in Zabbix, so the ping check can’t run',
+  unsupported: () => 'The ping check is not supported on this host',
+  disabled: () => 'Monitoring is disabled for this host in Zabbix',
+};
+
+/**
+ * Label, pill kind and tooltip for a host. Uses the BFF's `state` when it sends
+ * one; an older BFF leaves only the interface flags, rolled up as before.
+ */
+export function hostStatus(h: {
+  state?: HostState;
+  reason?: StateReason;
+  availability?: 'available' | 'unavailable' | 'unknown';
+  interfaces?: { available?: string }[];
+}): { kind: HostStatusKind; label: string; title?: string } {
+  if (h.state) {
+    const title = h.reason ? REASON_TEXT[h.reason]?.(h.state) : undefined;
+    switch (h.state) {
+      case 'up':
+        return { kind: 'up', label: 'Up', title };
+      case 'down':
+        return { kind: 'down', label: 'Down', title };
+      case 'degraded':
+        return {
+          kind: 'degraded',
+          label: h.reason === 'snmp-silent' ? 'SNMP silent' : h.reason === 'agent-silent' ? 'Agent silent' : 'Degraded',
+          title,
+        };
+      case 'nodata':
+        return { kind: 'nodata', label: 'No data', title };
+      case 'disabled':
+        return { kind: 'disabled', label: 'Disabled', title };
+    }
+  }
+  if (h.availability) {
+    return h.availability === 'available'
+      ? { kind: 'up', label: 'Available' }
+      : h.availability === 'unavailable'
+        ? { kind: 'down', label: 'Unavailable' }
+        : { kind: 'unknown', label: 'Unknown' };
+  }
+  return hostAvailability(h.interfaces);
 }
 
 const IFACE_TYPES: Record<string, string> = { '1': 'Agent', '2': 'SNMP', '3': 'IPMI', '4': 'JMX' };

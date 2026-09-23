@@ -1,0 +1,79 @@
+# Validate the documentation and the code it describes.
+#
+# There is no deploy step. There is no documentation site to deploy to: TypeDoc and
+# Docusaurus were both ruled out by the zero-dependency rule, so the docs are Markdown,
+# an OpenAPI file and committed diagram renders, all read in place.
+#
+# The job that matters here is openapi.check.ts: docs/api/openapi.yaml is the only
+# machine-checkable claim the documentation makes, and the endpoint table it replaced
+# drifted twice. The rest is the routine check set, run so that a documentation change
+# cannot quietly land beside a broken build.
+#
+# Note on state, September 2026: hcml-portal is behind its remote and hcml-portal-ollama
+# is not under git at all, so this workflow has never run. It is committed to both repos
+# so the two trees stay identical, and it is written to be correct on the first run
+# rather than debugged afterwards: every step below was executed by hand locally first.
+#
+# There is no root package.json. server/ and web/ are separate npm projects with separate
+# lockfiles, so the install runs twice. web/ has no test script and no tsx of its own; its
+# checkers run through server/node_modules/.bin/tsx rather than npx, which would fetch a
+# package that is in neither lockfile.
+#
+# server/scripts/validate-sli.ts is deliberately absent. It reads HCML's real Availability
+# Report spreadsheets and needs a running BFF. It must not run here.
+
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20' # the server pins @types/node ^20
+
+      - name: Install server dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Typecheck the server
+        run: npm run typecheck
+        working-directory: server
+
+      - name: Typecheck the web
+        run: npm run typecheck
+        working-directory: web
+
+      - name: Test the server
+        run: npm test # 336 tests, 19 files
+        working-directory: server
+
+      - name: The API contract matches the code
+        run: ./server/node_modules/.bin/tsx server/scripts/openapi.check.ts
+
+      - name: The database ERD and its .erd model agree
+        run: ./server/node_modules/.bin/tsx server/scripts/erd.check.ts
+
+      - name: The stylesheet is structurally sound
+        run: node web/scripts/css.check.mjs web/src/styles.css
+
+      - name: The assistant's markdown parser
+        run: ./server/node_modules/.bin/tsx web/scripts/markdown.check.ts
+
+      - name: The unit and duration formatters
+        run: ./server/node_modules/.bin/tsx web/scripts/units.check.ts

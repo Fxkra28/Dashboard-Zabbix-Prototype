@@ -1,5 +1,8 @@
+import { Suspense } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import ErrorBoundary from './ErrorBoundary';
+import { Loading } from './states';
 import { useAuth, resetAuthProbe } from '../hooks/useAuth';
 import { clearToken } from '../api';
 
@@ -20,6 +23,7 @@ const TITLES: Record<string, string> = {
   '/reports/noise': 'Alert noise',
   '/reports/top-triggers': 'Top 100 triggers',
   '/reports/inventory': 'Inventory & ownership scorecard',
+  '/assistant': 'Assistant',
 };
 
 export default function Layout() {
@@ -51,7 +55,14 @@ export default function Layout() {
           </div>
         </header>
         <div className="content">
-          <Outlet />
+          {/* Pages are lazy-loaded (see App.tsx). The boundary sits here rather
+              than around the router so the chrome never blanks between pages.
+              The error boundary is keyed by path, so leaving a crashed page resets it. */}
+          <ErrorBoundary key={pathname}>
+            <Suspense fallback={<Loading />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </div>
     </div>

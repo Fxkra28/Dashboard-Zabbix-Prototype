@@ -1,4 +1,4 @@
-import { severity } from '../lib/severity';
+import { hostStatus, severity, type HostStatusKind } from '../lib/severity';
 import { SEVERITIES } from '../theme';
 
 export function SeverityBadge({ level }: { level: string | number }) {
@@ -28,14 +28,36 @@ export function UpDown({ up }: { up: boolean | undefined }) {
   );
 }
 
-export function AvailabilityPill({ kind, label }: { kind: 'up' | 'down' | 'unknown'; label: string }) {
-  const cls = kind === 'up' ? 'up' : kind === 'down' ? 'down' : '';
-  const dot = kind === 'up' ? 'var(--good)' : kind === 'down' ? 'var(--danger)' : 'var(--muted)';
+const PILL_CLASS: Record<HostStatusKind, string> = {
+  up: 'up',
+  down: 'down',
+  degraded: 'degraded',
+  nodata: 'nodata',
+  disabled: '',
+  unknown: '',
+};
+
+const DOT_COLOR: Record<HostStatusKind, string> = {
+  up: 'var(--good)',
+  down: 'var(--danger)',
+  degraded: '#e8a33d',
+  nodata: 'var(--muted)',
+  disabled: 'var(--muted)',
+  unknown: 'var(--muted)',
+};
+
+export function AvailabilityPill({ kind, label, title }: { kind: HostStatusKind; label: string; title?: string }) {
   return (
-    <span className={`pill ${cls}`}>
-      <span className="dot" style={{ background: dot }} /> {label}
+    <span className={`pill ${PILL_CLASS[kind]}`} title={title}>
+      <span className="dot" style={{ background: DOT_COLOR[kind] }} /> {label}
     </span>
   );
+}
+
+/** A host's state pill: the BFF's ping-first `state` (reason as the tooltip), else interface availability. */
+export function HostStatePill({ host }: { host: Parameters<typeof hostStatus>[0] }) {
+  const s = hostStatus(host);
+  return <AvailabilityPill kind={s.kind} label={s.label} title={s.title} />;
 }
 
 /** Zabbix-style severity count strip: one colored chip per non-zero severity. */

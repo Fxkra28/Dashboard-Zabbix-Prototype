@@ -4,7 +4,7 @@ import { cached } from '../cache.js';
 
 /**
  * Zabbix Services → SLA, read-only (plan_1.1). These return [] until Services
- * and SLAs are configured in Zabbix — same as the network-device views.
+ * and SLAs are configured in Zabbix, same as the network-device views.
  */
 
 export interface ZbxSla {
@@ -42,7 +42,7 @@ export async function getSlas(): Promise<ZbxSla[]> {
  */
 export async function getSli(slaid: string, serviceid?: string): Promise<SlaSli[]> {
   // sla.getsli returns serviceids as numbers while every other Zabbix method
-  // returns ids as strings — normalise so callers see one consistent shape.
+  // returns ids as strings, normalise so callers see one consistent shape.
   const raw = await zbx<{
     periods: { period_from: number; period_to: number }[];
     serviceids: (string | number)[];
@@ -78,7 +78,38 @@ export async function getSli(slaid: string, serviceid?: string): Promise<SlaSli[
   });
 }
 
+/**
+ * Whether Zabbix's own SLAs have anything to show. HCML's Zabbix has one SLA
+ * and no services, so its SLA page would be empty; the UI (and the assistant)
+ * switch to the derived monthly SLA when this says `real: false`. Decided here
+ * once so every consumer applies the same rule.
+ */
+export interface SlaSource {
+  real: boolean;
+  slas: number;
+  services: number;
+}
+
+export async function getSlaSource(): Promise<SlaSource> {
+  const [slas, count] = await Promise.all([
+    cached('sla', 60_000, getSlas),
+    zbx<string>('service.get', { countOutput: true }),
+  ]);
+  const services = Number(count) || 0;
+  const enabled = slas.filter((s) => s.status !== '0');
+  let real = false;
+  if (services > 0) {
+    const slis = await Promise.all(
+      enabled.map((s) => cached(`sli:${s.slaid}:all`, 60_000, () => getSli(s.slaid)).catch(() => [])),
+    );
+    real = slis.some((rows) => rows.length > 0);
+  }
+  return { real, slas: slas.length, services };
+}
+
 export async function slaRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/sla/source', () => cached('sla:source', 60_000, getSlaSource));
+
   app.get('/api/sla', () => cached('sla', 60_000, getSlas));
 
   app.get('/api/sla/sli', (req) => {

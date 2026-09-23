@@ -1,4 +1,4 @@
-// HCML palette — primary #0067B1, Inter font (loaded in index.html), rounded cards.
+// HCML palette, primary #0067B1, Inter font (loaded in index.html), rounded cards.
 export const theme = {
   primary: '#0067B1',
   primaryDark: '#004A80',
@@ -12,7 +12,7 @@ export const theme = {
   ok: '#0067B1',
 };
 
-// Zabbix severities 0..5 — names + colors matching Zabbix's own palette.
+// Zabbix severities 0..5, names + colors matching Zabbix's own palette.
 export const SEVERITIES = [
   { level: 0, name: 'Not classified', color: '#97AAB3' },
   { level: 1, name: 'Information', color: '#7499FF' },

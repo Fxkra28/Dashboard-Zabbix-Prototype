@@ -1,10 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { zbx } from '../zabbix.js';
 import { cached } from '../cache.js';
+import { config } from '../config.js';
+import { getDerivedServices } from '../sli/tree.js';
+import { currentMonth, parseMonth } from '../sli/time.js';
+import { parseProfile } from './sli.js';
 
 /**
  * Services tree (plan_1.2 Phase 2, HCML Goal 2). This is the portal's answer to
- * HCML's stated core problem — *"monitoring is still device-centric and
+ * HCML's stated core problem: *"monitoring is still device-centric and
  * reactive; the target is service-centric and proactive."*
  *
  * Zabbix already computes service status and attributes the problems that
@@ -74,13 +78,21 @@ async function slaByService(): Promise<Record<string, ServiceSla>> {
     output: ['slaid', 'name', 'slo'],
   });
 
-  const out: Record<string, ServiceSla> = {};
-  for (const sla of slas) {
-    const sli = await zbx<{
-      serviceids: (string | number)[];
-      sli: { sli: number; error_budget: number }[][];
-    }>('sla.getsli', { slaid: sla.slaid, periods: 1 });
+  // One sla.getsli per SLA, fetched together instead of one after another (the
+  // loop used to await each in turn, so N SLAs cost N round-trips in series).
+  // Results are still walked in sla.get order, so "first SLA wins" holds.
+  const slis = await Promise.all(
+    slas.map((sla) =>
+      zbx<{
+        serviceids: (string | number)[];
+        sli: { sli: number; error_budget: number }[][];
+      }>('sla.getsli', { slaid: sla.slaid, periods: 1 }),
+    ),
+  );
 
+  const out: Record<string, ServiceSla> = {};
+  for (const [idx, sla] of slas.entries()) {
+    const sli = slis[idx];
     const row = sli?.sli?.[0] ?? [];
     (sli?.serviceids ?? []).forEach((rawId, i) => {
       const serviceid = String(rawId);
@@ -117,7 +129,7 @@ export async function getServiceTree(): Promise<ServicesResponse> {
 
   /**
    * Returns the node plus the set of DISTINCT service ids beneath it. Services
-   * form a DAG — a shared dependency legitimately appears under two parents —
+   * form a DAG (a shared dependency legitimately appears under two parents)
    * so counting tree positions would report it twice.
    */
   const build = (
@@ -162,7 +174,7 @@ export async function getServiceTree(): Promise<ServicesResponse> {
     return { node, ids: below };
   };
 
-  // Roots are the services nothing else contains — the top-level business view.
+  // Roots are the services nothing else contains: the top-level business view.
   const roots = services
     .filter((s) => !(s.parents ?? []).length)
     .sort((a, b) => Number(a.sortorder) - Number(b.sortorder) || a.name.localeCompare(b.name));
@@ -179,4 +191,12 @@ export async function getServiceTree(): Promise<ServicesResponse> {
 
 export async function serviceRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/services', () => cached('services:tree', 30_000, getServiceTree));
+
+  // The tree built from the estate itself, for a Zabbix with no services
+  // configured (sli/tree.ts). ?month=YYYY-MM&profile=availability|hcml-report
+  app.get('/api/services/derived', (req) => {
+    const q = req.query as { month?: string; profile?: string };
+    const month = q.month ? parseMonth(q.month) : currentMonth(config.sla.timezone);
+    return getDerivedServices(month, parseProfile(q.profile));
+  });
 }

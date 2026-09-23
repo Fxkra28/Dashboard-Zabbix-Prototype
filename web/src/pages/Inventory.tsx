@@ -44,7 +44,10 @@ function gapsCsv(data: ScorecardResponse): string {
     ...data.gaps.map((g) => [g.name, g.site, g.groups.join(' | '), g.missing.join(' | ')]),
   ];
   return rows
-    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    // A cell starting with = + - or @ is run as a formula when the file is opened
+    // in Excel or Sheets, quotes or not. Prefixing ' makes it plain text; host
+    // names and group labels come from Zabbix, which anyone with config access can set.
+    .map((r) => r.map((c) => `"${String(c).replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"`).join(','))
     .join('\n');
 }
 
@@ -68,7 +71,13 @@ export default function Inventory() {
   }, [q.data, filter]);
 
   return (
-    <Async loading={q.loading} error={q.error} data={q.data} loadingLabel="Scoring the estate…">
+    <Async
+      loading={q.loading}
+      error={q.error}
+      data={q.data}
+      updatedAt={q.updatedAt}
+      loadingLabel="Scoring the estate…"
+    >
       {(data) => (
         <>
           <div className="score-hero">

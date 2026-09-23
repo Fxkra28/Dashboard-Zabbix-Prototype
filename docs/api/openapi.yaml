@@ -1,0 +1,2092 @@
+openapi: 3.1.0
+
+# Written 22 September 2026 by reading server/src, not by transcribing setup.md §5: that table
+# drifted twice (DOC-14, DOC-15) precisely because nothing checked it against the code.
+#
+# `server/scripts/openapi.check.ts` now set-compares the `paths:` below against every app.get/app.post
+# registration in server/src and fails if either side gains or loses one. Run it after touching either.
+#
+# The two copies of this file differ in exactly one line: the `servers:` port, 8081 here and 8082 in
+# hcml-portal-ollama. Everything else must stay byte-identical.
+
+info:
+  title: HCML Monitoring Portal (BFF)
+  version: 1.0.0
+  summary: A read-only backend-for-frontend over the Zabbix 7.0 JSON-RPC API.
+  description: |
+    The portal owns **no database**. Every response below is either passed through from Zabbix or
+    derived in-process and cached in a 500-entry LRU that is lost on restart. Sites, links,
+    incidents, host reachability and the monthly SLA have no table anywhere.
+
+    **One write exists** in the whole surface: `POST /api/problems/acknowledge`. It uses a separate
+    write-capable Zabbix token and is refused with 503 when that token is unset.
+
+    ### Authentication
+
+    Two schemes, and both work on every guarded path:
+
+    - `Authorization: Bearer <jwt>`, the normal one, from `POST /api/auth/login`. 12-hour expiry.
+    - `?token=<jwt>`: a query-string alternative. It exists because `EventSource` cannot set a
+      header, but `auth.ts:129-132` reads it on **every** `/api/*` request, not only the SSE ones.
+      `logging.ts` redacts it from the request log.
+
+    When `AUTH_ENABLED=false` no route is guarded at all and every caller is treated as `admin`.
+
+    ### Roles
+
+    OpenAPI cannot express a role requirement per path, so each operation states its role in the
+    description. From `ROUTE_RULES` (`server/src/auth.ts:35-40`), first match wins, unmatched is
+    `viewer`:
+
+    | Role | Paths |
+    |---|---|
+    | `admin` | `/api/reports/inventory` |
+    | `operator` | `/api/links`, `/api/net/*`, `POST /api/problems/acknowledge` |
+    | `viewer` | everything else |
+
+    ### Errors
+
+    Every error, at every status, is exactly `{ "error": string, "message": string }`. There is no
+    `statusCode` in the body and no other field.
+
+    Two pairs are easy to conflate and are deliberately different:
+
+    - A rejected **portal JWT** is `401 unauthorized`. A rejected **Zabbix API token** is
+      `503 zabbix_auth`. Different tokens, different codes.
+    - An unreachable or erroring Zabbix is `502 zabbix_error`; a Zabbix that does not answer within
+      `ZABBIX_TIMEOUT_MS` is `503 zabbix_timeout`. **Nothing in this server ever returns 504.**
+
+    ### Compression
+
+    JSON responses of 1024 bytes or more are compressed with brotli (quality 4) or gzip (level 6);
+    brotli wins ties. `Vary: Accept-Encoding` is set on every eligible JSON response whether or not
+    compression actually happened. The two SSE paths bypass the hook entirely.
+
+    ### Stale answers
+
+    Four key families are served with `staleIfError`: `/api/reports/availability`,
+    `/api/reports/noise`, `/api/reports/capacity` and `/api/sli`. On an upstream failure these return
+    **200 with data of any age** rather than 502/503. A client cannot tell fresh from stale by status
+    code alone.
+  contact:
+    name: HCML Monitoring Portal
+    url: https://github.com/Fxkra28/Dashboard-Zabbix-Prototype
+
+servers:
+  - url: http://localhost:4000
+    description: BFF directly, local development
+  - url: http://localhost:8081/bff
+    description: Through nginx in the Docker deployment
+
+tags:
+  - name: Meta
+    description: Health and authentication. Registered before the auth guard, so never guarded.
+  - name: Hosts
+    description: Hosts, groups, items and latest values. `server/src/routes/hosts.ts`
+  - name: Problems
+    description: Open problems and the live stream.
+  - name: History
+    description: Raw history, hourly trends and the downsampled graph series.
+  - name: Network
+    description: Devices, interfaces and ports. **operator.** `server/src/routes/net.ts`
+  - name: Reports
+    description: Top triggers, stats, availability, noise, aging, capacity, inventory.
+  - name: Sites
+    description: The derived site view. No Zabbix entity corresponds to a site.
+  - name: Services
+    description: Zabbix-native service tree, and the portal's derived equivalent.
+  - name: SLA
+    description: Zabbix-native SLA, and the portal's derived monthly SLI.
+  - name: Maps
+    description: Zabbix network maps.
+  - name: AI
+    description: The plain-language layer. On demand only, never called on page load.
+
+security:
+  - bearerAuth: []
+  - queryToken: []
+
+paths:
+  /api/health:
+    get:
+      summary: Liveness and feature flags
+      description: |
+        The only unguarded, un-rate-limited endpoint. Registered at `index.ts:88`, *before* the auth
+        guard and in the rate limiter's allow-list, so it answers even when Zabbix is down: it makes
+        no upstream call at all.
+
+        `writeBack` tells the UI whether to render the acknowledge and close buttons.
+      operationId: getHealth
+      tags: [Meta]
+      security: []
+      responses:
+        '200':
+          description: Always.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, ts, ai, writeBack, defaults]
+                properties:
+                  ok: { type: boolean, const: true }
+                  ts: { type: integer, description: Server time, milliseconds since epoch. }
+                  ai: { type: boolean, description: Whether the plain-language layer is configured. }
+                  writeBack:
+                    type: boolean
+                    description: Whether `ZABBIX_WRITE_TOKEN` is set. False means acknowledge returns 503.
+                  defaults:
+                    type: object
+                    required: [availabilityMinSeverity]
+                    properties:
+                      availabilityMinSeverity: { type: integer, minimum: 0, maximum: 5 }
+
+  /api/auth/login:
+    post:
+      summary: Exchange credentials for a 12-hour JWT
+      description: |
+        Registered before the guard, so it is reachable unauthenticated. Rate-limited like everything
+        else, deliberately, since it is otherwise an unthrottled password oracle.
+
+        Credentials come from `PORTAL_USERS` (comma-separated `name:password:role` triples) or from
+        `PORTAL_USER`/`PORTAL_PASS` as a single-admin shorthand. **Passwords are compared in plain
+        text** (open audit item BE-13).
+      operationId: login
+      tags: [Meta]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, user]
+                properties:
+                  token: { type: string, description: 'JWT, `{ sub, role }`, 12-hour expiry.' }
+                  user: { $ref: '#/components/schemas/User' }
+        '401':
+          description: '`invalid_credentials`, no matching user, or a non-string field.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+
+  /api/auth/me:
+    get:
+      summary: Who the current token says you are
+      description: |
+        Self-verifying: registered before the guard and calls `jwtVerify()` itself. Drives the
+        sidebar's role filter, which is cosmetic: the BFF enforces with a 403 regardless.
+
+        When `AUTH_ENABLED=false` this returns `{ authEnabled: false, user: { name: "anonymous",
+        role: "admin" } }`. `user` is **never** null, despite `web/src/types.ts:194` allowing it.
+      operationId: getMe
+      tags: [Meta]
+      responses:
+        '200':
+          description: Current identity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authEnabled, user]
+                properties:
+                  authEnabled: { type: boolean }
+                  user: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/hosts:
+    get:
+      summary: Every monitored host, with its resolved site
+      description: |
+        Cached 30 s. `site` is derived by `naming.ts` from four ranked signals: tag, host name,
+        inventory, group, because **no HCML host carries a site tag**. It is null when none match.
+      operationId: getHosts
+      tags: [Hosts]
+      responses:
+        '200':
+          description: Hosts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: '#/components/schemas/ZHost'
+                    - type: object
+                      properties:
+                        site:
+                          oneOf:
+                            - $ref: '#/components/schemas/SiteRef'
+                            - type: 'null'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/hosts/overview:
+    get:
+      summary: Hosts with reachability state and problem counts
+      description: |
+        Cached 15 s. `state` is the portal's own reachability judgement (`reachability.ts`), ping
+        first, interface flags only as a fallback, on 17 Sep, 16 of 23 hosts Zabbix called
+        unavailable answered ping. `reason` records which signal decided it.
+      operationId: getHostsOverview
+      tags: [Hosts]
+      responses:
+        '200':
+          description: Hosts with derived state.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: '#/components/schemas/ZHost'
+                    - type: object
+                      required: [state, reason, problems]
+                      properties:
+                        state: { $ref: '#/components/schemas/HostState' }
+                        reason: { $ref: '#/components/schemas/StateReason' }
+                        problems: { $ref: '#/components/schemas/ProblemCounts' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/hostgroups:
+    get:
+      summary: Zabbix host groups
+      description: Straight `hostgroup.get` passthrough. Cached 60 s. 23 groups in HCML's estate.
+      operationId: getHostGroups
+      tags: [Hosts]
+      responses:
+        '200':
+          description: Groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    groupid: { type: string }
+                    name: { type: string }
+                  additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/items:
+    get:
+      summary: Items for a host, or by explicit ids
+      description: |
+        Cached 30 s. `hostid` is required **unless** `itemids` is given.
+
+        `search` is passed to Zabbix with `startSearch: true` deliberately: without it Zabbix runs
+        `LIKE '%…%'` and scans all 51,845 items at about 105 ms per call.
+      operationId: getItems
+      tags: [Hosts]
+      parameters:
+        - name: hostid
+          in: query
+          description: Required unless `itemids` is supplied. Numeric.
+          schema: { type: string, pattern: '^\d+$' }
+        - name: itemids
+          in: query
+          description: Comma-separated numeric ids, de-duplicated. **At most 50** or 400.
+          schema: { type: string }
+        - name: search
+          in: query
+          description: Prefix match on `key_`.
+          schema: { type: string }
+        - name: graphable
+          in: query
+          description: Numeric items only. Truthy for exactly `1` or `true`; anything else is false.
+          schema: { type: string, enum: ['1', 'true'] }
+      responses:
+        '200':
+          description: Items.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Item' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/latest:
+    get:
+      summary: Latest values, paged or capped
+      description: |
+        Cached 15 s. **The presence of `page` switches mode**, and the two modes differ in more than
+        pagination: paged mode searches `name` OR `key_`, un-paged searches `name` only.
+
+        With neither `hostid` nor `groupid` this returns an empty result with **200**, not 400.
+      operationId: getLatest
+      tags: [Hosts]
+      parameters:
+        - name: hostid
+          in: query
+          schema: { type: string, pattern: '^\d+$' }
+        - name: groupid
+          in: query
+          schema: { type: string, pattern: '^\d+$' }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          description: Presence switches to paged mode.
+          schema: { type: integer, minimum: 1, maximum: 1000000 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 25, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: |
+            `total`, `page` and `pageSize` are present only in paged mode. `truncated` means the cap
+            was hit: 500 rows un-paged, 20,000 ids paged.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, truncated]
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  truncated: { type: boolean }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/problems:
+    get:
+      summary: Open problems
+      description: |
+        Cached 5 s, and **never served stale**: an operator who has just acknowledged must not be
+        shown the previous list. About 664 problems at HCML, 459 kB compressing to 25 kB.
+      operationId: getProblems
+      tags: [Problems]
+      responses:
+        '200':
+          description: Open problems, newest first.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Problem' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/stream:
+    get:
+      summary: Live problem stream (SSE)
+      description: |
+        `text/event-stream`. **Exempt from the rate limit.** One shared 5 s ticker serves every
+        client; a frame is sent only when the fingerprint over
+        `eventid:severity:acknowledged:suppressed:r_eventid` changes, or after 30 s of quiet. A new
+        client receives the current frame immediately, and an acknowledge force-pushes one.
+
+        Three frame kinds:
+
+        | Frame | Payload |
+        |---|---|
+        | `event: problems` | the same array as `GET /api/problems` |
+        | `event: error` | `{ "message": string }` |
+        | `: keep-alive` | an SSE comment every 15 s, not an event |
+
+        No `id:` field is emitted, so `Last-Event-ID` resumption is not supported. Browsers cannot
+        set headers on `EventSource`, so authenticate with `?token=`.
+      operationId: streamProblems
+      tags: [Problems]
+      responses:
+        '200':
+          description: The stream opens and stays open.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/history:
+    get:
+      summary: Raw history rows for one item
+      description: |
+        Cached 15 s. The window ends at the item's newest stored clock, not at wall clock, so a stalled
+        item still returns its last real data rather than an empty range.
+
+        **No row limit is applied.** At `hours=168` on a 60 s item that is 10,080 rows.
+      operationId: getHistory
+      tags: [History]
+      parameters:
+        - name: itemid
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d+$' }
+        - name: hours
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 168, default: 1 }
+        - name: history
+          in: query
+          description: Zabbix `value_type`, 0 float, 1 char, 2 log, 3 unsigned, 4 text.
+          schema: { type: integer, minimum: 0, maximum: 4, default: 0 }
+      responses:
+        '200':
+          description: Rows as Zabbix returns them.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    itemid: { type: string }
+                    clock: { type: string }
+                    value: { type: string }
+                  additionalProperties: true
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/trend:
+    get:
+      summary: Hourly trend rows for one item
+      description: |
+        Cached 60 s. Trends are Zabbix's hourly min/avg/max aggregate and reach back about 2.2 years
+        in this dataset, against 30–90 days for raw history.
+      operationId: getTrend
+      tags: [History]
+      parameters:
+        - name: itemid
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d+$' }
+        - name: hours
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 8760, default: 168 }
+      responses:
+        '200':
+          description: Hourly aggregates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    itemid: { type: string }
+                    clock: { type: string }
+                    num: { type: string }
+                    value_min: { type: string }
+                    value_avg: { type: string }
+                    value_max: { type: string }
+                  additionalProperties: true
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/graph:
+    get:
+      summary: Downsampled series for up to four items
+      description: |
+        Cached 15 s live, 600 s historical. **Three mutually exclusive range modes, in precedence
+        order: `month`, then `from`+`to`, then `hours`.**
+
+        Below 24 hours it reads raw history; above, hourly trends; and `source` in the response says
+        which was used. Everything is bucketed to at most `points` per series, so a 30-day graph is a
+        few tens of kB rather than 500. An explicit `null` point is inserted wherever the gap between
+        samples exceeds 3× the expected spacing, so the chart breaks the line instead of drawing
+        across a collection gap.
+      operationId: getGraph
+      tags: [History]
+      parameters:
+        - name: itemids
+          in: query
+          required: true
+          description: Comma-separated. **At most 4** or 400.
+          schema: { type: string }
+        - name: month
+          in: query
+          description: Highest precedence. A future month is 400.
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+        - name: from
+          in: query
+          description: Unix seconds. Must be paired with `to`. Range may not exceed 400 days.
+          schema: { type: integer }
+        - name: to
+          in: query
+          schema: { type: integer }
+        - name: hours
+          in: query
+          description: Used only when neither `month` nor `from`/`to` is given.
+          schema: { type: integer, minimum: 1, maximum: 8760, default: 24 }
+        - name: points
+          in: query
+          description: Target samples per series after bucketing.
+          schema: { type: integer, minimum: 200, maximum: 3000, default: 1500 }
+      responses:
+        '200':
+          description: One series per item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GraphResponse' }
+        '400':
+          description: |
+            Bad range, more than 4 items, unknown itemids, or a non-numeric item.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/net/devices:
+    get:
+      summary: Network devices with ICMP state
+      description: '**operator.** Cached 30 s. Narrowed to `NET_GROUP_IDS` when that is configured.'
+      operationId: getNetDevices
+      tags: [Network]
+      responses:
+        '200':
+          description: Devices.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/NetDevice' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/net/ports:
+    get:
+      summary: Port items for one device
+      description: '**operator.** Cached 15 s. About 1,100 rows on HCML''s core switch.'
+      operationId: getNetPorts
+      tags: [Network]
+      parameters:
+        - name: hostid
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d+$' }
+      responses:
+        '200':
+          description: Raw `item.get` rows.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/net/interfaces:
+    get:
+      summary: Interfaces for one device, searched then filtered then paged
+      description: |
+        **operator.** Cached 15 s.
+
+        Order matters and is observable: `search` is applied first, `summary` is computed over the
+        searched set, *then* `status` filters, *then* the page is sliced. So `summary` counts more
+        rows than `rows` contains whenever `status` is set.
+
+        **`status` fails silently.** Any value outside the enum is treated as no filter rather than
+        rejected with 400.
+      operationId: getNetInterfaces
+      tags: [Network]
+      parameters:
+        - name: hostid
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d+$' }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 10, maximum: 1000, default: 200 }
+        - name: search
+          in: query
+          description: Case-insensitive substring of `name` or `alias`.
+          schema: { type: string }
+        - name: status
+          in: query
+          description: An unrecognised value is ignored, not rejected.
+          schema: { type: string, enum: [up, down, other] }
+      responses:
+        '200':
+          description: One page of interfaces.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows, total, summary, page, pageSize]
+                properties:
+                  rows: { type: array, items: { $ref: '#/components/schemas/InterfaceRow' } }
+                  total: { type: integer }
+                  summary:
+                    type: object
+                    required: [up, down, other]
+                    properties:
+                      up: { type: integer }
+                      down: { type: integer }
+                      other: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/net/status:
+    get:
+      summary: Interface status items for one device
+      description: '**operator.** Cached 15 s. Not called by the web app today.'
+      operationId: getNetStatus
+      tags: [Network]
+      parameters:
+        - name: hostid
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d+$' }
+      responses:
+        '200':
+          description: Raw `item.get` rows.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/net/map:
+    get:
+      summary: One Zabbix map, for the network view
+      description: '**operator. Not cached.** Not called by the web app today.'
+      operationId: getNetMap
+      tags: [Network]
+      parameters:
+        - name: mapid
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d+$' }
+      responses:
+        '200':
+          description: Raw `map.get` result.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/top-triggers:
+    get:
+      summary: The triggers that fired most often
+      description: |
+        Cached 60 s. Reads at most 10,000 events and returns the top 100; `truncated` says the cap
+        was hit, which it will be for large `days`.
+      operationId: getTopTriggers
+      tags: [Reports]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 7 }
+      responses:
+        '200':
+          description: Ranked triggers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [triggers, truncated, days]
+                properties:
+                  triggers:
+                    type: array
+                    items:
+                      type: object
+                      required: [objectid, name, severity, host, count]
+                      properties:
+                        objectid: { type: string }
+                        name: { type: string }
+                        severity: { type: string }
+                        host: { type: string }
+                        count: { type: integer }
+                  truncated: { type: boolean }
+                  days: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/stats:
+    get:
+      summary: Estate counts for the dashboard tiles
+      description: Cached 30 s. Four count-only Zabbix calls in parallel plus the shared problem list.
+      operationId: getStats
+      tags: [Reports]
+      responses:
+        '200':
+          description: Counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [hosts, items, triggers, groups, problems, unacknowledged, bySeverity]
+                properties:
+                  hosts: { type: integer }
+                  items: { type: integer }
+                  triggers: { type: integer }
+                  groups: { type: integer }
+                  problems: { type: integer }
+                  unacknowledged: { type: integer }
+                  bySeverity: { type: object, additionalProperties: { type: integer } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/problems-by-group:
+    get:
+      summary: Open problems per host group
+      description: Cached 15 s. Groups with no problems are omitted; the rest are sorted descending.
+      operationId: getProblemsByGroup
+      tags: [Reports]
+      responses:
+        '200':
+          description: Groups carrying at least one problem.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [groupid, name, total, bySeverity]
+                  properties:
+                    groupid: { type: string }
+                    name: { type: string }
+                    total: { type: integer }
+                    bySeverity: { type: object, additionalProperties: { type: integer } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/availability:
+    get:
+      summary: Per-host availability over a window
+      description: |
+        Cached 120 s **with `staleIfError`**: an upstream failure returns 200 with old data.
+
+        **Two bases with materially different responses.** With `basis=availability` (the default)
+        the derived SLI engine runs and `overall`, `categories`, `sites`, `target`, `profile` and
+        `gaps` are all present. With `basis=all-problems` none of them are, and each host carries
+        only its id, name, availability, downtime, incidents and longest outage.
+
+        `month` takes precedence over `days`. A month that has not started is 400, and so is one
+        more than 400 days ago, Zabbix keeps events about a year.
+      operationId: getAvailabilityReport
+      tags: [Reports]
+      parameters:
+        - name: basis
+          in: query
+          schema: { type: string, enum: [availability, all-problems], default: availability }
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 7 }
+        - name: severity
+          in: query
+          description: Minimum severity. Defaults to `AVAILABILITY_MIN_SEVERITY`, normally 2.
+          schema: { type: integer, minimum: 0, maximum: 5 }
+        - name: month
+          in: query
+          description: Takes precedence over `days`.
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+        - name: profile
+          in: query
+          description: Ignored when `basis=all-problems`.
+          schema: { type: string, enum: [availability, hcml-report] }
+      responses:
+        '200':
+          description: Availability report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AvailabilityReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/noise:
+    get:
+      summary: Flapping, chronic and unactioned triggers
+      description: |
+        Cached 120 s with `staleIfError`. Note `severity` defaults to **0** here, not 2 as on the
+        availability report. `top` cuts the returned list only: every aggregate above it covers all
+        triggers, and `total` says how many there were.
+      operationId: getNoiseReport
+      tags: [Reports]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 7 }
+        - name: severity
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 5, default: 0 }
+        - name: top
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: Noise report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NoiseReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/aging:
+    get:
+      summary: How long unacknowledged problems have been open
+      description: |
+        Cached 15 s. `buckets` is always exactly four, labelled `Under 1h`, `1–4h`, `4–24h`,
+        `Over 24h`.
+      operationId: getAgingReport
+      tags: [Reports]
+      responses:
+        '200':
+          description: Aging buckets.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgingReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/capacity:
+    get:
+      summary: Average and peak utilisation per item
+      description: |
+        Cached 300 s with `staleIfError`. **The heaviest endpoint in the portal.** At `days=365` it
+        issues roughly 112 Zabbix calls, because `trend.get` is sliced to keep Zabbix's PHP within
+        its memory limit, and each call costs about 20 SQL statements upstream, 10,771 in total,
+        measured 22 Sep.
+
+        `avg` is the unweighted mean of the hourly averages, not a sample-weighted mean.
+      operationId: getCapacityReport
+      tags: [Reports]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 7 }
+        - name: top
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: One group per metric.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CapacityReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/inventory:
+    get:
+      summary: Naming, site, owner and criticality completeness
+      description: |
+        **admin: the only admin-gated path.** Cached 60 s, and the cheapest heavy report: exactly
+        one Zabbix call, everything else computed in process.
+
+        `dimensions` always has four entries in the order `naming`, `site`, `owner`, `criticality`.
+        `scored: false` means the deployment has not configured that check.
+      operationId: getInventoryScorecard
+      tags: [Reports]
+      responses:
+        '200':
+          description: Scorecard.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScorecardResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/links:
+    get:
+      summary: WAN links and paths, from ICMP item triplets
+      description: |
+        **operator.** Cached 20 s.
+
+        A "link" is not a Zabbix entity. It is synthesised from the `icmpping`, `icmppingloss` and
+        `icmppingsec` items on a host, paired into a path by the `link_group` item tag. `jitter` is
+        max minus min RTT and appears only where min/max-mode items exist. The portal never speaks
+        ICMP itself, Zabbix polls, this reads the items.
+      operationId: getLinks
+      tags: [Network]
+      responses:
+        '200':
+          description: Links, paths and thresholds.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LinksResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/sites:
+    get:
+      summary: Hosts grouped into sites
+      description: |
+        Cached 15 s. **Zabbix has no site entity.** `naming.ts` resolves one from four ranked
+        signals, tag, host name, inventory, group, and `coverage` reports how many hosts each
+        signal accounted for, which is the metric for the standardisation goal.
+      operationId: getSites
+      tags: [Sites]
+      responses:
+        '200':
+          description: Sites with their hosts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SitesResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/services:
+    get:
+      summary: Zabbix-native service tree
+      description: |
+        Cached 30 s. Recursive, depth-capped at 12, and de-duplicated by `serviceid` because a shared
+        dependency legitimately appears under two parents: it is a DAG, not a tree.
+
+        **At HCML this returns an empty tree**: the `services` table has zero rows. Use
+        `/api/sla/source` to decide whether to render this or the derived equivalent.
+      operationId: getServices
+      tags: [Services]
+      responses:
+        '200':
+          description: Service tree.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicesResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/services/derived:
+    get:
+      summary: The portal's own service tree
+      description: |
+        Cached 30 s. Deliberately emits the same shape as `/api/services` plus extra fields, so one
+        component renders either. Builds root → business services → sites → device class → hosts,
+        each node carrying the derived monthly SLA for its subtree.
+      operationId: getDerivedServices
+      tags: [Services]
+      parameters:
+        - name: month
+          in: query
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+        - name: profile
+          in: query
+          schema: { type: string, enum: [availability, hcml-report] }
+      responses:
+        '200':
+          description: Derived tree.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DerivedServicesResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/sla/source:
+    get:
+      summary: Whether Zabbix's own SLA has anything in it
+      description: |
+        Cached 60 s. `real: false` tells the UI to switch to the derived SLA. **At HCML it is always
+        false**: one placeholder SLA object, no services, nothing attached.
+      operationId: getSlaSource
+      tags: [SLA]
+      responses:
+        '200':
+          description: Source decision.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [real, slas, services]
+                properties:
+                  real: { type: boolean }
+                  slas: { type: integer }
+                  services: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/sla:
+    get:
+      summary: Zabbix SLA definitions
+      description: Cached 60 s.
+      operationId: getSlas
+      tags: [SLA]
+      responses:
+        '200':
+          description: SLA objects.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ZbxSla' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/sla/sli:
+    get:
+      summary: Zabbix-computed SLI per service
+      description: |
+        Cached 60 s.
+
+        **Inconsistency worth knowing:** neither parameter is validated here. Omitting `slaid`
+        returns `[]` with **200**, whereas `/api/explain/sla` rejects the same omission with 400.
+        This is the only id-taking route in the BFF without numeric validation.
+      operationId: getSlaSli
+      tags: [SLA]
+      parameters:
+        - name: slaid
+          in: query
+          description: Not validated. Missing gives an empty array and 200.
+          schema: { type: string }
+        - name: serviceid
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: One entry per service.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SlaSli' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/sli:
+    get:
+      summary: The portal's derived monthly SLA
+      description: |
+        Cached **24 h for a closed month, 5 min for the current one**, both with `staleIfError`. The
+        cache key carries the closed flag, so a figure computed mid-month is never kept as that
+        month's final answer.
+
+        Two profiles. `hcml-report` reproduces HCML's own published Availability Report and is
+        validated against it to the digit, 99.3796 % for June 2026, 99.7167 % July, 99.2313 %
+        August, 138 of 138 hosts within 60 seconds. `availability` is the stricter figure, and costs
+        roughly 20 Zabbix calls against the report profile's 6 because it also checks per-hour
+        collection coverage from trends.
+      operationId: getSli
+      tags: [SLA]
+      parameters:
+        - name: month
+          in: query
+          description: Defaults to the current month in `Asia/Jakarta`.
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+        - name: profile
+          in: query
+          schema: { type: string, enum: [availability, hcml-report] }
+      responses:
+        '200':
+          description: The monthly report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SliReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/maps:
+    get:
+      summary: Zabbix maps
+      description: Cached 60 s.
+      operationId: getMaps
+      tags: [Maps]
+      responses:
+        '200':
+          description: Map list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    sysmapid: { type: string }
+                    name: { type: string }
+                    width: { type: string }
+                    height: { type: string }
+                  additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/maps/detail:
+    get:
+      summary: One map with its elements resolved
+      description: |
+        Cached 30 s. **Returns an array, not a single object.** Each element is the raw Zabbix
+        selement spread with a macro-expanded `labelText`, and for host elements also `hostid`,
+        `hostName`, `problems` and `maxSeverity`.
+
+        The shape is open by construction: the handler spreads whatever Zabbix returns.
+      operationId: getMapDetail
+      tags: [Maps]
+      parameters:
+        - name: mapid
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d+$' }
+      responses:
+        '200':
+          description: Map detail.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/explain/problem:
+    get:
+      summary: Plain-language explanation of one problem
+      description: |
+        Cached **1 h**, keyed by the event id together with its acknowledged and resolved state, so
+        an explanation is not reused after the problem changes.
+
+        Buffered JSON, not streamed. This path sends the host name, trigger name, opdata, severity,
+        start time, flags and the problem's tags to the model: in `hcml-portal` that means they
+        leave the machine.
+      operationId: explainProblem
+      tags: [AI]
+      parameters:
+        - name: eventid
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d+$' }
+      responses:
+        '200':
+          description: The explanation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemExplanation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: '`not_found`, no open problem with that event id.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '502': { $ref: '#/components/responses/AiError' }
+        '503': { $ref: '#/components/responses/AiUnavailable' }
+
+  /api/explain/sla:
+    get:
+      summary: Plain-language explanation of an SLA figure
+      description: |
+        Cached 300 s. **Two mutually exclusive modes.**
+
+        With `source=derived` it explains the portal's own monthly figure and takes `month`,
+        `profile` and `scope`, where scope is `overall`, `site:<code>` or `category:<NAME>`; an
+        unmatched scope is 404. Otherwise it explains a Zabbix-native SLA and requires `slaid`.
+
+        `noData: true` marks an answer produced **without calling the model** because there was
+        nothing to measure.
+      operationId: explainSla
+      tags: [AI]
+      parameters:
+        - name: source
+          in: query
+          description: '`derived` selects the portal''s figure. Any other value selects Zabbix''s.'
+          schema: { type: string, enum: [derived] }
+        - name: month
+          in: query
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+        - name: profile
+          in: query
+          schema: { type: string, enum: [availability, hcml-report] }
+        - name: scope
+          in: query
+          schema: { type: string, default: overall }
+        - name: slaid
+          in: query
+          description: Required when `source` is not `derived`.
+          schema: { type: string, pattern: '^\d+$' }
+        - name: serviceid
+          in: query
+          schema: { type: string, pattern: '^\d+$' }
+      responses:
+        '200':
+          description: The explanation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SlaAnswer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: '`not_found`, unknown scope, or unknown `slaid`.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '502': { $ref: '#/components/responses/AiError' }
+        '503': { $ref: '#/components/responses/AiUnavailable' }
+
+  /api/chat/warm:
+    get:
+      summary: Ask the model backend to load
+      description: |
+        Fire and forget. Returns **202** immediately and does the work detached: the only 202 in
+        the API.
+
+        On the hosted provider this is a no-op, so the warm-up costs nothing; on a local model it
+        loads the weights so the first real question is not paying for a cold start.
+      operationId: warmChat
+      tags: [AI]
+      responses:
+        '202':
+          description: Warming started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [warming]
+                properties:
+                  warming: { type: boolean, const: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503':
+          description: '`ai_disabled`.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /api/chat:
+    post:
+      summary: Ask the assistant (SSE)
+      description: |
+        `text/event-stream`, streamed token by token, **never cached**.
+
+        The request body is normalised rather than strictly validated: blank turns are dropped, each
+        turn is silently truncated at 2,000 characters, and the oldest turns are dropped until the
+        whole history fits a 3,000-character budget. What *is* rejected with 400: a non-array or
+        empty `messages`, a bad `role`, a non-string `content`, or a conversation not ending in a
+        user turn.
+
+        Four event names:
+
+        | Event | Payload |
+        |---|---|
+        | `context` | the estate snapshot's metadata, counts and a `truncated` flag |
+        | `token` | `{ "t": string }`, concatenate in order |
+        | `done` | `{ ms, text, firstTokenMs }`, `text` is the cleaned answer and **replaces** the concatenated tokens |
+        | `error` | `{ "message": string }` |
+
+        Once the response is hijacked the HTTP status can no longer change, so failures after that
+        point arrive as an `error` frame on a 200.
+      operationId: chat
+      tags: [AI]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [role, content]
+                    properties:
+                      role: { type: string, enum: [user, assistant] }
+                      content: { type: string }
+      responses:
+        '200':
+          description: The stream opens.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503':
+          description: '`ai_disabled`.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /api/problems/acknowledge:
+    post:
+      summary: Acknowledge and optionally close problems
+      description: |
+        **operator. The only write in the entire portal.**
+
+        Three independent gates: a separate `ZABBIX_WRITE_TOKEN` (the read token can never write),
+        the operator role, and a 503 when the write token is unset. `GET /api/health` exposes
+        `writeBack` so the UI can hide the buttons rather than offer a call that will fail.
+
+        Closing additionally requires the trigger to permit manual close; `GET /api/problems` carries
+        `manualClose` per problem so the UI never offers a Close that Zabbix will reject.
+
+        After a successful write nine cache prefixes are invalidated with a 15 s hold, and the change
+        is pushed immediately to every open SSE client.
+
+        `message` is silently truncated at 2,048 characters. `acknowledge` defaults to **true**.
+      operationId: acknowledgeProblems
+      tags: [Problems]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventids]
+              properties:
+                eventids:
+                  description: One id or an array. Non-string members are dropped silently.
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items: { type: string, pattern: '^\d+$' }
+                message: { type: string, maxLength: 2048 }
+                close: { type: boolean, default: false }
+                acknowledge: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Written. `action` is the Zabbix bitmask, close 1, acknowledge 2, message 4.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, eventids, action]
+                properties:
+                  ok: { type: boolean, const: true }
+                  eventids: { type: array, items: { type: string } }
+                  action: { type: integer }
+        '400':
+          description: |
+            No usable event ids, a non-numeric id, or nothing to do: `acknowledge: false` with no
+            `close` and no `message`.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503':
+          description: '`zabbix_write_disabled`, `ZABBIX_WRITE_TOKEN` is not set.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: The normal scheme. 12-hour expiry, carries `{ sub, role }`.
+    queryToken:
+      type: apiKey
+      in: query
+      name: token
+      description: |
+        The same JWT in the query string. Required for `EventSource`, which cannot set headers, but
+        accepted on **every** guarded path. Kept out of the request log by `logging.ts`.
+
+  responses:
+    BadRequest:
+      description: '`bad_request`, a parameter failed validation.'
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: '`unauthorized`, missing or expired portal JWT. Not the same as `zabbix_auth`.'
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: '`forbidden`, authenticated, but the role is below what this path requires.'
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    PayloadTooLarge:
+      description: Body over Fastify's 1 MiB default.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    RateLimited:
+      description: 300 requests per minute per client. `/api/health` and `/api/stream` are exempt.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Internal:
+      description: '`internal`. The message is fixed; the detail is in the BFF log only.'
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    ZabbixError:
+      description: '`zabbix_error`, unreachable, non-2xx, non-JSON-RPC, or a JSON-RPC error.'
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    ZabbixUnavailable:
+      description: |
+        `zabbix_timeout` (no answer within `ZABBIX_TIMEOUT_MS`, default 10 s) or `zabbix_auth` (Zabbix
+        rejected the API token). Both are configuration states rather than upstream faults, which is
+        why they are 503 and not 504.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    AiError:
+      description: '`ai_error`, the model answered, but not usably.'
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    AiUnavailable:
+      description: |
+        `ai_disabled` (not configured) or `ai_busy` (the single concurrency slot is taken: carries
+        `Retry-After: 10`).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      description: The only error shape this server produces, at every status.
+      properties:
+        error: { type: string, description: A stable machine-readable code. }
+        message: { type: string, description: Safe to show a user. Never contains the Zabbix URL. }
+
+    User:
+      type: object
+      required: [name, role]
+      properties:
+        name: { type: string }
+        role: { type: string, enum: [viewer, operator, admin] }
+
+    SiteRef:
+      type: object
+      description: A resolved site. No Zabbix entity corresponds to this.
+      properties:
+        code: { type: string }
+        name: { type: string }
+      additionalProperties: true
+
+    HostState:
+      type: string
+      enum: [up, down, degraded, nodata, disabled]
+      description: The portal's reachability judgement, ping first.
+
+    StateReason:
+      type: string
+      enum: [ping, interface, snmp-silent, agent-silent, stale, no-interface, unsupported, disabled]
+      description: Which signal decided `HostState`. Provenance, so a wrong call can be traced.
+
+    ProblemCounts:
+      type: object
+      required: [total, bySeverity]
+      properties:
+        total: { type: integer }
+        bySeverity: { type: object, additionalProperties: { type: integer } }
+
+    ZHost:
+      type: object
+      properties:
+        hostid: { type: string }
+        name: { type: string }
+        status: { type: string }
+        maintenance_status: { type: string }
+        interfaces:
+          type: array
+          items: { type: object, additionalProperties: true }
+      additionalProperties: true
+
+    Item:
+      type: object
+      properties:
+        itemid: { type: string }
+        hostid: { type: string }
+        name: { type: string }
+        key_: { type: string }
+        value_type: { type: string }
+        units: { type: string }
+        delay: { type: string }
+        status: { type: string }
+        state: { type: string }
+        lastvalue: { type: string }
+        lastclock: { type: string }
+        tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+      additionalProperties: true
+
+    Tag:
+      type: object
+      required: [tag, value]
+      properties:
+        tag: { type: string }
+        value: { type: string }
+
+    Problem:
+      type: object
+      required: [eventid, objectid, object, name, severity, clock, acknowledged]
+      properties:
+        eventid: { type: string }
+        objectid: { type: string }
+        object: { type: string, description: '`0` is a trigger.' }
+        name: { type: string }
+        severity: { type: string, enum: ['0', '1', '2', '3', '4', '5'] }
+        clock: { type: string }
+        r_eventid: { type: string, description: '`0` while still open.' }
+        r_clock: { type: string }
+        acknowledged: { type: string, enum: ['0', '1'] }
+        suppressed: { type: string, enum: ['0', '1'] }
+        opdata: { type: string }
+        tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+        host: { type: string, description: Enriched by the BFF. }
+        hostid: { type: string, description: Enriched by the BFF. }
+        manualClose:
+          type: boolean
+          description: Whether the trigger permits manual close. Gates the Close button.
+      additionalProperties: true
+
+    GraphResponse:
+      type: object
+      required: [series, from, to, source]
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        source:
+          type: string
+          enum: [history, trend, 'trend+history']
+          description: Which store answered. `trend+history` means trends stalled and raw filled the tail.
+        series:
+          type: array
+          items:
+            type: object
+            required: [itemid, name, points]
+            properties:
+              itemid: { type: string }
+              name: { type: string }
+              units: { type: string }
+              host: { type: string }
+              step: { type: boolean, description: Render as a step line, ICMP and other 0/1 series. }
+              points:
+                type: array
+                description: '`[clock, avg, min, max]`. A null `avg` is an explicit collection gap.'
+                items:
+                  type: array
+                  items:
+                    oneOf: [{ type: number }, { type: 'null' }]
+              stats:
+                oneOf:
+                  - type: object
+                    additionalProperties: true
+                  - type: 'null'
+              coverage: { type: number }
+
+    NetDevice:
+      type: object
+      required: [hostid, name, status]
+      properties:
+        hostid: { type: string }
+        name: { type: string }
+        status: { type: string }
+        site:
+          oneOf: [{ $ref: '#/components/schemas/SiteRef' }, { type: 'null' }]
+        icmp:
+          oneOf:
+            - type: object
+              properties:
+                up: { type: boolean }
+                loss: { type: number }
+                latency: { type: number }
+                state: { type: string }
+            - type: 'null'
+
+    InterfaceRow:
+      type: object
+      required: [name, oper]
+      properties:
+        name: { type: string }
+        alias: { type: string }
+        oper: { type: string, enum: [up, down, other] }
+        speed: { type: number }
+        inOctets: { type: number }
+        outOctets: { type: number }
+      additionalProperties: true
+
+    LinksResponse:
+      type: object
+      required: [links, paths, summary, thresholds]
+      properties:
+        links: { type: array, items: { $ref: '#/components/schemas/Link' } }
+        paths:
+          type: array
+          items:
+            type: object
+            required: [name, links, state]
+            properties:
+              name: { type: string }
+              links: { type: array, items: { $ref: '#/components/schemas/Link' } }
+              state: { $ref: '#/components/schemas/LinkState' }
+        summary:
+          type: object
+          required: [total, up, degraded, down, unknown]
+          properties:
+            total: { type: integer }
+            up: { type: integer }
+            degraded: { type: integer }
+            down: { type: integer }
+            unknown: { type: integer }
+        thresholds:
+          type: object
+          required: [lossWarn, lossCrit]
+          description: Echoes `LINK_LOSS_WARN` / `LINK_LOSS_CRIT`, default 2 and 10 percent.
+          properties:
+            lossWarn: { type: number }
+            lossCrit: { type: number }
+
+    LinkState:
+      type: string
+      enum: [up, degraded, down, unknown]
+
+    Link:
+      type: object
+      required: [id, hostid, host, target, label, state]
+      properties:
+        id: { type: string, description: '`<hostid>:<target>`.' }
+        hostid: { type: string }
+        host: { type: string }
+        target: { type: string }
+        label: { type: string }
+        up: { type: boolean }
+        loss: { type: number, description: Percent. }
+        latency: { type: number, description: Milliseconds. Zabbix stores seconds. }
+        jitter: { type: number, description: Max minus min RTT, milliseconds. }
+        state: { $ref: '#/components/schemas/LinkState' }
+        group: { type: string, description: From the `link_group` item tag. }
+        role: { type: string, description: From the `link_role` item tag. }
+        lastclock: { type: string }
+
+    SitesResponse:
+      type: object
+      required: [sites, coverage]
+      properties:
+        sites: { type: array, items: { $ref: '#/components/schemas/Site' } }
+        coverage:
+          type: object
+          required: [hosts, tag, name, inventory, group]
+          description: How many hosts each site signal accounted for. The standardisation metric.
+          properties:
+            hosts: { type: integer }
+            tag: { type: integer }
+            name: { type: integer }
+            inventory: { type: integer }
+            group: { type: integer }
+
+    Site:
+      type: object
+      required:
+        [name, total, available, unavailable, unknown, up, down, degraded, nodata,
+         maintenance, disabled, problems, unacknowledged, bySeverity, worst, hosts]
+      properties:
+        name: { type: string }
+        total: { type: integer }
+        available: { type: integer, description: By interface flags, as before `state` existed. }
+        unavailable: { type: integer }
+        unknown: { type: integer }
+        up: { type: integer, description: By derived `state`. Disabled hosts count only in `disabled`. }
+        down: { type: integer }
+        degraded: { type: integer }
+        nodata: { type: integer }
+        maintenance: { type: integer }
+        disabled: { type: integer }
+        problems: { type: integer }
+        unacknowledged: { type: integer }
+        bySeverity: { type: object, additionalProperties: { type: integer } }
+        worst: { type: integer, description: Highest severity firing here; -1 when clear. }
+        hosts: { type: array, items: { $ref: '#/components/schemas/SiteHost' } }
+
+    SiteHost:
+      type: object
+      required: [hostid, name, status, availability, state, reason, siteSource, problems]
+      properties:
+        hostid: { type: string }
+        name: { type: string }
+        status: { type: string }
+        maintenance_status: { type: string }
+        interfaces:
+          type: array
+          items:
+            type: object
+            required: [ip]
+            properties:
+              ip: { type: string }
+              type: { type: string }
+              available: { type: string }
+        availability: { type: string, enum: [available, unavailable, unknown] }
+        state: { $ref: '#/components/schemas/HostState' }
+        reason: { $ref: '#/components/schemas/StateReason' }
+        siteSource: { type: string, enum: [tag, name, inventory, group] }
+        problems: { $ref: '#/components/schemas/ProblemCounts' }
+
+    ServicesResponse:
+      type: object
+      required: [tree, total, degraded, worst]
+      properties:
+        tree: { type: array, items: { $ref: '#/components/schemas/ServiceNode' } }
+        total: { type: integer }
+        degraded: { type: integer }
+        worst: { type: integer, description: Worst status anywhere; -1 when everything is fine. }
+
+    ServiceNode:
+      type: object
+      required: [serviceid, name, status, algorithm, tags, problems, children, worst, descendants]
+      description: Recursive, depth-capped at 12. De-duplicated by `serviceid`, the graph is a DAG.
+      properties:
+        serviceid: { type: string }
+        name: { type: string }
+        status: { type: integer, description: '-1 is OK; otherwise the severity that propagated up.' }
+        algorithm: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+        problems:
+          type: array
+          items:
+            type: object
+            properties:
+              eventid: { type: string }
+              name: { type: string }
+              severity: { type: string }
+        sla:
+          type: object
+          required: [slaid, name, slo, sli, errorBudget, meeting]
+          properties:
+            slaid: { type: string }
+            name: { type: string }
+            slo: { type: number }
+            sli: { type: number }
+            errorBudget: { type: number, description: Seconds still absorbable; negative means missed. }
+            meeting: { type: boolean }
+        children: { type: array, items: { $ref: '#/components/schemas/ServiceNode' } }
+        worst: { type: integer }
+        descendants: { type: integer }
+
+    DerivedServicesResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServicesResponse'
+        - type: object
+          required: [source, label, month, profile, target, closed, gaps]
+          properties:
+            source: { type: string, const: derived }
+            label: { type: string }
+            month: { type: string }
+            profile: { type: string, enum: [availability, hcml-report] }
+            target: { type: number }
+            closed: { type: boolean }
+            gaps: { type: array, items: { $ref: '#/components/schemas/Interval' } }
+            tree:
+              type: array
+              items:
+                allOf:
+                  - $ref: '#/components/schemas/ServiceNode'
+                  - type: object
+                    properties:
+                      kind:
+                        type: string
+                        enum: [root, business, site, class, wan-path, host, web]
+                      hostid: { type: string }
+                      dataStatus: { type: string }
+                      coverage: { oneOf: [{ type: number }, { type: 'null' }] }
+
+    Interval:
+      type: object
+      required: [from, to]
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+
+    ZbxSla:
+      type: object
+      properties:
+        slaid: { type: string }
+        name: { type: string }
+        period: { type: string }
+        slo: { type: string }
+        effective_date: { type: string }
+        timezone: { type: string }
+        status: { type: string }
+      additionalProperties: true
+
+    SlaSli:
+      type: object
+      required: [serviceid, name, sli, uptime, downtime, error_budget, period_from, period_to]
+      properties:
+        serviceid: { type: string }
+        name: { type: string }
+        sli: { type: number, description: Achieved availability, percent. }
+        uptime: { type: integer, description: Seconds. }
+        downtime: { type: integer, description: Seconds. }
+        error_budget: { type: integer, description: Seconds left before the SLO is missed. }
+        period_from: { type: integer }
+        period_to: { type: integer }
+
+    SliReport:
+      type: object
+      required:
+        [source, label, profile, month, from, to, end, closed, timezone, target, basis,
+         overall, categories, sites, classes, hosts, wanPaths, web, gaps, stats, generatedAt]
+      properties:
+        source: { type: string, const: derived }
+        label: { type: string }
+        profile: { type: string, enum: [availability, hcml-report] }
+        month: { oneOf: [{ type: string }, { type: 'null' }] }
+        from: { type: integer }
+        to: { type: integer }
+        end: { type: integer, description: '`min(to, now)`, the part of the window that has happened.' }
+        closed: { type: boolean }
+        timezone: { type: string }
+        target: { type: number }
+        basis:
+          type: object
+          required: [triggers, gapPolicy, noDataPolicy]
+          description: What the figure counts, so two profiles can be compared honestly.
+          properties:
+            triggers: { type: array, items: { type: string } }
+            gapPolicy: { type: string, enum: [counted-as-up, excluded] }
+            noDataPolicy: { type: string, enum: [counted-as-100, excluded] }
+        overall: { $ref: '#/components/schemas/SliGroup' }
+        categories: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
+        sites: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
+        classes: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
+        hosts: { type: array, items: { $ref: '#/components/schemas/SliHost' } }
+        wanPaths: { type: array, items: { type: object, additionalProperties: true } }
+        web: { type: array, items: { type: object, additionalProperties: true } }
+        gaps:
+          type: array
+          description: Estate-wide spans in which almost nothing was collected.
+          items: { $ref: '#/components/schemas/Interval' }
+        stats:
+          type: object
+          description: |
+            `zabbixCalls` under-counts: sliced `event.get` recursion is counted once, so the true
+            figure is higher whenever a window exceeds 5,000 events.
+          properties:
+            zabbixCalls: { type: integer }
+            triggers: { type: integer }
+            events: { type: integer }
+            trendRows: { type: integer }
+            ms: { type: integer }
+        generatedAt: { type: integer }
+
+    SliGroup:
+      type: object
+      required: [name, availability]
+      properties:
+        name: { type: string }
+        availability: { type: number }
+        downtime: { type: number }
+        incidents: { type: integer }
+        hosts: { type: integer }
+      additionalProperties: true
+
+    SliHost:
+      type: object
+      required: [hostid, host, availability, measured]
+      properties:
+        hostid: { type: string }
+        host: { type: string }
+        availability: { type: number }
+        downtime: { type: number }
+        incidents: { type: integer }
+        longest: { type: number }
+        measured: { type: boolean, description: Always present. `web/src/types.ts` wrongly marks it optional. }
+        coverage: { oneOf: [{ type: number }, { type: 'null' }] }
+        dataStatus: { type: string }
+        category: { type: string }
+        site: { type: string }
+      additionalProperties: true
+
+    AvailabilityReport:
+      type: object
+      required: [from, to, windowSeconds, minSeverity, hosts, truncated, basis]
+      description: |
+        `overall`, `categories`, `sites`, `target`, `profile` and `gaps` are present only when
+        `basis=availability`. `truncated` is always false: events are sliced, never silently cut.
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        windowSeconds: { type: integer }
+        minSeverity: { type: integer }
+        hosts: { type: array, items: { $ref: '#/components/schemas/SliHost' } }
+        truncated: { type: boolean }
+        basis: { type: string, enum: [availability, all-problems] }
+        profile: { type: string, enum: [availability, hcml-report] }
+        month: { oneOf: [{ type: string }, { type: 'null' }] }
+        target: { type: number }
+        overall: { $ref: '#/components/schemas/SliGroup' }
+        categories: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
+        sites: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
+        gaps: { type: array, items: { $ref: '#/components/schemas/Interval' } }
+
+    NoiseReport:
+      type: object
+      required:
+        [from, to, windowSeconds, minSeverity, truncated, totalEvents, distinctTriggers,
+         concentration, counts, thresholds, total, triggers]
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        windowSeconds: { type: integer }
+        minSeverity: { type: integer }
+        truncated: { type: boolean }
+        totalEvents: { type: integer }
+        distinctTriggers: { type: integer }
+        concentration:
+          type: object
+          description: 'The Pareto line: N triggers produced X percent of all alerts.'
+          properties:
+            topN: { type: integer }
+            percentOfEvents: { type: number }
+        counts:
+          type: object
+          properties:
+            flapping: { type: integer }
+            unactioned: { type: integer }
+            chronic: { type: integer }
+        thresholds:
+          type: object
+          properties:
+            shortSeconds: { type: integer }
+            minCount: { type: integer }
+        total: { type: integer, description: Triggers before `top` cut the list. Aggregates cover all. }
+        triggers: { type: array, items: { type: object, additionalProperties: true } }
+
+    AgingReport:
+      type: object
+      required: [buckets]
+      properties:
+        buckets:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: Always exactly four, `Under 1h`, `1–4h`, `4–24h`, `Over 24h`.
+          items:
+            type: object
+            properties:
+              label: { type: string, enum: ['Under 1h', '1–4h', '4–24h', 'Over 24h'] }
+              count: { type: integer }
+      additionalProperties: true
+
+    CapacityReport:
+      type: object
+      required: [days, metrics]
+      properties:
+        days: { type: integer }
+        metrics:
+          type: array
+          items:
+            type: object
+            required: [key, label, rows]
+            properties:
+              key:
+                type: string
+                description: 'In practice `cpu`, `memory`, `disk` or `ifutil`; typed open server-side.'
+              label: { type: string }
+              rows: { type: array, items: { $ref: '#/components/schemas/CapacityRow' } }
+
+    CapacityRow:
+      type: object
+      required: [metric, label, itemid, hostid, host, name, units, avg, max, source]
+      properties:
+        metric: { type: string }
+        label: { type: string }
+        itemid: { type: string }
+        hostid: { type: string }
+        host: { type: string }
+        name: { type: string }
+        units: { type: string }
+        avg: { type: number, description: Unweighted mean of the hourly averages. }
+        max: { type: number }
+        source: { type: string, enum: [trend, history, none] }
+
+    ScorecardResponse:
+      type: object
+      required: [dimensions, overall, groups, gaps]
+      properties:
+        dimensions:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: Always `naming`, `site`, `owner`, `criticality`, in that order.
+          items:
+            type: object
+            required: [key, label, hint, present, total, pct, scored]
+            properties:
+              key: { type: string, enum: [naming, site, owner, criticality] }
+              label: { type: string }
+              hint: { type: string, description: Interpolated from env, so not an enumerable constant. }
+              present: { type: integer }
+              total: { type: integer }
+              pct: { type: number }
+              scored: { type: boolean, description: False when this deployment has not configured the check. }
+        overall:
+          type: object
+          properties:
+            hosts: { type: integer }
+            complete: { type: integer }
+            pct: { type: number }
+        groups:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              hosts: { type: integer }
+              complete: { type: integer }
+              pct: { type: number }
+        gaps:
+          type: array
+          items:
+            type: object
+            properties:
+              hostid: { type: string }
+              name: { type: string }
+              site: { type: string }
+              groups: { type: array, items: { type: string } }
+              missing:
+                type: array
+                items: { type: string, enum: [naming, site, owner, criticality] }
+
+    ProblemExplanation:
+      type: object
+      required: [summary, tagsExplained, businessImpact, recommendation]
+      properties:
+        summary: { type: string }
+        tagsExplained:
+          type: array
+          items:
+            type: object
+            required: [tag, value, meaning]
+            properties:
+              tag: { type: string }
+              value: { type: string }
+              meaning: { type: string }
+        businessImpact: { type: string }
+        recommendation: { type: string }
+
+    SlaAnswer:
+      type: object
+      required: [status, plain, meetingTarget, recommendation]
+      properties:
+        status: { type: string }
+        plain: { type: string }
+        meetingTarget: { type: boolean }
+        recommendation: { type: string }
+        noData:
+          type: boolean
+          description: True when there was nothing to measure, so no model call was made.

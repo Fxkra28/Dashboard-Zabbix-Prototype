@@ -7,18 +7,18 @@ import { config } from './config.js';
  *
  * Every source slide in HCML's review is stamped *Private and Confidential*,
  * so an open portal is not deployable. This gates the portal's own routes with
- * a JWT and three roles. The Zabbix token is never exposed either way — RBAC
+ * a JWT and three roles. The Zabbix token is never exposed either way, RBAC
  * here decides who may see which portal view, not what the BFF may ask Zabbix.
  *
  * The portal is read-only today, so the roles divide by **sensitivity and
  * cost**, not by write access:
  *
- *   viewer    — all monitoring, plus the plain-language "Explain" actions.
+ *   viewer:   all monitoring, plus the plain-language "Explain" actions.
  *               The AI layer exists precisely for non-engineers, so gating it
  *               above this role would defeat its purpose.
- *   operator  — + the engineering surfaces (network, links) and, when
+ *   operator: + the engineering surfaces (network, links) and, when
  *               acknowledge/close write-back lands, the ability to act.
- *   admin     — + governance (the inventory scorecard) and user-facing config.
+ *   admin:    + governance (the inventory scorecard) and user-facing config.
  */
 
 export const ROLES = ['viewer', 'operator', 'admin'] as const;
@@ -52,7 +52,7 @@ interface PortalUser {
 }
 
 /**
- * Users come from env — there is no database yet (that phase was deferred).
+ * Users come from env: there is no database yet (that phase was deferred).
  * `PORTAL_USERS` is `name:password:role` triples, comma-separated;
  * `PORTAL_USER` / `PORTAL_PASS` remain as the single-admin shorthand.
  */
@@ -87,9 +87,14 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
   const users = loadUsers((m) => app.log.warn(m));
 
   app.post('/api/auth/login', async (req, reply) => {
-    const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
-    const found = users.find((u) => u.name === username && u.pass === password);
-    if (!found) return reply.code(401).send({ error: 'Invalid credentials' });
+    const { username, password } = (req.body ?? {}) as { username?: unknown; password?: unknown };
+    const found =
+      typeof username === 'string' && typeof password === 'string'
+        ? users.find((u) => u.name === username && u.pass === password)
+        : undefined;
+    if (!found) {
+      return reply.code(401).send({ error: 'invalid_credentials', message: 'Invalid username or password.' });
+    }
 
     const token = app.jwt.sign({ sub: found.name, role: found.role }, { expiresIn: '12h' });
     return { token, user: { name: found.name, role: found.role } };
@@ -108,7 +113,7 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
         user: { name: u.sub ?? '', role: isRole(u.role) ? u.role : 'viewer' },
       };
     } catch {
-      return reply.code(401).send({ error: 'Unauthorized' });
+      return reply.code(401).send({ error: 'unauthorized', message: 'Your session has expired. Sign in again.' });
     }
   });
 
@@ -126,7 +131,7 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
     try {
       claims = q.token ? ((await app.jwt.verify(q.token)) as { role?: unknown }) : ((await req.jwtVerify()) as { role?: unknown });
     } catch {
-      return reply.code(401).send({ error: 'Unauthorized' });
+      return reply.code(401).send({ error: 'unauthorized', message: 'Sign in to continue.' });
     }
 
     const has = isRole(claims.role) ? claims.role : 'viewer';

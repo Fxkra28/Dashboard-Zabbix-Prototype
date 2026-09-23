@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
 import type { HostOverview } from '../types';
-import { AvailabilityPill, SeverityCounts } from '../components/StatusBadge';
+import { HostStatePill, SeverityCounts } from '../components/StatusBadge';
 import { Async } from '../components/states';
-import { hostAvailability, ifaceType } from '../lib/severity';
+import { ifaceType } from '../lib/severity';
 
 export default function Hosts() {
   const q = useAsync<HostOverview[]>(() => api.hostsOverview(), [], 30_000);
@@ -55,7 +55,7 @@ export default function Hosts() {
       </div>
 
       <div className="panel">
-        <Async loading={q.loading} error={q.error} data={q.data}>
+        <Async loading={q.loading} error={q.error} data={q.data} updatedAt={q.updatedAt}>
           {() => (
             <div className="table-wrap">
               <table className="data">
@@ -71,7 +71,6 @@ export default function Hosts() {
                 </thead>
                 <tbody>
                   {filtered.map((h) => {
-                    const av = hostAvailability(h.interfaces);
                     const iface = h.interfaces?.[0];
                     return (
                       <tr key={h.hostid}>
@@ -80,7 +79,7 @@ export default function Hosts() {
                           {iface ? `${iface.ip} · ${ifaceType(iface.type)}` : '—'}
                         </td>
                         <td>
-                          <AvailabilityPill kind={av.kind} label={av.label} />
+                          <HostStatePill host={h} />
                         </td>
                         <td>
                           {h.maintenance_status === '1' ? (
@@ -102,7 +101,7 @@ export default function Hosts() {
                           )}
                         </td>
                         <td>
-                          <Link className="btn ghost" style={{ padding: '4px 12px', fontSize: 12 }} to={`/graphs?hostid=${h.hostid}`}>
+                          <Link className="btn ghost sm" to={`/graphs?hostid=${h.hostid}`}>
                             Graphs
                           </Link>
                         </td>

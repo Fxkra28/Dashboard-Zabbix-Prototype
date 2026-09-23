@@ -11,10 +11,10 @@ import { resolveSite } from './sites.js';
  * are not standardised → alarms are hard to route to the right PIC."*
  *
  * The portal is read-only, so it cannot enforce a standard. What it can do is
- * **measure** one — turning an invisible governance problem into a number that
+ * **measure** one, turning an invisible governance problem into a number that
  * goes up as hosts get tagged. That measurement is this file.
  *
- * Four dimensions are scored here. The fifth HCML names — *dependency* — is
+ * Four dimensions are scored here. The fifth HCML names, *dependency*, is
  * answered by the Services tree (§15) rather than a per-host field: a host is
  * in a dependency map when the service hierarchy covers it.
  */
@@ -76,7 +76,7 @@ function hasExplicitSite(h: ZHostMeta): boolean {
 export async function getScorecard(): Promise<ScorecardResponse> {
   const hosts = await cached('hosts:meta', 30_000, getHostsWithMeta);
 
-  // An invalid HOST_NAME_PATTERN shouldn't take the endpoint down — treat a
+  // An invalid HOST_NAME_PATTERN shouldn't take the endpoint down. Treat a
   // broken regex as "naming not scored" and carry on.
   let namingRe: RegExp | null = null;
   if (config.inventory.namePattern) {
@@ -168,7 +168,7 @@ export async function getScorecard(): Promise<ScorecardResponse> {
       complete: completeHosts,
       pct: hosts.length ? Math.round((completeHosts / hosts.length) * 100) : 0,
     },
-    // Worst-scoring group first — that's where the standardisation work is.
+    // Worst-scoring group first: that's where the standardisation work is.
     groups: [...groups.entries()]
       .map(([name, r]) => ({
         name,

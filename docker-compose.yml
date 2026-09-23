@@ -1,14 +1,36 @@
-# HCML Monitoring Portal — deploy next to Zabbix.
+# HCML Monitoring Portal, deploy next to Zabbix.
 # portal-web (nginx) serves the built React app and reverse-proxies /bff -> portal-bff.
 # The browser only ever talks to portal-web; the Zabbix token stays inside portal-bff.
+
+# Container logs are rotated so a chatty BFF cannot fill the disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
 
 services:
   portal-bff:
     build: ./server
     environment:
-      ZBX_URL: ${ZBX_URL}
-      ZBX_TOKEN: ${ZBX_TOKEN}
+      # The Zabbix stack runs in its own compose project (Proto1/docker-compose.yml),
+      # so there is no shared network and no DNS between the two. The portal
+      # reaches Zabbix over the host's published 8080 instead. On Linux, add
+      #   extra_hosts: ["host.docker.internal:host-gateway"]
+      # or point this at the Zabbix host's real address.
+      ZBX_URL: ${ZBX_URL:-http://host.docker.internal:8080/api_jsonrpc.php}
+      # Canonical name. ZBX_TOKEN is a deprecated alias that trips a startup
+      # warning on every boot, so it is deliberately not what compose passes.
+      ZABBIX_API_TOKEN: ${ZABBIX_API_TOKEN:-}
+      # Without this, acknowledge/close is permanently 503 in Docker no matter
+      # what .env holds: the portal silently loses its only write.
+      ZABBIX_WRITE_TOKEN: ${ZABBIX_WRITE_TOKEN:-}
+      ZABBIX_TIMEOUT_MS: ${ZABBIX_TIMEOUT_MS:-10000}
       PORT: "4000"
+      # nginx sits in front, so honour X-Forwarded-For: otherwise every request
+      # looks like it comes from the proxy and all users share one rate limit.
+      TRUST_PROXY: "true"
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8081}
       NET_GROUP_IDS: ${NET_GROUP_IDS:-}
       SITE_TAG: ${SITE_TAG:-site}
@@ -20,25 +42,51 @@ services:
       LINK_LOSS_CRIT: ${LINK_LOSS_CRIT:-10}
       NOISE_SHORT_SECONDS: ${NOISE_SHORT_SECONDS:-300}
       NOISE_MIN_COUNT: ${NOISE_MIN_COUNT:-5}
+      AVAILABILITY_MIN_SEVERITY: ${AVAILABILITY_MIN_SEVERITY:-2}
+      # Two backends behind one switch: "anthropic" (hosted, needs a key) or
+      # "openai-compatible" (a local model, needs a URL). A local Ollama is
+      # reached exactly the way Zabbix is above: the container cannot see the
+      # host's localhost, so: AI_BASE_URL=http://host.docker.internal:11434/v1
+      AI_PROVIDER: ${AI_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      AI_MODEL: ${AI_MODEL:-claude-sonnet-4-6}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      # No defaults for these two on purpose. config.ts picks a different one
+      # per backend (claude-sonnet-4-6 / 30 s hosted, qwen3:8b / 120 s local),
+      # and a default here would override that and silently ask Ollama for a
+      # Claude model. Empty falls through. See the `||` note on zbxUrl.
+      AI_MODEL: ${AI_MODEL:-}
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-}
+      # Documented in both .env.example files but previously never passed here.
+      AI_MAX_RETRIES: ${AI_MAX_RETRIES:-1}
       # Deployed, not scaffolded: default auth ON here.
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
-      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me}
+      # No default on purpose. The BFF refuses to start on the placeholder
+      # secret, and handing it one here would defeat that check: an
+      # authenticated portal signing tokens with a value published in this repo
+      # looks perfectly healthy while anyone can forge an admin token.
+      JWT_SECRET: ${JWT_SECRET:?set a strong JWT_SECRET in .env before deploying}
       PORTAL_USER: ${PORTAL_USER:-admin}
       PORTAL_PASS: ${PORTAL_PASS:-admin}
       PORTAL_USERS: ${PORTAL_USERS:-}
     expose:
       - "4000"
     restart: unless-stopped
+    logging: *default-logging
 
   portal-web:
     build: ./web
     depends_on:
       - portal-bff
     ports:
-      - "8081:80"
+      # Host port is overridable so both portal variants can run at once
+      # (e.g. WEB_PORT=8082 for hcml-portal-ollama); keep WEB_ORIGIN in step.
+      # Bound to 127.0.0.1: the portal shows production monitoring data and must
+      # not be reachable from whatever network the machine joins. Put a real
+      # reverse proxy with TLS in front before exposing it.
+      - "127.0.0.1:${WEB_PORT:-8081}:80"
     restart: unless-stopped
+    logging: *default-logging
 
   # Enable when scaling the cache / SSE fan-out (see instruct.md §2).
   # redis:

@@ -8,7 +8,7 @@ let id = 0;
 
 /**
  * Raised when Zabbix rejects our credentials (expired/invalid/revoked token).
- * Distinguished from a generic failure so the UI can say "fix ZBX_TOKEN"
+ * Distinguished from a generic failure so the UI can say "fix the token"
  * rather than showing an opaque 500 on every page.
  */
 export class ZabbixAuthError extends Error {
@@ -29,6 +29,44 @@ function isAuthFailure(error: unknown): boolean {
   return AUTH_HINTS.some((hint) => text.includes(hint));
 }
 
+/**
+ * Raised when Zabbix did not answer within `ZABBIX_TIMEOUT_MS`.
+ *
+ * Distinguished from a generic failure for the same reason `ZabbixAuthError`
+ * is: "Zabbix is not responding" and "the portal is broken" need different
+ * responses from whoever is reading the screen.
+ */
+export class ZabbixTimeoutError extends Error {
+  readonly code = 'zabbix_timeout';
+  /** For the BFF log only (it names ZBX_URL); never part of a response. */
+  readonly detail?: string;
+  constructor(message: string, detail?: string) {
+    super(message);
+    this.detail = detail;
+  }
+}
+
+/**
+ * Zabbix could not be reached, answered with a non-2xx status or something
+ * that is not JSON-RPC, or returned a JSON-RPC error: bad parameters, or a
+ * rejected write such as closing a trigger that does not allow manual close.
+ * An upstream failure rather than a portal bug, so it maps to 502 carrying
+ * Zabbix's own words, which usually name what to fix. These used to surface
+ * as a bare 500.
+ *
+ * The message reaches the browser, so it never carries the Zabbix address:
+ * that, and whatever Zabbix sent back, go in `detail` for the log.
+ */
+export class ZabbixApiError extends Error {
+  readonly code = 'zabbix_error';
+  /** For the BFF log only (it names ZBX_URL); never part of a response. */
+  readonly detail?: string;
+  constructor(message: string, detail?: string) {
+    super(message);
+    this.detail = detail;
+  }
+}
+
 /** Raised when a write is attempted with no ZABBIX_WRITE_TOKEN configured. */
 export class ZabbixWriteDisabledError extends Error {
   readonly code = 'zabbix_write_disabled';
@@ -40,29 +78,83 @@ export class ZabbixWriteDisabledError extends Error {
   }
 }
 
-async function call<T>(method: string, params: unknown, token: string): Promise<T> {
-  const res = await fetch(config.zbxUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json-rpc',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ jsonrpc: '2.0', method, params, id: ++id }),
-  });
+/** The start of an unexpected body, on one line, for the log. */
+function snippet(body: string): string {
+  const flat = body.replace(/\s+/g, ' ').trim();
+  return flat.length > 300 ? `${flat.slice(0, 300)}…` : flat;
+}
 
-  if (!res.ok) {
-    throw new Error(`${method}: HTTP ${res.status} ${res.statusText}`);
+async function call<T>(method: string, params: unknown, token: string): Promise<T> {
+  let res: Response;
+  let body: string;
+  try {
+    res = await fetch(config.zbxUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json-rpc',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', method, params, id: ++id }),
+      // `fetch` has no default timeout. Without this, one unresponsive Zabbix
+      // holds the request, and every page waiting on it, open indefinitely.
+      signal: AbortSignal.timeout(config.zbxTimeoutMs),
+    });
+    // Read the body under the same timeout. `fetch` resolves once the headers
+    // arrive, so a Zabbix that stalled while still sending a large answer used
+    // to escape the timeout here and end up as a bare 500.
+    body = await res.text();
+  } catch (err) {
+    const name = (err as { name?: unknown } | null)?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      throw new ZabbixTimeoutError(
+        `Zabbix did not respond to ${method} within ${config.zbxTimeoutMs} ms. ` +
+          'It may be overloaded or unreachable — check ZBX_URL and the Zabbix server.',
+        `ZBX_URL=${config.zbxUrl}`,
+      );
+    }
+    // Connection refused, DNS failure, TLS error, a connection dropped part-way.
+    // The system error names the host and port, so only its code is shown.
+    const cause = err instanceof Error && err.cause instanceof Error ? err.cause : err;
+    const code = (cause as { code?: unknown } | null)?.code;
+    throw new ZabbixApiError(
+      `Could not reach Zabbix for ${method}${typeof code === 'string' ? ` (${code})` : ''}. ` +
+        'Check ZBX_URL and that the Zabbix frontend is running.',
+      `ZBX_URL=${config.zbxUrl}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
   }
 
-  const json = (await res.json()) as { result?: T; error?: unknown };
+  if (!res.ok) {
+    throw new ZabbixApiError(
+      `${method}: HTTP ${res.status} ${res.statusText}`,
+      `ZBX_URL=${config.zbxUrl} answered: ${snippet(body)}`,
+    );
+  }
+
+  // A 200 that is not JSON-RPC: ZBX_URL pointing at the frontend's login page
+  // rather than api_jsonrpc.php, or PHP failing part-way through (zabbix-web
+  // running out of memory on a large trend.get prints an HTML error).
+  let json: { result?: T; error?: unknown } | null;
+  try {
+    json = JSON.parse(body) as { result?: T; error?: unknown } | null;
+  } catch {
+    json = null;
+  }
+  if (!json || typeof json !== 'object') {
+    throw new ZabbixApiError(
+      `${method}: Zabbix returned a non-JSON response. Check that ZBX_URL points at api_jsonrpc.php ` +
+        'and that the Zabbix frontend is not out of memory.',
+      `ZBX_URL=${config.zbxUrl} answered: ${snippet(body)}`,
+    );
+  }
+
   if (json.error) {
     if (isAuthFailure(json.error)) {
       throw new ZabbixAuthError(
-        'Zabbix rejected the API token (expired, invalid, or revoked). ' +
-          'Update ZBX_TOKEN in server/.env — see instruct.md §4.',
+        'Zabbix rejected the API token (expired, invalid, or revoked). Update ZABBIX_API_TOKEN ' +
+          '(or ZABBIX_WRITE_TOKEN, for acknowledge/close) in server/.env.',
       );
     }
-    throw new Error(`${method}: ${JSON.stringify(json.error)}`);
+    throw new ZabbixApiError(`${method}: ${JSON.stringify(json.error)}`);
   }
   return json.result as T;
 }

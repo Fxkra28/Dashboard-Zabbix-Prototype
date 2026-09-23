@@ -16,6 +16,7 @@ import {
   IconSla,
   IconLink,
   IconShield,
+  IconChat,
   IconChevron,
 } from './icons';
 
@@ -58,12 +59,18 @@ const SECTIONS: Section[] = [
       { to: '/reports/inventory', label: 'Inventory scorecard', icon: IconShield, role: 'admin' },
     ],
   },
+  {
+    // The one section with no Zabbix equivalent. Viewer role on purpose: the
+    // assistant is only ever shown what a viewer can already see.
+    title: 'Assistant',
+    items: [{ to: '/assistant', label: 'Ask the assistant', icon: IconChat }],
+  },
 ];
 
 function MenuSection({ section, role }: { section: Section; role: Role | null }) {
   const [open, setOpen] = useState(true);
 
-  // Hide what this role can't reach — the BFF enforces it regardless, but
+  // Hide what this role can't reach: the BFF enforces it regardless, but
   // offering a link that can only 403 is worse than not offering it.
   const items = section.items.filter((i) => !i.role || roleAllows(role, i.role));
   if (!items.length) return null;

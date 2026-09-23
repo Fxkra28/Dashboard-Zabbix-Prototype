@@ -17,7 +17,7 @@ export interface ZbxProblem {
   tags?: { tag: string; value: string }[];
   host?: string; // enriched below
   hostid?: string; // enriched below
-  /** Whether the trigger permits manual close — gates the Close button (§20). */
+  /** Whether the trigger permits manual close, gates the Close button (§20). */
   manualClose?: boolean;
 }
 
@@ -38,7 +38,7 @@ export async function getProblems(): Promise<ZbxProblem[]> {
   const byTrigger: Record<string, { hostid: string; name: string; manualClose: boolean }> = {};
 
   if (triggerIds.length) {
-    // `manual_close` rides along on the call we already make — no extra request.
+    // `manual_close` rides along on the call we already make, no extra request.
     const triggers = await zbx<
       {
         triggerid: string;
@@ -77,7 +77,7 @@ export async function getProblems(): Promise<ZbxProblem[]> {
  * A host with everything the governance-facing views need: groups, tags and
  * the inventory fields that carry site and owner.
  *
- * Zabbix has no `site_name` inventory field — `site_city` and `location` are
+ * Zabbix has no `site_name` inventory field, `site_city` and `location` are
  * the real ones, and asking for a field that doesn't exist is silently ignored.
  */
 export interface ZHostMeta {
@@ -101,7 +101,7 @@ export interface ZHostMeta {
 }
 
 /**
- * Shared by the Sites board and the inventory scorecard — both need the same
+ * Shared by the Sites board and the inventory scorecard, both need the same
  * enriched host list, so they share one cache entry rather than each paying
  * for their own `host.get`.
  */
@@ -115,3 +115,13 @@ export async function getHostsWithMeta(): Promise<ZHostMeta[]> {
     sortfield: 'name',
   });
 }
+
+/** Zabbix trigger severities, as the UI and the plain-language layer name them. */
+export const SEVERITY_NAMES: Record<string, string> = {
+  '0': 'Not classified',
+  '1': 'Information',
+  '2': 'Warning',
+  '3': 'Average',
+  '4': 'High',
+  '5': 'Disaster',
+};

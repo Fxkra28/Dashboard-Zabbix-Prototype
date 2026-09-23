@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useUrlState } from '../hooks/useUrlState';
 import type { Link, LinkState, LinksResponse } from '../types';
 import { Async, Empty } from '../components/states';
 import KpiCard from '../components/KpiCard';
@@ -11,7 +12,7 @@ import { fmtTime } from '../lib/severity';
  *
  * HCML runs 12 main + 10 redundant SD-WAN links, 10 P2P radio links, 18
  * internet accesses and Starlink offshore. Their own topology slide flags
- * *"SD-WAN (to_mda_via_sapudi)(internal4): High packet loss"* — this is the
+ * *"SD-WAN (to_mda_via_sapudi)(internal4): High packet loss"*: this is the
  * view where that lives, instead of being a row buried in Latest data.
  */
 
@@ -28,6 +29,12 @@ const STATE_COLOR: Record<LinkState, string> = {
   down: 'var(--danger)',
   unknown: 'var(--muted)',
 };
+
+/** Table and path order: trouble first, healthy next, "no data" last (neutral, not an alarm). */
+const ORDER: Record<LinkState, number> = { down: 0, degraded: 1, up: 2, unknown: 3 };
+
+/** WAN legs are whole `INET :` hosts: their role ("WAN 1 (ARTHATEL)") names them better than the item. */
+const legName = (l: Link) => (/^\s*INET\s*:/i.test(l.host) ? l.role ?? l.host.replace(/^\s*INET\s*:\s*/i, '') : l.label);
 
 function StatePill({ state }: { state: LinkState }) {
   return (
@@ -67,23 +74,38 @@ function LinkRow({ link, thresholds }: { link: Link; thresholds: LinksResponse['
   );
 }
 
+type Path = LinksResponse['paths'][number];
+
+/** A path with no data on any leg says nothing about the path: one line for all of them, not a card each. */
+const noDataPath = (p: Path) => p.links.length > 0 && p.links.every((l) => l.state === 'unknown');
+
 export default function Links() {
   const q = useAsync<LinksResponse>(() => api.links(), [], 30_000);
-  const [problemsOnly, setProblemsOnly] = useState(false);
-  const [search, setSearch] = useState('');
+  const [problemsOnly, setProblemsOnly] = useUrlState<boolean>('unhealthy', false);
+  const [search, setSearch] = useUrlState<string>('q', '', { debounceMs: 400 });
 
   const filtered = useMemo(() => {
     const list = q.data?.links ?? [];
     const needle = search.trim().toLowerCase();
-    return list.filter((l) => {
-      if (problemsOnly && l.state === 'up') return false;
-      if (needle && !`${l.label} ${l.host} ${l.target}`.toLowerCase().includes(needle)) return false;
-      return true;
-    });
+    return list
+      .filter((l) => {
+        // "Not healthy" means down or degraded; no data is not a fault of the link.
+        if (problemsOnly && (l.state === 'up' || l.state === 'unknown')) return false;
+        if (needle && !`${l.label} ${l.host} ${l.target}`.toLowerCase().includes(needle)) return false;
+        return true;
+      })
+      // Stable sort keeps the server's loss/label order inside each state.
+      .sort((a, b) => ORDER[a.state] - ORDER[b.state]);
   }, [q.data, search, problemsOnly]);
 
   return (
-    <Async loading={q.loading} error={q.error} data={q.data} loadingLabel="Reading link health…">
+    <Async
+      loading={q.loading}
+      error={q.error}
+      data={q.data}
+      updatedAt={q.updatedAt}
+      loadingLabel="Reading link health…"
+    >
       {(data) => {
         if (!data.links.length) {
           return (
@@ -100,9 +122,13 @@ export default function Links() {
           );
         }
 
+        const paths = [...data.paths].sort((a, b) => ORDER[a.state] - ORDER[b.state]);
+        const measuredPaths = paths.filter((p) => !noDataPath(p));
+        const silentPaths = paths.filter(noDataPath);
+
         return (
           <>
-            <div className="grid kpis">
+            <div className="grid kpis sli-kpis">
               {(['down', 'degraded', 'up', 'unknown'] as LinkState[]).map((s) => (
                 <KpiCard
                   key={s}
@@ -120,33 +146,54 @@ export default function Links() {
                 <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
                   A paired path is only truly down when <strong>every</strong> leg is — that
                   distinction is the whole point of paying for redundancy. Pairing comes from the
-                  item tag <code>link_group</code>.
+                  item tag <code>link_group</code>, or from the WAN host names
+                  (<code>INET : SITE WAN 1</code>, <code>WAN 2</code>…). Grey means no data is being
+                  collected, not down.
                 </div>
-                <div className="path-grid">
-                  {data.paths.map((p) => (
-                    <div key={p.name} className="path-card" style={{ ['--s' as string]: STATE_COLOR[p.state] }}>
-                      <div className="path-head">
-                        <strong>{p.name}</strong>
-                        <StatePill state={p.state} />
-                      </div>
-                      {p.links.map((l) => (
-                        <div key={l.id} className="path-leg">
-                          <span className="dot" style={{ background: STATE_COLOR[l.state] }} />
-                          <span className="muted">{l.role ?? 'leg'}</span>
-                          <span className="path-leg-name">{l.label}</span>
-                          <span className="muted">{n(l.loss, 1, '% loss')}</span>
+                {measuredPaths.length > 0 && (
+                  <div className="path-grid">
+                    {measuredPaths.map((p) => (
+                      <div key={p.name} className="path-card" style={{ ['--s' as string]: STATE_COLOR[p.state] }}>
+                        <div className="path-head">
+                          <strong>{p.name}</strong>
+                          <StatePill state={p.state} />
                         </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
+                        {p.links.map((l) => (
+                          <div key={l.id} className="path-leg">
+                            <span className="dot" style={{ background: STATE_COLOR[l.state] }} />
+                            {legName(l) === l.label && <span className="muted">{l.role ?? 'leg'}</span>}
+                            <span className="path-leg-name" title={l.host}>
+                              {legName(l)}
+                            </span>
+                            <span className="muted nowrap">
+                              {l.state === 'unknown' ? 'No data' : n(l.loss, 1, '% loss')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {silentPaths.length > 0 && (
+                  <div className="nodata-paths">
+                    <StatePill state="unknown" /> on every leg — {silentPaths.length} path
+                    {silentPaths.length === 1 ? '' : 's'}:{' '}
+                    {silentPaths.map((p, i) => (
+                      <span key={p.name} title={p.links.map(legName).join(' · ')}>
+                        {p.name}
+                        {i < silentPaths.length - 1 ? ', ' : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             <div className="controls">
               <div className="field">
-                <label>Search link</label>
+                <label htmlFor="links-search">Search link</label>
                 <input
+                  id="links-search"
                   type="text"
                   placeholder="link, host or target…"
                   value={search}
