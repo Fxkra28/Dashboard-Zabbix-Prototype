@@ -16,8 +16,7 @@ An optional assistant can explain problems in plain language. **In this copy the
 Claude, a model hosted by Anthropic, so the text of those questions leaves this machine.** The
 sibling copy, `hcml-portal-ollama`, runs the same code against a model on the local computer instead.
 
-**New to the abbreviations?** Every one used in this file is explained in the
-[Glossary](#glossary) at the end.
+**Look up to the glossary for the abbreviations** [Glossary](#glossary) at the end.
 
 ### How the parts connect
 
