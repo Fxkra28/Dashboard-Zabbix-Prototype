@@ -10,7 +10,7 @@ RUN npm run build
 
 # The unprivileged build runs as uid 101, not root, and so cannot bind port 80:
 # it listens on 8080 (nginx.conf). Its pid file and temp files go under /tmp.
-FROM nginxinc/nginx-unprivileged:1.28-alpine@sha256:7377697a821c131a924a7105fafbe7414db4e9fcc77a6f08f776f33f141ec3f8
+FROM nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Proxy settings shared by the /bff locations. Not *.conf, so nginx loads it only where included.
 COPY bff-proxy.inc /etc/nginx/conf.d/bff-proxy.inc
