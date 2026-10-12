@@ -37,7 +37,7 @@ const COMPLIANT = [
 ];
 
 const NON_COMPLIANT = [
-  'INTERNET', // no prefix at all — a real gap in HCML's estate
+  'INTERNET', // no prefix at all, a real gap in HCML's estate
   'Zabbix server', // infrastructure, correctly unscored
   'SPG-SW-01', // the invented scheme this replaced
   'MPR-FW-01',

@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useUrlState } from '../hooks/useUrlState';
 import type { DimensionKey, ScorecardResponse } from '../types';
 import { Async, Empty } from '../components/states';
+import { downloadCsv } from '../lib/csv';
+import { NoData } from '../components/NoData';
 
 /**
- * Inventory & ownership scorecard (plan_1.2 Phase 4, HCML Goal 1).
+ * Inventory & ownership scorecard (HCML Goal 1).
  *
  * HCML's gap: *"host naming, site mapping, owner, criticality and dependency
  * are not standardised → alarms are hard to route to the right PIC."*
@@ -22,11 +25,20 @@ const LABELS: Record<DimensionKey, string> = {
   criticality: 'Criticality',
 };
 
+const GAP_FILTERS: (DimensionKey | 'all')[] = ['all', 'naming', 'site', 'owner', 'criticality'];
+
 /** Red below a third, amber below three quarters, green above. */
 function barColor(pct: number): string {
   if (pct >= 75) return 'var(--good)';
   if (pct >= 33) return 'var(--warn)';
   return 'var(--danger)';
+}
+
+/** The same bands as text: the amber fill is 2.16:1 on white, too faint even for the 44 px score. */
+function barText(pct: number): string {
+  if (pct >= 75) return 'var(--good-text)';
+  if (pct >= 33) return 'var(--warn-text)';
+  return 'var(--danger-text)';
 }
 
 function Bar({ pct }: { pct: number }) {
@@ -37,38 +49,31 @@ function Bar({ pct }: { pct: number }) {
   );
 }
 
-/** Build a CSV of the gap list so the work can be handed to whoever owns it. */
-function gapsCsv(data: ScorecardResponse): string {
-  const rows = [
+/** The gap list as CSV rows, so the work can be handed to whoever owns it. */
+function gapRows(gaps: ScorecardResponse['gaps']): unknown[][] {
+  return [
     ['host', 'site', 'host groups', 'missing'],
-    ...data.gaps.map((g) => [g.name, g.site, g.groups.join(' | '), g.missing.join(' | ')]),
+    ...gaps.map((g) => [g.name, g.site, g.groups.join(' | '), g.missing.join(' | ')]),
   ];
-  return rows
-    // A cell starting with = + - or @ is run as a formula when the file is opened
-    // in Excel or Sheets, quotes or not. Prefixing ' makes it plain text; host
-    // names and group labels come from Zabbix, which anyone with config access can set.
-    .map((r) => r.map((c) => `"${String(c).replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"`).join(','))
-    .join('\n');
 }
 
 export default function Inventory() {
   const q = useAsync<ScorecardResponse>(() => api.inventory(), [], 120_000);
-  const [filter, setFilter] = useState<DimensionKey | 'all'>('all');
-
-  const download = (data: ScorecardResponse) => {
-    const blob = new Blob([gapsCsv(data)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `hcml-inventory-gaps-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  // The gap type lives in the URL, so Back and a shared link keep it. One that is not scored reads as all gaps.
+  const [asked, setFilter] = useUrlState<DimensionKey | 'all'>('gap', 'all', { options: GAP_FILTERS });
+  const filter = asked !== 'all' && q.data && !q.data.dimensions.some((d) => d.scored && d.key === asked) ? 'all' : asked;
 
   const gaps = useMemo(() => {
     const list = q.data?.gaps ?? [];
     return filter === 'all' ? list : list.filter((g) => g.missing.includes(filter));
   }, [q.data, filter]);
+
+  // The rows on screen, so a filtered file says so in its name and is not mistaken for the full list.
+  const download = () => {
+    const shown = filter === 'all' ? '' : `-${filter}`;
+    const day = new Date().toISOString().slice(0, 10);
+    downloadCsv(`hcml-inventory-gaps${shown}-${day}.csv`, gapRows(gaps));
+  };
 
   return (
     <Async
@@ -81,7 +86,7 @@ export default function Inventory() {
       {(data) => (
         <>
           <div className="score-hero">
-            <div className="score-hero-num" style={{ color: barColor(data.overall.pct) }}>
+            <div className="score-hero-num" style={{ color: barText(data.overall.pct) }}>
               {data.overall.pct}%
             </div>
             <div>
@@ -90,7 +95,7 @@ export default function Inventory() {
               </strong>{' '}
               carry every attribute needed to route an alarm to the right person.
               <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                The portal is read-only, so it can’t enforce a standard — it measures one. As hosts
+                The portal is read-only, so it can’t enforce a standard. It measures one. As hosts
                 get tagged in Zabbix, this number goes up.
               </div>
             </div>
@@ -157,9 +162,10 @@ export default function Inventory() {
 
           <div className="panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
-              <h2>Gap list — {gaps.length} hosts</h2>
+              <h2>Gap list: {gaps.length} hosts</h2>
               <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                 <select
+                  aria-label="Show gaps of type"
                   value={filter}
                   onChange={(e) => setFilter(e.target.value as DimensionKey | 'all')}
                   style={{ minWidth: 150 }}
@@ -175,8 +181,8 @@ export default function Inventory() {
                 </select>
                 <button
                   className="btn ghost sm"
-                  onClick={() => download(data)}
-                  disabled={!data.gaps.length}
+                  onClick={download}
+                  disabled={!gaps.length}
                 >
                   Download CSV
                 </button>
@@ -199,7 +205,7 @@ export default function Inventory() {
                       <tr key={g.hostid}>
                         <td style={{ fontWeight: 500 }}>{g.name}</td>
                         <td className="muted">{g.site}</td>
-                        <td className="muted">{g.groups.join(', ') || '—'}</td>
+                        <td className="muted">{g.groups.join(', ') || <NoData />}</td>
                         <td>
                           <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
                             {g.missing.map((m) => (

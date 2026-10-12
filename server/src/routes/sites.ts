@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { cached } from '../cache.js';
 import { config } from '../config.js';
-import { getProblems, getHostsWithMeta, type ZHostMeta } from '../queries.js';
+import { getProblems, openProblems, getHostsWithMeta, type ZHostMeta } from '../queries.js';
 import { siteFromHostName } from '../naming.js';
 import {
   getIcmpByHost,
@@ -13,10 +13,9 @@ import {
 } from '../reachability.js';
 
 /**
- * Site view (plan_1.2 Phase 1, HCML Goal 5). HCML's estate is organised by
- * site, JKT HQ, SBY, SSB, FPSO KAS3, BD-WHP, MOPU, MBH, MDA, Sumenep, ORF
- * Porong, TWSB, GMS Pasuruan, but the dashboard only ever showed one flat
- * list. This rolls every host up to the site it lives at.
+ * Site view (HCML Goal 5). HCML's estate is organised by site (JKT HQ, SBY, SSB, FPSO KAS3, BD-WHP,
+ * MOPU, MBH, MDA, Sumenep, ORF Porong, TWSB, GMS Pasuruan), but Zabbix lists hosts flat. This rolls
+ * every host up to the site it lives at.
  *
  * Read-only: it derives sites from what Zabbix already knows, and never writes.
  */
@@ -110,7 +109,7 @@ export async function getSites(): Promise<SitesResponse> {
   // `problems` with every other problem reader.
   const [hosts, problems, icmp] = await Promise.all([
     cached('hosts:meta', 30_000, getHostsWithMeta),
-    cached('problems', 5_000, getProblems),
+    cached('problems', 5_000, getProblems).then(openProblems),
     getIcmpByHost(),
   ]);
 

@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { chatStream, chatWarm } from '../api';
-import { useAiEnabled } from '../hooks/useAi';
+import { useCapabilities } from '../hooks/useAi';
+import { loadConversation, saveConversation } from '../lib/chatStore';
+import { useAuth, roleAllows } from '../hooks/useAuth';
 import type { ChatContext, ChatMessage } from '../types';
-import { Empty } from '../components/states';
+import { Empty, Loading } from '../components/states';
 import Markdown from '../components/Markdown';
+import AiDataNotice from '../components/AiDataNotice';
 
 /**
- * "Ask the assistant", free-form questions about the estate, answered from a
+ * The Assistant page: free-form questions about the estate, answered from a
  * read-only snapshot the BFF takes for every message (see server chat.ts).
  *
  * Nothing is stored server-side, so the whole history is sent back with each
  * turn. The conversation is kept in this tab's sessionStorage, so looking at
- * another page and coming back doesn't lose it; closing the tab or Clear does.
+ * another page and coming back doesn't lose it; closing the tab, Clear or
+ * signing out does (lib/chatStore.ts).
  */
 
 const SUGGESTIONS = [
@@ -23,32 +27,6 @@ const SUGGESTIONS = [
 
 /** How many turns travel with each message; the BFF then keeps the newest ~3,000 characters. */
 const HISTORY = 12;
-
-const STORAGE_KEY = 'hcml_chat';
-
-/** The saved conversation, or none when storage is blocked or holds something else. */
-function loadConversation(): ChatMessage[] {
-  try {
-    const saved: unknown = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? '[]');
-    return Array.isArray(saved)
-      ? saved.filter(
-          (m): m is ChatMessage =>
-            (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string',
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveConversation(messages: ChatMessage[]): void {
-  try {
-    if (messages.length) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-    else sessionStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* storage full or blocked: the conversation just won't survive leaving the page */
-  }
-}
 
 /** Within this many pixels of the end counts as "reading the latest". */
 const NEAR_BOTTOM_PX = 80;
@@ -64,7 +42,7 @@ function ContextStrip({ context }: { context: ChatContext | null }) {
       <div className="chat-context">
         <span>
           Ask about what is happening right now. Every answer is based on a fresh snapshot of
-          Zabbix — the same data as the Problems, Sites and SLA pages.
+          Zabbix: the same data as the Problems, Sites and SLA pages.
         </span>
       </div>
     );
@@ -94,7 +72,8 @@ function ContextStrip({ context }: { context: ChatContext | null }) {
 }
 
 export default function Assistant() {
-  const aiEnabled = useAiEnabled();
+  const { ai: aiEnabled, known, failed, retry } = useCapabilities();
+  const { role } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>(loadConversation);
   const [draft, setDraft] = useState('');
   /** The answer being streamed; `null` while idle. */
@@ -193,16 +172,48 @@ export default function Assistant() {
     }
   }
 
+  // Until the server has answered, "no model" is not an answer: saying so sent people to edit server/.env for nothing.
+  if (!known) {
+    return (
+      <div className="panel">
+        {failed ? (
+          <div className="state error" role="alert">
+            <div style={{ fontWeight: 600 }}>Could not reach the portal server.</div>
+            <div style={{ marginTop: 10 }}>
+              <button className="btn ghost" onClick={retry}>
+                Try again
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Loading label="Checking the assistant…" />
+        )}
+      </div>
+    );
+  }
+
   if (!aiEnabled) {
     return (
       <div className="panel">
         <Empty>
-          The assistant needs a model configured on the BFF.
-          <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-            Set <strong>AI_PROVIDER</strong> and <strong>AI_BASE_URL</strong> (local model) or{' '}
-            <strong>ANTHROPIC_API_KEY</strong> in <code>server/.env</code>. Everything else on the
-            portal works without it.
-          </div>
+          {/* Setting names are for the portal admin; everyone else is told who to ask (UX-20). */}
+          {roleAllows(role, 'admin') ? (
+            <>
+              The assistant needs a model configured on the BFF.
+              <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                Set <strong>AI_PROVIDER</strong> and <strong>AI_BASE_URL</strong> (local model) or{' '}
+                <strong>ANTHROPIC_API_KEY</strong> in <code>server/.env</code>. Everything else on the
+                portal works without it.
+              </div>
+            </>
+          ) : (
+            <>
+              The assistant is not set up on this portal.
+              <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                Ask the portal admin to set it up. Everything else on the portal works without it.
+              </div>
+            </>
+          )}
         </Empty>
       </div>
     );
@@ -289,8 +300,9 @@ export default function Assistant() {
       </div>
 
       <div className="chat-foot">
-        Answers are written by an AI model from a read-only snapshot of the Zabbix data — it can be
+        Answers are written by an AI model from a read-only snapshot of the Zabbix data. It can be
         wrong, and it cannot change anything. Confirm on the relevant page before acting.
+        <AiDataNotice kind="assistant" />
       </div>
     </div>
   );

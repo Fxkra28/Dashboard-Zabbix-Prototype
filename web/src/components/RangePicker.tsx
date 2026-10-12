@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { GraphRange } from '../types';
 import { useSearchPatch } from '../hooks/useUrlState';
 import { isMonth, monthBounds, monthLabel, monthOf, recentMonths } from '../lib/time';
+import { useReportTimeZone } from '../hooks/useReportTimeZone';
 
 export const PRESETS: { label: string; hours: number }[] = [
   { label: '1h', hours: 1 },
@@ -71,9 +72,10 @@ const toLocalInput = (epoch: number) => {
 };
 const fromLocalInput = (s: string) => Math.floor(new Date(s).getTime() / 1000);
 
-/** Presets ending now, a calendar month (Asia/Jakarta), or a custom from/to. */
+/** Presets ending now, a calendar month (in the report zone), or a custom from/to. */
 export default function RangePicker({ value, onChange }: { value: GraphRange; onChange: (r: GraphRange) => void }) {
-  const months = useMemo(() => recentMonths(12), []);
+  const zone = useReportTimeZone();
+  const months = useMemo(() => recentMonths(12, zone), [zone]);
   const [custom, setCustom] = useState(value.kind === 'custom');
   const initial =
     value.kind === 'custom'

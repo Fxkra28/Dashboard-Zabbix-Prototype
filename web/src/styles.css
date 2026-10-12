@@ -1,14 +1,91 @@
 /*
- * Design tokens. The direction these implement is in ../../DESIGN.md, and the
- * contrast figures are its section 7. scripts/css.check.mjs re-derives them
- * from these values on every run, so a token edited to an illegible colour
- * fails the check rather than shipping.
+ * The two typefaces, served from this site: a visit fetches nothing from Google, so the portal
+ * works on a network with no internet, and the local-model copy's promise that nothing leaves the
+ * machine holds for fonts too. Latin and Latin Extended only; other scripts fall back to the system
+ * font in --sans and --mono. Inter is one variable file per subset and covers 400 to 700; IBM Plex
+ * Mono is one static file per weight. Where the files came from, and their licences:
+ * public/fonts/README.txt.
+ */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-400-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-500-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-500-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-600-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-600-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * Design tokens. The direction these implement is in ../../DESIGN.md, and the contrast figures are
+ * its section 7. scripts/tokens.check.mjs re-derives them from these values on every run, so a
+ * token edited to an illegible colour fails the check rather than shipping.
  *
- * Two rules govern this block. Every colour used below comes from here, which
- * is what makes dark mode a matter of redefining tokens and nothing else. And
- * every size comes from one of the four scales, because the stylesheet
- * previously held 42 distinct padding values, 16 font sizes and 14 radii, and
- * nothing lined up with anything.
+ * Two rules govern this block. Every colour used below comes from here, which is what makes dark
+ * mode a matter of redefining tokens and nothing else. And every size comes from one of the four
+ * scales, so spacing, type and radii line up.
  */
 :root {
   color-scheme: light;
@@ -42,6 +119,9 @@
   /* The logo is dark blue on white and stays that way in both themes, so its
      plate is a fixed white rather than a surface token. DESIGN.md section 8. */
   --logo-plate: #ffffff;
+  /* The logo's own ink, for the monogram shown when the image fails. Fixed like
+     the plate it sits on: --primary lightens in dark mode, 2.90:1 on white. */
+  --logo-ink: #2b5584;
 
   --good: #2e9e5b;
   --good-bg: #ecfdf3;
@@ -62,7 +142,7 @@
      whose edge identifies it as a control uses --border-strong, which clears
      the 3:1 that WCAG 1.4.11 asks of a component boundary. */
   --border: #e2e8f0;
-  --border-strong: #8495a9;
+  --border-strong: #7f8fa2;
 
   --series-1: #2b5584;
   --series-2: #0f766e;
@@ -257,15 +337,31 @@
 }
 
 /*
- * One visible focus ring for every control, drawn outside the element so a
- * tight table cell cannot clip it. Six rules used to set `outline: none` with
- * nothing in its place, which left keyboard users with no way to tell where
- * they were.
+ * One visible focus ring for every control, drawn outside the element so a tight table cell cannot
+ * clip it. A rule that sets `outline: none` with nothing in its place leaves keyboard users unable
+ * to tell where they are.
  */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--r-xs);
+}
+/* On the dark sidebar the brand-blue ring is 2.02:1; white clears 3:1 on both chrome shades (1.4.11). */
+.sidebar :focus-visible {
+  outline-color: var(--on-chrome);
+}
+/* The collapse chevron hangs half over the light page, where white vanishes: blue, drawn on its own fill. */
+.sidebar .rail-toggle:focus-visible {
+  outline-color: var(--focus);
+  outline-offset: 0;
+}
+/* <main> takes focus only as the skip link's target: a ring round the whole page would say nothing. */
+main[tabindex='-1']:focus {
+  outline: none;
+}
+/* Keeps a control reached with Shift+Tab from landing under the sticky 64px top bar. */
+html {
+  scroll-padding-top: 72px;
 }
 
 * {
@@ -314,8 +410,8 @@ a {
  * Brand lockup. The supplied logo is a stacked lockup, "HCML" over two lines of
  * much smaller type, so it does not survive being shrunk into a 38px square:
  * the second and third lines turn to grey texture. Expanded, it therefore gets
- * a wide plate and reads at full size; in the rail it gets a small square where
- * only "HCML" is meant to be legible, which is the part that identifies it.
+ * a wide plate and reads at full size; the rail and the wall header get the
+ * square H icon instead (DESIGN.md section 9).
  */
 .brand {
   display: flex;
@@ -352,12 +448,13 @@ a {
 .brand-mark-fallback {
   font-weight: 700;
   letter-spacing: 0.5px;
-  color: var(--primary);
+  color: var(--logo-ink);
 }
 
-/* The plate takes the asset's own proportions: 810x485 for the lockup,
-   782x224 for the HCML band. Matching them means object-fit never has to
-   letterbox, so the plate has no dead white margin at either size. */
+/* The plate takes the asset's own proportions: 810x485 for the lockup, square
+   for the icon. Matching them means object-fit never has to letterbox, so the
+   plate has no dead white margin at either size. The icon file is already
+   flattened onto white, so its plate needs no clear space of its own. */
 .brand-mark-lockup {
   aspect-ratio: 810 / 485;
   max-width: 216px;
@@ -365,11 +462,15 @@ a {
 .brand-mark-lockup .brand-mark-fallback {
   font-size: var(--t-3xl);
 }
-.brand-mark-mark {
-  aspect-ratio: 782 / 224;
-  padding: var(--s-1) var(--s-2);
+.brand-mark-icon {
+  /* A fixed size, not the plate's 100%: the rail centres its brand, which
+     shrinks to its content, so a missing image left a 19px disc. */
+  width: 40px;
+  height: 40px;
+  flex: none;
+  padding: 0;
 }
-.brand-mark-mark .brand-mark-fallback {
+.brand-mark-icon .brand-mark-fallback {
   font-size: var(--t-sm);
 }
 
@@ -454,6 +555,10 @@ a {
   opacity: 0.6;
   padding: 8px;
 }
+/* Which build is running: a second line of the same footer, set apart by a little space. */
+.sidebar .foot .foot-build {
+  margin-top: var(--s-1);
+}
 
 /* Two-column dashboard layout (collapses on narrow screens) */
 .two-col {
@@ -467,14 +572,20 @@ a {
 
 /* Severity count chips (Zabbix-style) */
 .sev-count {
-  display: inline-grid;
-  place-items: center;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 22px;
   height: 20px;
   padding: 0 6px;
   border-radius: var(--r-sm);
   color: var(--on-severity);
   font-size: var(--t-sm);
+  font-weight: 700;
+}
+.sev-count-code {
+  margin-right: 3px;
   font-weight: 700;
 }
 .sev-tile {
@@ -508,13 +619,16 @@ a {
 }
 
 .topbar {
-  height: 64px;
+  /* A floor, not a fixed height: on a narrow window the controls wrap onto a
+     second row instead of pushing the page sideways. */
+  min-height: 64px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 28px;
+  gap: var(--s-3);
+  padding: var(--s-2) 28px;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -526,6 +640,8 @@ a {
 }
 .topbar .right {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 14px;
   color: var(--muted);
@@ -534,6 +650,34 @@ a {
 
 .content {
   padding: 24px 28px 48px;
+}
+/* Narrow window or high zoom. Same width as NARROW_QUERY in hooks/useUiPrefs.ts, which also
+   forces the sidebar to its rail; here the topbar wraps and the page gives up some padding. */
+@media (max-width: 719.98px) {
+  .topbar {
+    flex-wrap: wrap;
+    padding-left: var(--s-3);
+    padding-right: var(--s-3);
+  }
+  .content {
+    padding: var(--s-4) var(--s-3) var(--s-8);
+  }
+}
+/* The skip link: hidden above the page until it takes focus, then the first thing on screen. */
+.skip-link {
+  position: absolute;
+  top: -48px;
+  left: var(--s-2);
+  z-index: 1000;
+  padding: var(--s-2) var(--s-3);
+  background: var(--surface);
+  color: var(--primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  font-weight: 600;
+}
+.skip-link:focus {
+  top: var(--s-2);
 }
 
 /* Cards / panels */
@@ -599,6 +743,9 @@ a {
 /* Tables */
 .table-wrap {
   overflow-x: auto;
+  /* The containing block for the hidden "No data" text in its cells (NoData),
+     so a wide table's far columns cannot widen the page past the wrap. */
+  position: relative;
 }
 table.data {
   width: 100%;
@@ -659,12 +806,12 @@ table.data tr:hover td {
   background: var(--surface);
 }
 .pill.up {
-  color: var(--good);
+  color: var(--good-text);
   border-color: var(--good-line);
   background: var(--good-bg);
 }
 .pill.down {
-  color: var(--danger);
+  color: var(--danger-text);
   border-color: var(--danger-line);
   background: var(--danger-bg);
 }
@@ -682,7 +829,8 @@ table.data tr:hover td {
   flex-direction: column;
   gap: 5px;
 }
-.field label {
+.field label,
+.field .field-label {
   font-size: var(--t-sm);
   color: var(--muted);
   font-weight: 600;
@@ -697,7 +845,7 @@ select,
 input[type='text'],
 input[type='password'] {
   padding: 9px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   background: var(--surface);
   min-width: 200px;
@@ -735,7 +883,7 @@ a.btn:hover {
   color: var(--muted);
 }
 .state.error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 .spinner {
   width: 22px;
@@ -773,6 +921,25 @@ a.btn:hover {
 .live.off .dot {
   background: var(--muted);
   box-shadow: none;
+}
+/* The data on screen is older than a wall screen may show without saying so. */
+.live.late {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+.live.late .dot {
+  background: var(--warn);
+  box-shadow: none;
+}
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.live-age {
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Device grid (network) */
@@ -853,12 +1020,12 @@ a.btn:hover {
   margin-top: 6px;
 }
 .login-error {
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: var(--t-base);
   margin-top: 10px;
 }
 
-/* Plain-language layer (plan_1.1) */
+/* Plain-language layer */
 button.btn.sm,
 a.btn.sm {
   padding: 5px 12px;
@@ -1023,7 +1190,7 @@ a.btn.sm {
   font-size: var(--t-sm);
 }
 .sla-over {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -1058,7 +1225,7 @@ a.btn.sm {
   font-family: inherit;
   font-size: var(--t-md);
   padding: 9px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   resize: vertical;
   width: 100%;
@@ -1223,7 +1390,7 @@ a.btn.sm {
   gap: 6px;
   font-size: var(--t-sm);
   font-weight: 600;
-  color: var(--s);
+  color: var(--s-text, var(--s));
   white-space: nowrap;
 }
 .link-state .dot {
@@ -1233,7 +1400,7 @@ a.btn.sm {
   background: var(--s);
 }
 .link-bad {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -1417,7 +1584,7 @@ a.btn.sm {
   line-height: 1.5;
 }
 .svc-cause-label {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -1511,7 +1678,8 @@ a.btn.sm {
   font-size: var(--t-3xl);
   font-weight: 700;
   line-height: 1;
-  color: var(--site-color);
+  /* The stripe carries the severity (DESIGN.md R-4): Warning yellow as text is 1.54:1. */
+  color: var(--text);
 }
 .site-big-label {
   font-size: var(--t-sm);
@@ -1519,13 +1687,13 @@ a.btn.sm {
 }
 .site-big-label em {
   font-style: normal;
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 .site-ok {
   font-size: var(--t-lg);
   font-weight: 600;
-  color: var(--good);
+  color: var(--good-text);
 }
 
 .site-foot {
@@ -1537,13 +1705,17 @@ a.btn.sm {
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }
+/* Only the card wraps its severity chips: its width is fixed and it clips. Table cells keep one line. */
+.site-foot .sev-strip {
+  flex-wrap: wrap;
+}
 .site-avail {
   display: inline-flex;
   gap: 8px;
   font-size: var(--t-xs);
 }
 .site-avail .down {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -1657,7 +1829,7 @@ a.btn.sm {
   background: var(--tint);
 }
 .chat-error {
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: var(--t-base);
 }
 .chat-compose {
@@ -1673,7 +1845,7 @@ a.btn.sm {
   min-height: 44px;
   max-height: 160px;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   background: var(--surface);
   color: var(--text);
@@ -1702,7 +1874,7 @@ a.btn.sm {
 .seg {
   display: inline-flex;
   flex-wrap: wrap;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   overflow: hidden;
   background: var(--surface);
@@ -1750,12 +1922,13 @@ a.btn.sm {
 }
 input[type='datetime-local'] {
   padding: 7px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   background: var(--surface);
   color: var(--text);
 }
-button.btn:disabled {
+button.btn:disabled,
+button.btn[aria-disabled='true'] {
   opacity: 0.5;
   cursor: default;
 }
@@ -1955,7 +2128,7 @@ table.data.ports tr.sel td {
   white-space: nowrap;
 }
 .port-bad {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 td.nowrap {
@@ -2142,7 +2315,7 @@ input[type='text'].sli-search {
 }
 .site-src.tag,
 .site-src.inventory {
-  color: var(--good);
+  color: var(--good-text);
 }
 .site-src.group {
   color: var(--warn-text);
@@ -2220,6 +2393,14 @@ table.data a:not(.btn):hover {
   font-size: var(--t-sm);
 }
 
+/* A problem inside a planned maintenance window: neutral, like "no data", because it counts nowhere */
+.pill.maintenance {
+  color: var(--muted);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  font-weight: 600;
+}
+
 /* Host state: answers ping, but SNMP or the agent is silent */
 .pill.degraded {
   color: var(--warn-text);
@@ -2273,7 +2454,7 @@ table.data a:not(.btn):hover {
 
 /* Services: how many devices below a node missed the target */
 .svc-below {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 /* Alert noise: "top 100 of 342" beside the heading */
@@ -2410,4 +2591,165 @@ table.data td,
    the luminance. DESIGN.md R-2. */
 table.data tr.sel td:first-child {
   box-shadow: inset 3px 0 0 var(--primary);
+}
+
+/* The live list's count and its way out to the full list (DESIGN.md section 9,
+   UX-12). Underlined, because colour alone does not set a link apart from the
+   text around it. */
+.panel-foot {
+  margin: var(--s-3) 0 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.panel-foot a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+/* Wall mode (DESIGN.md section 9): the Dashboard alone, larger. The type
+   scale goes up by about a quarter, and everything sized from it follows. */
+.app.wall {
+  grid-template-columns: 1fr;
+  --t-xs: 14px;
+  --t-sm: 15px;
+  --t-base: 16px;
+  --t-md: 18px;
+  --t-lg: 19px;
+  --t-xl: 22px;
+  --t-2xl: 30px;
+  --t-3xl: 38px;
+  --t-4xl: 55px;
+}
+.wall-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-8);
+  margin-bottom: var(--s-3);
+}
+.wall-title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-right: auto;
+}
+.wall-title h1 {
+  margin: 0;
+  font-size: var(--t-2xl);
+  font-weight: 600;
+}
+.wall-stamp {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s-1);
+}
+.wall-label {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.wall-time {
+  /* Shrinks on a narrow window before the bar has to wrap. */
+  font-size: clamp(var(--t-2xl), 3.2vw, var(--t-4xl));
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.wall-stamp.late .wall-time,
+.wall-stamp.late .wall-label {
+  color: var(--warn-text);
+}
+/* The larger type is paid for in spacing, so the whole Dashboard, the twelfth
+   row and the count line included, fits a 1080p screen without scrolling. */
+.app.wall .content {
+  padding-top: var(--s-4);
+  padding-bottom: var(--s-4);
+}
+.app.wall .grid {
+  gap: var(--s-3);
+}
+.app.wall .kpis {
+  margin-bottom: var(--s-3);
+}
+.app.wall .kpi {
+  padding: var(--s-3) var(--s-4);
+  gap: var(--s-1);
+}
+.app.wall .panel {
+  padding: var(--s-3) var(--s-4);
+}
+.app.wall table.data th,
+.app.wall table.data td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+/* Its count inherits the body's 16px, outside the scaled tokens. */
+.app.wall .sev-tile strong {
+  font-size: var(--t-xl);
+}
+
+/* A problem that just appeared or cleared, on the wall. The pill says
+   which; the tint only draws the eye, and fades out over the highlight's 10 s
+   (useChangeHighlight HIGHLIGHT_MS). Under reduced motion the page marks
+   nothing at all. */
+.pill.fresh {
+  color: var(--primary);
+  background: var(--tint);
+  border-color: var(--tint-line);
+}
+table.data tr.row-new td {
+  animation: row-arrive 10s ease-out both;
+}
+table.data tr.row-cleared td {
+  color: var(--muted);
+}
+@keyframes row-arrive {
+  from {
+    background: var(--tint);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+/* SLA report download (ReportDownload): two small buttons, and why one failed. */
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+/* Both labels share one grid cell and only the real one shows, so the button is as wide as the longer
+   of the two and keeps its place when it starts to work. */
+.report-label {
+  display: inline-grid;
+  justify-items: center;
+}
+.report-label > span {
+  grid-area: 1 / 1;
+}
+.report-label-twin {
+  visibility: hidden;
+}
+/* The button at work keeps its full colour: its label is the only sign of progress, and at the
+   50% a disabled button gets it reads 2.4:1. */
+.report-actions button.btn[aria-busy='true'] {
+  opacity: 1;
+  cursor: progress;
+}
+/* A row of its own in the controls row, so the buttons stay where they were when a failure appears. */
+.report-error-row {
+  display: flex;
+  flex: 0 0 100%;
+}
+.report-error {
+  min-width: 0;
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r-md);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: var(--t-sm);
+  /* A long server message wraps in the row instead of widening the page. */
+  overflow-wrap: anywhere;
 }

@@ -1,16 +1,16 @@
 import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
 import { useUrlState } from '../hooks/useUrlState';
-import type { Site, SiteSource, SitesResponse } from '../types';
+import type { Site, SitesResponse } from '../types';
 import { SEVERITIES } from '../theme';
-import { HostStatePill, SeverityCounts } from '../components/StatusBadge';
+import { SeverityCounts } from '../components/StatusBadge';
 import { Async, Empty } from '../components/states';
-import { ifaceType } from '../lib/severity';
+import { Field, FieldGroup, FieldSpacer } from '../components/Field';
+import { HostTable } from '../components/HostTable';
 
 /**
- * Site view (plan_1.2 Phase 1, HCML Goal 5). HCML's estate is organised by
+ * Site view (HCML Goal 5). HCML's estate is organised by
  * site, but the dashboard only ever showed one flat host list. This is the
  * board management actually reads: worst site first.
  */
@@ -95,76 +95,11 @@ function SiteCard({
   );
 }
 
-/** Where a host's site came from, strongest first. */
-const SOURCE_LABEL: Record<SiteSource, string> = {
-  tag: 'site tag',
-  name: 'from host name',
-  inventory: 'inventory',
-  group: 'host group (guess)',
-};
-
 function SiteHosts({ site }: { site: Site }) {
   return (
     <div className="panel">
-      <h2>{site.name} — hosts</h2>
-      <div className="table-wrap">
-        <table className="data">
-          <thead>
-            <tr>
-              <th>Host</th>
-              <th>Interface</th>
-              <th>Availability</th>
-              <th>Status</th>
-              <th>Problems</th>
-              <th>Site from</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {site.hosts.map((h) => {
-              const iface = h.interfaces?.[0];
-              return (
-                <tr key={h.hostid}>
-                  <td style={{ fontWeight: 500 }}>{h.name}</td>
-                  <td className="muted mono">
-                    {iface ? `${iface.ip} · ${ifaceType(iface.type)}` : '—'}
-                  </td>
-                  <td>
-                    <HostStatePill host={h} />
-                  </td>
-                  <td>
-                    {h.maintenance_status === '1' ? (
-                      <span className="pill">Maintenance</span>
-                    ) : h.status === '0' ? (
-                      <span className="pill up">Monitored</span>
-                    ) : (
-                      <span className="pill">Disabled</span>
-                    )}
-                  </td>
-                  <td>
-                    {h.problems.total > 0 ? (
-                      <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                        <SeverityCounts bySeverity={h.problems.bySeverity} />
-                        <span className="muted">({h.problems.total})</span>
-                      </span>
-                    ) : (
-                      <span className="muted">None</span>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`site-src ${h.siteSource}`}>{SOURCE_LABEL[h.siteSource] ?? h.siteSource}</span>
-                  </td>
-                  <td>
-                    <Link className="btn ghost sm" to={`/graphs?hostid=${h.hostid}`}>
-                      Graphs
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <h2>{site.name}: hosts</h2>
+      <HostTable hosts={site.hosts} siteFrom />
     </div>
   );
 }
@@ -181,7 +116,7 @@ function Coverage({ coverage }: { coverage: SitesResponse['coverage'] }) {
 
   return (
     <div className="site-coverage">
-      <strong>{pct}%</strong> of hosts ({explicit} of {coverage.hosts}) have a known site — a{' '}
+      <strong>{pct}%</strong> of hosts ({explicit} of {coverage.hosts}) have a known site: a{' '}
       <code>site</code> tag ({coverage.tag}), the site code in the host name ({byName}) or an
       inventory location ({coverage.inventory}). The remaining {coverage.group} are grouped by host
       group, which is a guess.
@@ -209,8 +144,7 @@ export default function Sites() {
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label htmlFor="sites-search">Search site</label>
+        <Field label="Search site" htmlFor="sites-search">
           <input
             id="sites-search"
             type="text"
@@ -218,9 +152,8 @@ export default function Sites() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </div>
-        <div className="field">
-          <label>Filter</label>
+        </Field>
+        <FieldGroup label="Filter">
           <label
             style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, cursor: 'pointer' }}
           >
@@ -232,11 +165,10 @@ export default function Sites() {
             />
             Needing attention only
           </label>
-        </div>
-        <div className="field">
-          <label>&nbsp;</label>
+        </FieldGroup>
+        <FieldSpacer>
           <span className="pill">{filtered.length} sites</span>
-        </div>
+        </FieldSpacer>
       </div>
 
       <Async

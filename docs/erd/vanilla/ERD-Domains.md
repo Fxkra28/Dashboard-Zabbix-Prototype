@@ -2,7 +2,7 @@
 
 The same schema as [`ERD-Mermaid.mmd`](ERD-Mermaid.mmd), split for readability. 43 entities and 49 relationships are a lot to take in at once, so this document shows the domain map first, then each domain on its own with full attributes.
 
-Nothing here differs from the single-diagram version (same entities, same attributes, same relationships, same names and PK/FK markers. Only the layout differs. One level up, the conceptual model) what the business talks about, with no keys or types is [`ERD-Conceptual.md`](../conceptual/ERD-Conceptual.md); the index of all three levels is in [`erd.md`](../../../erd.md#the-three-levels).
+Nothing here differs from the single-diagram version (same entities, same attributes, same relationships, same names and PK/FK markers. Only the layout differs. One level up, the conceptual model) what the business talks about, with no keys or types is [`ERD-Conceptual.md`](../conceptual/ERD-Conceptual.md); the index of all three levels is in [`erd.md`](../erd.md#the-three-levels).
 
 **Colour marks the layer:** blue `ZBX_*` is read from Zabbix over JSON-RPC · green is derived by the portal, which Zabbix has no equivalent for · amber is local to the portal · grey is an entity belonging to another domain, shown without attributes so the edge has somewhere to land.
 
@@ -136,7 +136,7 @@ erDiagram
     ZBX_HOST_GROUP       ||--|| GROUP_PROBLEMS       : "derives: severity histogram per group"
 
     ZBX_HOST             ||--o{ ZBX_ITEM             : "hostids"
-    ZBX_TRIGGER          }o--|| ZBX_HOST             : "selectHosts — FIRST HOST ONLY"
+    ZBX_TRIGGER          }o--|| ZBX_HOST             : "selectHosts: FIRST HOST ONLY"
     ZBX_HOST             ||--|| SITE_HOST            : "derives: resolveSite() tag, name, inventory, group"
     INCIDENT             }|--|| HOST_AVAILABILITY    : "derives: overlapping intervals merged per host"
     ZBX_HOST             ||--o{ HOST_GAP             : "derives: only when a dimension is missing"
@@ -188,7 +188,7 @@ erDiagram
         number problems
     }
     LINK {
-        string id PK "hostid:target — a synthetic composite key"
+        string id PK "hostid:target, a synthetic composite key"
         string host
         string target "ping destination, parsed from the item key"
         string label "taken from the icmppingloss item name"
@@ -345,7 +345,7 @@ erDiagram
         string host
         string severity
         number count
-        number medianDuration "MEDIAN, not mean — one outlier must not hide many"
+        number medianDuration "MEDIAN, not mean: one outlier must not hide many"
         number shortLived
         number ackRate "0 to 1"
         number totalDuration
@@ -375,7 +375,7 @@ erDiagram
     ZBX_EVENT            }o--|| AGING_BUCKET         : "derives: unacknowledged, bucketed by age"
     ZBX_EVENT            }o--|| TOP_TRIGGER          : "derives: counted by objectid, top 100"
 
-    ZBX_TRIGGER          }o--|| ZBX_HOST             : "selectHosts — FIRST HOST ONLY"
+    ZBX_TRIGGER          }o--|| ZBX_HOST             : "selectHosts: FIRST HOST ONLY"
     ZBX_SERVICE          ||--o{ ZBX_EVENT            : "selectProblemEvents, the root causes"
     INCIDENT             }|--|| HOST_AVAILABILITY    : "derives: overlapping intervals merged per host"
     ZBX_EVENT            ||--o| PROBLEM_EXPLANATION  : "derives: humanize() through an LLM"
@@ -398,7 +398,7 @@ erDiagram
 
 ## Services & SLA
 
-Services form a **DAG, not a tree**: one service can have several parents, so any walk must deduplicate by `serviceid`. The SLA-to-SLI join is positional, not keyed. No table stores an SLI: `sla.getsli` computes it from each service's status history in `service_alarms`.
+Services form a DAG, not a tree: one service can have several parents, so any walk must deduplicate by `serviceid`. The SLA-to-SLI join is positional, not keyed. No table stores an SLI: `sla.getsli` computes it from each service's status history in `service_alarms`.
 
 ```mermaid
 ---
@@ -439,7 +439,7 @@ erDiagram
         string name
         number status "-1 OK, else severity"
         number worst "max status anywhere in the subtree"
-        number descendants "DISTINCT ids below — the DAG can share children"
+        number descendants "DISTINCT ids below: the DAG can share children"
     }
     SERVICE_SLA {
         string slaid PK
@@ -451,7 +451,7 @@ erDiagram
     }
     ZBX_EVENT["ZBX_EVENT · problem, events"]
 
-    ZBX_SERVICE          ||--o{ ZBX_SERVICE          : "selectChildren — a DAG, not a tree"
+    ZBX_SERVICE          ||--o{ ZBX_SERVICE          : "selectChildren: a DAG, not a tree"
     ZBX_SERVICE          ||--o{ ZBX_SERVICE_TAG      : "selectTags"
     ZBX_SLA              ||--o{ ZBX_SLI              : "sla.getsli, one row per service"
     ZBX_SLI              }o--|| ZBX_SERVICE          : "POSITIONAL index, not a key"
@@ -557,7 +557,7 @@ erDiagram
         number unacknowledged
         number slas
         number degradedServices
-        boolean truncated "a cap fired — the model sees a PARTIAL estate"
+        boolean truncated "a cap fired: the model sees a PARTIAL estate"
         string text "plain text, ~4 chars per token, capped at 5500"
     }
     CHAT_TURN {
@@ -667,7 +667,7 @@ erDiagram
     direction TB
     PORTAL_USER {
         string name PK "parsed from PORTAL_USERS, name:password:role"
-        string pass "plain text in the environment"
+        string pass "plain text or scrypt hash"
         string role "viewer, operator or admin"
     }
     STATS {

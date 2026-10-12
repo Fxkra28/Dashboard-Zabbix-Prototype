@@ -1,14 +1,12 @@
 /**
  * The light theme's values, duplicated here only as fallbacks for the canvas.
  *
- * styles.css is the source of truth: everything that can read a CSS custom
- * property does, which is what lets the dark theme exist. ECharts paints to a
- * canvas and cannot resolve `var()`, so TimeSeriesChart reads the tokens at
- * render and falls back to these if it runs without a document.
+ * styles.css is the source of truth: everything that can read a CSS custom property does, which is
+ * what lets the dark theme exist. ECharts paints to a canvas and cannot resolve `var()`, so
+ * TimeSeriesChart reads the tokens at render and falls back to these if it runs without a document.
  *
- * Keep them equal to the `:root` block. A value that drifts is only ever seen
- * during server-side rendering, which makes it the kind of difference nobody
- * notices until it is load-bearing.
+ * Keep them equal to the `:root` block: a value that drifts shows only when the page runs without a
+ * document, so nobody would notice.
  */
 export const theme = {
   primary: '#2B5584',

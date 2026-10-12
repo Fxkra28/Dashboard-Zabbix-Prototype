@@ -9,9 +9,8 @@ import { Loading, ErrorState } from './states';
 const RENDER_CAP = 200;
 
 /**
- * A host's item list, kept for five minutes. Switching back to a host (or
- * returning to Graphs) reused to re-download it: a switch's list runs to
- * hundreds of kB. Only finished lists are kept: a request that was aborted or
+ * A host's item list, kept for five minutes: re-downloading it on every switch back to a host (or
+ * return to Graphs) is hundreds of kB. Only finished lists are kept: a request that was aborted or
  * failed must not be handed to the next caller.
  */
 const ITEMS_TTL_MS = 5 * 60_000;
@@ -159,6 +158,7 @@ export default function ItemPicker({
       </div>
       <input
         type="text"
+        aria-label="Search items"
         placeholder={`Search ${q.data?.length ?? ''} items… (e.g. Gi1/0/1 bits)`}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -177,6 +177,7 @@ export default function ItemPicker({
       ) : !q.data?.length ? (
         <div className="state">This host has no graphable (numeric, supported) items.</div>
       ) : (
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- arrow keys move between the buttons inside, which are the controls
         <div
           // The previous host's list, dimmed and inert until this host's arrives.
           className={`item-picker-list${q.stale ? ' stale' : ''}`}
@@ -212,6 +213,7 @@ export default function ItemPicker({
                   key={i.itemid}
                   type="button"
                   className={`item-row${selected.includes(i.itemid) ? ' on' : ''}`}
+                  aria-pressed={selected.includes(i.itemid)}
                   onClick={() => toggle(i.itemid)}
                   title={i.key_}
                 >
@@ -226,7 +228,7 @@ export default function ItemPicker({
           {matches === 0 && <div className="state">No items match “{search}”.</div>}
           {matches > RENDER_CAP && (
             <div className="item-picker-more muted">
-              Showing {RENDER_CAP} of {matches} matches — refine the search.
+              Showing {RENDER_CAP} of {matches} matches. Refine the search.
             </div>
           )}
         </div>

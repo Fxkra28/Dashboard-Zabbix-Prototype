@@ -30,13 +30,28 @@ function offsetSeconds(utcSeconds: number, tz: string): number {
   return asUtc - utcSeconds;
 }
 
-/** Midnight on day 1 of `month` (1–12) of `year` in `tz`, as Unix seconds. */
-export function zonedMonthStart(year: number, month: number, tz: string): number {
-  const guess = Date.UTC(year, month - 1, 1) / 1000;
+/** Midnight on `day` of `month` (1 to 12) of `year` in `tz`, as Unix seconds. */
+export function zonedDayStart(year: number, month: number, day: number, tz: string): number {
+  const guess = Date.UTC(year, month - 1, day) / 1000;
   const first = guess - offsetSeconds(guess, tz);
   // Re-check at the corrected instant: across a DST change the offset differs.
   const second = guess - offsetSeconds(first, tz);
   return second;
+}
+
+/** Midnight on day 1 of `month` (1 to 12) of `year` in `tz`, as Unix seconds. */
+export function zonedMonthStart(year: number, month: number, tz: string): number {
+  return zonedDayStart(year, month, 1, tz);
+}
+
+/** The calendar date `atSeconds` falls on in `tz`. */
+export function zonedDate(atSeconds: number, tz: string): { year: number; month: number; day: number } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date(atSeconds * 1000))
+      .map((p) => [p.type, p.value]),
+  );
+  return { year: +parts.year, month: +parts.month, day: +parts.day };
 }
 
 const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;

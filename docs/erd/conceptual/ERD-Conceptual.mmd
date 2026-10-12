@@ -1,5 +1,5 @@
 ---
-title: HCML Monitoring Portal — conceptual model
+title: "HCML Monitoring Portal: conceptual model"
 config:
   layout: elk
   elk:
@@ -7,24 +7,23 @@ config:
     nodePlacementStrategy: BRANDES_KOEPF
 ---
 flowchart LR
-    %% =================================================================
-    %%  CONCEPTUAL model (Merise MCD) — 26 entities, 33 associations.
+    %%  Conceptual model (Merise MCD): 26 entities, 33 associations.
     %%  The top of three levels. Below it: erd/vanilla (logical, what
     %%  the portal reads and derives) and erd/database (physical, what
     %%  MySQL stores). The levels index is in erd.md.
 
     %%  Mermaid has no MCD diagram type, so this is a flowchart:
     %%    rectangle   an entity and its properties. No keys, no foreign
-    %%                keys, no types -- those belong to the two levels
+    %%                keys, no types: those belong to the two levels
     %%                below, and a conceptual model has none of them.
     %%    diamond     a named association, read in the verb's direction
     %%    (min,max)   how many times one occurrence of the entity on
     %%                that leg takes part in the association
 
     %%  Colour marks where a concept comes from, as in the other ERDs:
-    %%    blue    observed -- Zabbix holds it
-    %%    green   derived  -- the portal computes it, nothing stores it
-    %%    amber   local    -- the portal's own, never in Zabbix
+    %%    blue    observed: Zabbix holds it
+    %%    green   derived: the portal computes it, nothing stores it
+    %%    amber   local: the portal's own, never in Zabbix
     %%    grey    the association diamonds
 
     %%  The approximation: the diamonds are decorative. Nothing checks
@@ -37,7 +36,6 @@ flowchart LR
 
     %%  Per-domain views, and the reasoning behind every cardinality:
     %%  ERD-Conceptual.md. Keep this file and that one in step.
-    %% =================================================================
 
     subgraph EST["Estate"]
         DEVICE["<b>DEVICE</b><br>visible name<br>technical name<br>monitored<br>in maintenance<br>network addresses<br>address kinds<br>site city<br>location<br>owner name<br>owner e-mail<br>labels<br>reporting category"]
@@ -122,7 +120,7 @@ flowchart LR
         R_EXPLAINS{"explains"}
     end
 
-    %% ---- Estate -----------------------------------------------------
+    %% Estate
     DEVICE          ---|"(1,n)"| R_BELONGS
     R_BELONGS       ---|"(0,n)"| DEVICE_GROUP
     DEVICE_CLASS    ---|"(0,n)"| R_CLASSES
@@ -130,7 +128,7 @@ flowchart LR
     DEVICE          ---|"(1,1)"| R_REACHES
     R_REACHES       ---|"(1,1)"| HOST_STATE
 
-    %% ---- Measurement ------------------------------------------------
+    %% Measurement
     DEVICE          ---|"(0,n)"| R_CARRIES
     R_CARRIES       ---|"(1,1)"| MEASUREMENT
     MEASUREMENT     ---|"(0,n)"| R_RECORDS
@@ -142,7 +140,7 @@ flowchart LR
     CAPACITY_READING ---|"(1,1)"| R_EVIDENCE
     R_EVIDENCE      ---|"(0,n)"| OBSERVATION
 
-    %% ---- Alerting ---------------------------------------------------
+    %% Alerting
     ALERT_RULE      ---|"(1,n)"| R_WATCHES
     R_WATCHES       ---|"(0,n)"| DEVICE
     ALERT_RULE      ---|"(0,n)"| R_RAISES
@@ -158,7 +156,7 @@ flowchart LR
     ALERT_RULE      ---|"(1,1)"| R_RANKS
     R_RANKS         ---|"(0,1)"| NOISY_RULE
 
-    %% ---- Sites and paths --------------------------------------------
+    %% Sites and paths
     SITE            ---|"(1,n)"| R_STATIONS
     R_STATIONS      ---|"(1,1)"| DEVICE
     DEVICE          ---|"(0,n)"| R_TERMINATES
@@ -168,7 +166,7 @@ flowchart LR
     WAN_PATH        ---|"(0,1)"| R_SERVES
     R_SERVES        ---|"(0,n)"| SITE
 
-    %% ---- Service levels ---------------------------------------------
+    %% Service levels
     BUSINESS_SERVICE ---|"(0,n)"| R_COMPOSES
     R_COMPOSES      ---|"(0,n)"| BUSINESS_SERVICE
     BUSINESS_SERVICE ---|"(0,n)"| R_COMMITS
@@ -186,7 +184,7 @@ flowchart LR
     DERIVED_NODE    ---|"(1,1)"| R_STANDS
     R_STANDS        ---|"(0,1)"| DEVICE
 
-    %% ---- Governance, maps and assistant -------------------------------
+    %% Governance, maps and assistant
     DEVICE          ---|"(0,n)"| R_LACKS
     R_LACKS         ---|"(0,n)"| GOVERNANCE_DIM
     TOPOLOGY_MAP    ---|"(0,n)"| R_SHOWS
@@ -203,8 +201,8 @@ flowchart LR
     R_EXPLAINS      ---|"(0,1)"| ALERT
     R_EXPLAINS      ---|"(0,1)"| SERVICE_AGREEMENT
 
-    %% Frames MUST stay unfilled: a filled frame paints over the edges
-    %% under it. That once hid 33 of 46 edges -- see erd.md.
+    %% Frames must stay unfilled: a filled frame paints over the edges
+    %% under it. That once hid 33 of 46 edges, see erd.md.
 
     classDef zbx     fill:#dbeafe,stroke:#2563eb,color:#14213d
     classDef derived fill:#dcfce7,stroke:#16a34a,color:#052e16

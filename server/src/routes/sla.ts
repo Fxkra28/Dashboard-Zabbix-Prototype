@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { zbx } from '../zabbix.js';
 import { cached } from '../cache.js';
+import { optionalId } from '../validate.js';
 
 /**
- * Zabbix Services → SLA, read-only (plan_1.1). These return [] until Services
+ * Zabbix Services → SLA, read-only. These return [] until Services
  * and SLAs are configured in Zabbix, same as the network-device views.
  */
 
@@ -113,7 +114,11 @@ export async function slaRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sla', () => cached('sla', 60_000, getSlas));
 
   app.get('/api/sla/sli', (req) => {
-    const { slaid, serviceid } = req.query as { slaid?: string; serviceid?: string };
+    const q = req.query as { slaid?: string; serviceid?: string };
+    // Checked before the cache key is built: a junk id would reach Zabbix as a
+    // 502 and fill the cache with entries nobody can ask for again.
+    const slaid = optionalId(q.slaid, 'slaid');
+    const serviceid = optionalId(q.serviceid, 'serviceid');
     if (!slaid) return [];
     return cached(`sli:${slaid}:${serviceid ?? 'all'}`, 60_000, () => getSli(slaid, serviceid));
   });

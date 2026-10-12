@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { buildFocus, cleanAnswer, getSnapshot, streamAnswer, systemText, type ChatTurn } from '../chat.js';
-import { prefillModel, warmModel, type OllamaStats } from '../ai.js';
+import { AiDisabledError, AiUpstreamError, prefillModel, warmModel, type OllamaStats } from '../ai.js';
+import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../zabbix.js';
+import { aiGuard, chargeTo } from '../limits.js';
+import { chatBody } from '../schemas.js';
 
 /**
  * The assistant endpoint. A POST because the conversation travels in the body,
@@ -71,6 +74,17 @@ async function warmAndPrefill(log: FastifyBaseLogger, load: boolean): Promise<vo
   }
 }
 
+/** Typed AI and Zabbix errors carry wording for a reader (their `detail` is for the log); anything else is a bug. */
+function publicMessage(err: unknown): string {
+  const typed =
+    err instanceof AiUpstreamError ||
+    err instanceof AiDisabledError ||
+    err instanceof ZabbixApiError ||
+    err instanceof ZabbixTimeoutError ||
+    err instanceof ZabbixAuthError;
+  return typed ? err.message : 'The assistant hit an unexpected error. Details are in the BFF log.';
+}
+
 function parseTurns(body: unknown): ChatTurn[] | null {
   const raw = (body as { messages?: unknown } | null)?.messages;
   if (!Array.isArray(raw) || !raw.length) return null;
@@ -116,7 +130,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(202).send({ warming: true });
   });
 
-  app.post('/api/chat', async (req, reply) => {
+  // Limited per user, and a hosted answer is charged to the daily token budget (limits.ts).
+  app.post('/api/chat', { schema: { body: chatBody }, preHandler: aiGuard('chat') }, async (req, reply) => {
     if (!config.ai.enabled) {
       return reply.code(503).send({ error: 'ai_disabled', message: 'AI not configured' });
     }
@@ -169,7 +184,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       let firstTokenMs: number | null = null;
       let stats: OllamaStats = {};
       let answer = '';
-      const options = { focus: focus?.text, onStats: (s: OllamaStats) => (stats = s) };
+      const options = { focus: focus?.text, onStats: (s: OllamaStats) => (stats = s), onUsage: chargeTo(req) };
       for await (const piece of streamAnswer(turns, text, ac.signal, options)) {
         if (firstTokenMs === null) {
           firstTokenMs = Date.now() - started;
@@ -196,8 +211,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       );
     } catch (err) {
       if (!ac.signal.aborted) {
-        req.log.error(err);
-        send('error', { message: err instanceof Error ? err.message : String(err) });
+        const detail =
+          err instanceof AiUpstreamError || err instanceof ZabbixApiError || err instanceof ZabbixTimeoutError
+            ? err.detail
+            : undefined;
+        req.log.error({ err, detail }, 'chat failed');
+        send('error', { message: publicMessage(err) });
       }
     } finally {
       closed = true;

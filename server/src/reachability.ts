@@ -5,15 +5,13 @@ import { parseDelay } from './sli/engine.js';
 /**
  * One reachability state per host, ping first.
  *
- * Sites, Hosts and the assistant used to read reachability from Zabbix's
- * interface flags alone, and those answer a different question: whether SNMP
- * or the agent responds. On 2026-09-17, 16 of HCML's 23 "unavailable" hosts
- * answered ping, and 43 hosts had no interface at all. ICMP is what "down"
- * means; the interface flags explain what else is wrong and stand in only when
- * there is no recent ping.
+ * Zabbix's interface flags answer a different question: whether SNMP or the agent responds. On
+ * 2026-09-17, 16 of HCML's 23 "unavailable" hosts answered ping, and 43 hosts had no interface at
+ * all. ICMP is what "down" means; the interface flags explain what else is wrong and stand in only
+ * when there is no recent ping.
  *
- * Read-only. The Network page reads the same ICMP items (net.ts), so both
- * views agree on what "up" is.
+ * Read-only. The Network page reads the same ICMP items (net.ts), so both views agree on what "up"
+ * is.
  */
 
 export type HostState = 'up' | 'down' | 'degraded' | 'nodata' | 'disabled';
@@ -119,19 +117,70 @@ export function foldIcmp(items: IcmpItem[], now: number): Map<string, IcmpReadin
 }
 
 /**
- * ICMP readings for every monitored host, in one `item.get`. Hosts without an
- * ICMP item are absent. Cached briefly: the pinger itself runs once a minute.
+ * Every monitored ICMP item, in one `item.get`. Cached briefly: the pinger
+ * itself runs once a minute. Shared by the host states and the data clock, so
+ * asking for both costs Zabbix one call.
  */
-export function getIcmpByHost(): Promise<Map<string, IcmpReading>> {
-  return cached('icmp:hosts', 15_000, async () => {
-    const items = await zbx<IcmpItem[]>('item.get', {
+function getIcmpItems(): Promise<IcmpItem[]> {
+  return cached('icmp:items', 15_000, () =>
+    zbx<IcmpItem[]>('item.get', {
       output: ['itemid', 'hostid', 'key_', 'lastvalue', 'lastclock', 'state', 'delay'],
       search: { key_: 'icmpping' },
       startSearch: true,
       monitored: true,
-    });
-    return foldIcmp(items, Math.floor(Date.now() / 1000));
-  });
+    }),
+  );
+}
+
+/** ICMP readings for every monitored host. Hosts without an ICMP item are absent. */
+export function getIcmpByHost(): Promise<Map<string, IcmpReading>> {
+  return cached('icmp:hosts', 15_000, async () => foldIcmp(await getIcmpItems(), Math.floor(Date.now() / 1000)));
+}
+
+/**
+ * Whether Zabbix is still collecting. A stopped `zabbix-server` leaves every API call working and
+ * every value in place, so a frozen estate would read `ok` and "Live". The newest value any
+ * supported ICMP item holds says when anything was last collected; the pinger runs once a minute,
+ * so that is never long ago on a healthy estate.
+ */
+
+/** The same ten minutes isFresh() allows before it stops believing a ping. */
+export const COLLECTING_STALE_SECONDS = MIN_FRESH_SECONDS;
+
+/** The newest `lastclock` of a supported item, Unix seconds; null when no item has collected. Pure. */
+export function newestClock(items: { lastclock?: string; state?: string }[]): number | null {
+  let newest = 0;
+  for (const it of items) {
+    if (it.state === '1') continue;
+    const clock = Number(it.lastclock);
+    if (Number.isFinite(clock) && clock > newest) newest = clock;
+  }
+  return newest > 0 ? newest : null;
+}
+
+export interface CollectingStatus {
+  /** When Zabbix last collected a value, Unix seconds; null when there is no ICMP item to tell. */
+  lastCollectedAt: number | null;
+  ageSeconds: number | null;
+  /** Nothing collected for longer than `staleAfterSeconds`. Never true while the age is unknown. */
+  stale: boolean;
+  staleAfterSeconds: number;
+}
+
+/** Work out the age at the moment of asking. Pure. */
+export function collectingStatus(lastCollectedAt: number | null, now: number): CollectingStatus {
+  const ageSeconds = lastCollectedAt === null ? null : Math.max(0, now - lastCollectedAt);
+  return {
+    lastCollectedAt,
+    ageSeconds,
+    stale: ageSeconds !== null && ageSeconds > COLLECTING_STALE_SECONDS,
+    staleAfterSeconds: COLLECTING_STALE_SECONDS,
+  };
+}
+
+/** When Zabbix last collected a value. Cached; the age is worked out per request, from this. */
+export function getLastCollected(): Promise<number | null> {
+  return cached('collecting:last', 30_000, async () => newestClock(await getIcmpItems()));
 }
 
 /**

@@ -4,11 +4,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 /**
  * Change query-string parameters in place: `null` or `''` removes one.
  *
- * Replaces the history entry rather than pushing one, so a filter changed ten
- * times still leaves one Back step. Reads the live URL rather than the render's
- * copy, so several patches in one event all land, React Router's own
- * `setSearchParams(prev => …)` hands every call the same render-time `prev`,
- * and the second call undid the first.
+ * Replaces the history entry rather than pushing one, so a filter changed ten times still leaves
+ * one Back step. Reads the live URL rather than the render's copy, so several patches in one event
+ * all land: React Router's own `setSearchParams(prev => …)` hands every call the same render-time
+ * `prev`, and the second call undoes the first.
  */
 export function useSearchPatch(): (patch: Record<string, string | null>) => void {
   const navigate = useNavigate();

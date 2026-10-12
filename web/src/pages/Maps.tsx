@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useUrlState } from '../hooks/useUrlState';
 import type { ZMap, MapDetail, MapSelement } from '../types';
 import { Async, Loaded, Loading } from '../components/states';
+import { Field } from '../components/Field';
 import { severity } from '../lib/severity';
+import { clipLine, placeLabels } from '../lib/mapLabels';
 
 const ELEMENT_LABEL: Record<string, string> = {
   '0': 'Host',
@@ -41,11 +44,10 @@ function labelLines(s: MapSelement): string[] {
 // Monitoring → Maps: list Zabbix maps and render the selected map's topology.
 export default function Maps() {
   const listQ = useAsync<ZMap[]>(() => api.maps(), []);
-  const [mapid, setMapid] = useState('');
-
-  useEffect(() => {
-    if (!mapid && listQ.data?.length) setMapid(listQ.data[0].sysmapid);
-  }, [listQ.data, mapid]);
+  // The map lives in the URL, so a link or Back returns to the same one. An id that is not in the list reads as the first map.
+  const [chosen, setMapid] = useUrlState<string>('map', '');
+  const maps = listQ.data ?? [];
+  const mapid = maps.some((m) => m.sysmapid === chosen) ? chosen : (maps[0]?.sysmapid ?? '');
 
   const detailQ = useAsync<MapDetail[]>(
     () => (mapid ? api.mapDetail(mapid) : Promise.resolve([])),
@@ -57,8 +59,7 @@ export default function Maps() {
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label htmlFor="map-select">Map</label>
+        <Field label="Map" htmlFor="map-select">
           <select id="map-select" value={mapid} onChange={(e) => setMapid(e.target.value)}>
             {(listQ.data ?? []).map((m) => (
               <option key={m.sysmapid} value={m.sysmapid}>
@@ -66,7 +67,7 @@ export default function Maps() {
               </option>
             ))}
           </select>
-        </div>
+        </Field>
       </div>
 
       <div className="panel">
@@ -113,6 +114,24 @@ function MapCanvas({ map }: { map: MapDetail }) {
   const hostEls = (map.selements ?? []).filter((s) => s.elementtype === '0');
   const withProblems = hostEls.filter((s) => s.problems).length;
 
+  // Where each name goes so that none overlaps another or an element. Worst problem first.
+  const placements = useMemo(
+    () =>
+      placeLabels(
+        (map.selements ?? []).map((s) => ({
+          id: s.selementid,
+          x: Number(s.x),
+          y: Number(s.y),
+          lines: labelLines(s),
+          rank: s.elementtype === '0' && s.problems ? 1 + (s.maxSeverity ?? 0) : 0,
+          badge: s.elementtype === '0' && Boolean(s.problems),
+        })),
+      ),
+    [map.selements],
+  );
+  // The names left out are listed in the caption: pointing is the only other way to read one, and a keyboard or a touch screen cannot point.
+  const leftOut = (map.selements ?? []).flatMap((s) => (placements.get(s.selementid)?.hidden ? [labelLines(s)[0]] : []));
+
   return (
     <div style={{ overflow: 'auto' }}>
       <svg
@@ -147,16 +166,17 @@ function MapCanvas({ map }: { map: MapDetail }) {
           const color = elementColor(s);
           const lines = labelLines(s);
           const isHost = s.elementtype === '0';
+          const what =
+            lines.join(' ') +
+            (isHost
+              ? s.problems
+                ? `, ${s.problems} open problem${s.problems === 1 ? '' : 's'}, worst: ${severity(s.maxSeverity ?? 0).name}`
+                : ', no open problems'
+              : '');
           return (
-            <g key={s.selementid} transform={`translate(${Number(s.x)}, ${Number(s.y)})`}>
-              <title>
-                {lines.join(' ')}
-                {isHost
-                  ? s.problems
-                    ? ` — ${s.problems} open problem${s.problems === 1 ? '' : 's'}, worst: ${severity(s.maxSeverity ?? 0).name}`
-                    : ' — no open problems'
-                  : ''}
-              </title>
+            // The label also names the element for a screen reader, which is told every name, drawn or not.
+            <g key={s.selementid} transform={`translate(${Number(s.x)}, ${Number(s.y)})`} role="img" aria-label={what}>
+              <title>{what}</title>
               <rect
                 width={48}
                 height={32}
@@ -174,24 +194,25 @@ function MapCanvas({ map }: { map: MapDetail }) {
                     textAnchor="middle"
                     fontSize={9}
                     fontWeight={700}
-                    style={{ fill: 'var(--surface)' }}
+                    style={{ fill: 'var(--on-severity)' }}
                   >
                     {s.problems > 99 ? '99+' : s.problems}
                   </text>
                 </g>
               ) : null}
-              {lines.slice(0, 2).map((line, i) => (
-                <text
-                  key={i}
-                  x={24}
-                  y={46 + i * 12}
-                  textAnchor="middle"
-                  fontSize={i === 0 ? 11 : 10}
-                  style={{ fill: i === 0 ? 'var(--text)' : 'var(--muted)' }}
-                >
-                  {line.length > 26 ? `${line.slice(0, 25)}…` : line}
-                </text>
-              ))}
+              {!placements.get(s.selementid)?.hidden &&
+                lines.slice(0, 2).map((line, i) => (
+                  <text
+                    key={i}
+                    x={24}
+                    y={46 + i * 12 + (placements.get(s.selementid)?.dy ?? 0)}
+                    textAnchor="middle"
+                    fontSize={i === 0 ? 11 : 10}
+                    style={{ fill: i === 0 ? 'var(--text)' : 'var(--muted)' }}
+                  >
+                    {clipLine(line)}
+                  </text>
+                ))}
             </g>
           );
         })}
@@ -199,14 +220,18 @@ function MapCanvas({ map }: { map: MapDetail }) {
       <div className="muted" style={{ fontSize: 12, marginTop: 10, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
         <span>
           {map.selements?.length ?? 0} elements · {map.links?.length ?? 0} links ·{' '}
-          {withProblems} of {hostEls.length} hosts with open problems · rendered from Zabbix{' '}
-          <span className="mono">map.get</span>
+          {withProblems} of {hostEls.length} hosts with open problems · drawn from the Zabbix map
+          {leftOut.length > 0 && ` · ${leftOut.length} name${leftOut.length === 1 ? '' : 's'} left out where crowded: ${leftOut.join(', ')}`}
         </span>
         <span>
-          <span style={{ color: OK }}>●</span> no problems ·{' '}
-          <span style={{ color: severity(2).color }}>●</span> warning ·{' '}
-          <span style={{ color: severity(4).color }}>●</span> high ·{' '}
-          <span style={{ color: severity(5).color }}>●</span> disaster
+          <span style={{ color: OK }} aria-hidden="true">●</span> no problems
+          {[5, 4, 3, 2, 1, 0].map((level) => (
+            <span key={level}>
+              {' · '}
+              <span style={{ color: severity(level).color }} aria-hidden="true">●</span>{' '}
+              {severity(level).name.toLowerCase()}
+            </span>
+          ))}
         </span>
       </div>
     </div>

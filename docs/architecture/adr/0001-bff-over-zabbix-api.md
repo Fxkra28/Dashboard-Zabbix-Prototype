@@ -17,15 +17,15 @@ present. How should a better interface be built without endangering a production
 
 * The Zabbix installation is production. Breaking it breaks monitoring for the whole estate.
 * Whatever is built must survive Zabbix upgrades.
-* Several wanted views (sites, WAN links, incidents, a monthly SLA) have **no Zabbix entity at all**.
+* Several wanted views (sites, WAN links, incidents, a monthly SLA) have no Zabbix entity at all.
 * An intern-scale project: it has to be deliverable and handover-able.
 
 ## Considered Options
 
-* **Path 0: configure Zabbix natively.** Dashboards, host groups, tags, Services and SLA.
-* **Path 1: white-label the Zabbix frontend.** Themes, a custom widget module, branding overrides.
-* **Path 2: Grafana over the Zabbix datasource.**
-* **Path 3: a separate read-only BFF and web app over the Zabbix JSON-RPC API.**
+* Path 0: configure Zabbix natively. Dashboards, host groups, tags, Services and SLA.
+* Path 1: white-label the Zabbix frontend. Themes, a custom widget module, branding overrides.
+* Path 2: Grafana over the Zabbix datasource.
+* Path 3: a separate read-only BFF and web app over the Zabbix JSON-RPC API.
 
 ## Decision Outcome
 
@@ -45,8 +45,8 @@ HTTP; it never touches Zabbix's database, its configuration or its files.
 
 ### Negative Consequences
 
-* **Everything is recomputed, because nothing is stored**: see [ADR-0003](0003-no-database.md).
-* **A second thing to operate**: two containers, a token to rotate, a deployment to keep alive.
+* Everything is recomputed, because nothing is stored: see [ADR-0003](0003-no-database.md).
+* A second thing to operate: two containers, a token to rotate, a deployment to keep alive.
 * The JSON-RPC boundary is chatty and it costs real time. Measured 22 Sep 2026: one trivial
   `host.get` costs 20 SQL statements upstream, and a 365-day capacity report costs 10,771. See
   [ADR-0007](0007-keep-the-zabbix-api.md).
@@ -61,16 +61,16 @@ HTTP; it never touches Zabbix's database, its configuration or its files.
 * Good, because it survives upgrades by construction.
 * Bad, because dashboards cannot express a derived site rollup: no HCML host carries a site tag, so
   sites have to be parsed out of host names.
-* Bad, because Zabbix's Services and SLA are unconfigured at HCML: the `services` table has **0 rows**
+* Bad, because Zabbix's Services and SLA are unconfigured at HCML: the `services` table has 0 rows
   and `sla` holds one placeholder. See [ADR-0004](0004-derive-the-sla-in-the-portal.md).
-* **Kept anyway** for collection, triggers, maps and alerting. The portal reads what Path 0 produces.
+* Kept anyway for collection, triggers, maps and alerting. The portal reads what Path 0 produces.
 
 ### Path 1: white-label the Zabbix frontend
 
 * Good, because it reuses every existing page.
 * Bad, because it means maintaining a patched copy of a PHP application and re-applying the patches at
   every upgrade.
-* Bad, because the frontend is the slow part. Measured: **17 SQL statements to render the login page**,
+* Bad, because the frontend is the slow part. Measured: 17 SQL statements to render the login page,
   a page with no data on it. Rebranding it would not make it faster.
 
 ### Path 2: Grafana over the Zabbix datasource

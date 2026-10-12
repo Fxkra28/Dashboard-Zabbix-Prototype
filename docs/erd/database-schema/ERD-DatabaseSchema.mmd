@@ -1,5 +1,5 @@
 ---
-title: HCML Monitoring Portal — database schema map
+title: "HCML Monitoring Portal: database schema map"
 config:
   layout: elk
   elk:
@@ -7,7 +7,6 @@ config:
     nodePlacementStrategy: BRANDES_KOEPF
 ---
 flowchart LR
-    %% ==================================================================
     %%  How the two ERDs connect: the 19 blue ZBX_* entities of
     %%  ERD-Mermaid.mmd, each pointing at the ERD-Database.mmd tables it
     %%  uses. One frame per ERD-Mermaid.mmd domain; a table sits in the
@@ -19,7 +18,6 @@ flowchart LR
     %%           colour from ERD-Database.mmd, blue returned, grey internal
     %%  34 of the 45 tables are drawn. The ones that back no entity
     %%  are listed in ERD-DatabaseSchema.md, with this map as a table.
-    %% ==================================================================
 
     subgraph M_HOSTS["Hosts &amp; Inventory"]
         ZBX_HOST("ZBX_HOST")
@@ -138,7 +136,7 @@ flowchart LR
     ZBX_MAP_SELEMENT --> t_sysmaps_elements
     ZBX_MAP_LINK --> t_sysmaps_links
 
-    %% Frames MUST stay unfilled, as in the other ERDs (see erd.md)
+    %% Frames must stay unfilled, as in the other ERDs (see erd.md)
 
     classDef entity   fill:#dbeafe,stroke:#2563eb,color:#14213d
     classDef returned fill:#dbeafe,stroke:#2563eb,color:#14213d

@@ -53,10 +53,9 @@ export interface Model {
 const TYPE_BY_ID: Record<number, string> = { 15: 'int', 17: 'bigint', 33: 'double', 322: 'text', 312: 'varchar' };
 
 /**
- * ERD-Database.md states it outright: every bigint in this schema is bigint
- * unsigned. The diagram writes the short form, so both sides are normalised to
- * the long one. A bigint that loses `unsigned` in the .erd then fails the
- * comparison instead of quietly exporting the wrong DDL.
+ * Every bigint in this schema is unsigned (ERD-Database.md). The diagram writes the short form, so
+ * both sides are normalised to the long one: a bigint that loses `unsigned` in the .erd then fails
+ * the check instead of quietly exporting the wrong DDL.
  */
 const normaliseType = (type: string) => (type === 'bigint' ? 'bigint unsigned' : type);
 

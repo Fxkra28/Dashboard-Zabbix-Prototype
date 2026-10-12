@@ -1,8 +1,19 @@
+import { Link } from 'react-router-dom';
 import type { Problem } from '../types';
 import { SeverityBadge } from './StatusBadge';
+import { AckPill } from './AckPill';
 import { ago } from '../lib/severity';
+import { NoData } from './NoData';
+import type { ChangeMark } from '../hooks/useChangeHighlight';
 
-export default function ProblemsTable({ problems }: { problems: Problem[] }) {
+/** `marks` flags rows that just appeared or cleared (the wall screen's highlight, useChangeHighlight). */
+export default function ProblemsTable({
+  problems,
+  marks,
+}: {
+  problems: Problem[];
+  marks?: ReadonlyMap<string, ChangeMark>;
+}) {
   if (!problems.length) return <div className="state">No open problems.</div>;
 
   return (
@@ -18,23 +29,31 @@ export default function ProblemsTable({ problems }: { problems: Problem[] }) {
           </tr>
         </thead>
         <tbody>
-          {problems.map((p) => (
-            <tr key={p.eventid}>
-              <td>
-                <SeverityBadge level={p.severity} />
-              </td>
-              <td>{p.name}</td>
-              <td className="muted">{p.host || '—'}</td>
-              <td className="muted">{ago(p.clock)}</td>
-              <td>
-                {p.acknowledged === '1' ? (
-                  <span className="pill up">Yes</span>
-                ) : (
-                  <span className="pill">No</span>
-                )}
-              </td>
-            </tr>
-          ))}
+          {problems.map((p) => {
+            const mark = marks?.get(p.eventid);
+            return (
+              <tr key={p.eventid} className={mark ? `row-${mark}` : undefined}>
+                <td>
+                  <SeverityBadge level={p.severity} />
+                </td>
+                <td>
+                  {/* Said in words, not only by the tint, which a screen reader and a colour-blind eye both miss. */}
+                  {mark === 'new' && <span className="pill fresh">New</span>}
+                  {mark === 'cleared' && <span className="pill up">Cleared</span>}
+                  {mark && ' '}
+                  {/* The Problems page marks this row, and can open Explain or Acknowledge on it. */}
+                  <Link to={`/problems?eventid=${encodeURIComponent(p.eventid)}`}>{p.name}</Link>
+                </td>
+                <td className="muted">
+                  {p.hostid ? <Link to={`/graphs?hostid=${p.hostid}`}>{p.host || 'Unknown host'}</Link> : p.host || <NoData />}
+                </td>
+                <td className="muted">{ago(p.clock)}</td>
+                <td>
+                  <AckPill acknowledged={p.acknowledged} />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

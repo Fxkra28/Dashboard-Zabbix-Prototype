@@ -5,14 +5,16 @@ import type { Problem, ProblemExplanation, Sla, SlaExplanation, SliProfile } fro
 import { Async } from './states';
 import { SeverityBadge } from './StatusBadge';
 import { fmtTime } from '../lib/severity';
+import { orNoData } from './NoData';
+import { useDialogFocus } from '../hooks/useDialogFocus';
+import AiDataNotice from './AiDataNotice';
 
 /**
- * The plain-language layer's UI (plan_1.1). A slide-over that translates one
- * Zabbix artifact (a problem's tags and notification wording, or an SLA)
- * for a reader who doesn't speak Zabbix.
+ * The plain-language layer's UI: a slide-over that translates one Zabbix artifact (a problem's tags
+ * and notification wording, or an SLA) for a reader who doesn't speak Zabbix.
  *
- * Nothing here runs until the user clicks "Explain"; the BFF caches each
- * answer, so reopening the same problem costs nothing.
+ * Nothing here runs until the user clicks "Explain"; the BFF caches each answer, so reopening the
+ * same problem costs nothing.
  */
 
 function Drawer({
@@ -36,18 +38,13 @@ function Drawer({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Take focus on open, so a keyboard or screen-reader user lands in the
-  // drawer; give it back to whatever opened it (the Explain button) on close.
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    panel.current?.focus();
-    return () => {
-      if (opener?.isConnected) opener.focus();
-    };
-  }, []);
+  // Focus in on open, kept inside while open, back to the Explain button on close.
+  useDialogFocus(panel);
 
   return (
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Esc and the close button do this from the keyboard
     <div className="drawer-overlay" onClick={onClose}>
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- only keeps the click from reaching the backdrop */}
       <aside
         ref={panel}
         className="drawer"
@@ -67,12 +64,16 @@ function Drawer({
           </button>
         </header>
 
-        <div className="drawer-body">{children}</div>
+        {/* A Tab stop of its own: a long explanation scrolls only once the body can take focus. */}
+        <div className="drawer-body" tabIndex={0} role="region" aria-labelledby={titleId}>
+          {children}
+        </div>
 
         <footer className="drawer-foot">
-          Written by an AI model from the Zabbix data on this page — it rephrases, it
+          Written by an AI model from the Zabbix data on this page. It rephrases, it
           doesn’t diagnose.
           Confirm before acting.
+          <AiDataNotice kind="explain" />
         </footer>
       </aside>
     </div>
@@ -108,7 +109,7 @@ export function ProblemExplainPanel({
           <SeverityBadge level={problem.severity} />
           <span style={{ marginLeft: 8 }}>{problem.name}</span>
           <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
-            {problem.host || 'Unknown host'} · since {fmtTime(problem.clock)}
+            {problem.host || 'Unknown host'} · since {orNoData(fmtTime(problem.clock))}
           </div>
         </>
       }

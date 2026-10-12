@@ -6,8 +6,11 @@ import { useDebounced } from '../hooks/useDebounced';
 import { useUrlState } from '../hooks/useUrlState';
 import type { Host, HostGroup, LatestItem, LatestResponse } from '../types';
 import { Async } from '../components/states';
+import { Field, FieldSpacer } from '../components/Field';
+import { Pager } from '../components/Pager';
 import { fmtValue, fmtTime } from '../lib/severity';
 import { groupBySite } from '../lib/sites';
+import { NoData, orNoData } from '../components/NoData';
 
 const PAGE_SIZE = 100;
 
@@ -64,8 +67,7 @@ export default function LatestData() {
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label htmlFor="latest-host">Host</label>
+        <Field label="Host" htmlFor="latest-host">
           <select
             id="latest-host"
             value={hostid}
@@ -75,7 +77,7 @@ export default function LatestData() {
               setPage(1);
             }}
           >
-            <option value="">— any —</option>
+            <option value="">Any</option>
             {hostGroups.map((g) => (
               <optgroup key={g.key} label={g.label}>
                 {g.items.map((h) => (
@@ -86,9 +88,8 @@ export default function LatestData() {
               </optgroup>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label htmlFor="latest-group">Host group</label>
+        </Field>
+        <Field label="Host group" htmlFor="latest-group">
           <select
             id="latest-group"
             value={groupid}
@@ -98,16 +99,15 @@ export default function LatestData() {
               setPage(1);
             }}
           >
-            <option value="">— any —</option>
+            <option value="">Any</option>
             {(groupsQ.data ?? []).map((g) => (
               <option key={g.groupid} value={g.groupid}>
                 {g.name}
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label htmlFor="latest-search">Search items</label>
+        </Field>
+        <Field label="Search items" htmlFor="latest-search">
           <input
             id="latest-search"
             type="text"
@@ -115,13 +115,12 @@ export default function LatestData() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </div>
-        <div className="field">
-          <label>&nbsp;</label>
+        </Field>
+        <FieldSpacer>
           <span className="pill">
             {total ? `${first}–${last} of ${total.toLocaleString()}` : '0 items'}
           </span>
-        </div>
+        </FieldSpacer>
       </div>
 
       {q.data?.truncated && (
@@ -152,13 +151,15 @@ export default function LatestData() {
                         <th>Last check</th>
                         <th>Last value</th>
                         <th>Change</th>
-                        <th></th>
+                        <th><span className="sr-only">Actions</span></th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.map((i) => {
                         const changed =
                           i.prevvalue !== undefined && i.prevvalue !== i.lastvalue && graphable(i);
+                        // Zabbix reports "0" at clock 0 for an item that never collected.
+                        const collected = Number(i.lastclock) > 0 && i.lastvalue !== '';
                         return (
                           <tr key={i.itemid}>
                             <td>
@@ -175,10 +176,21 @@ export default function LatestData() {
                               )}
                             </td>
                             <td className="muted mono">{i.key_}</td>
-                            <td className="muted">{fmtTime(i.lastclock)}</td>
-                            <td style={{ fontWeight: 500 }}>{fmtValue(i.lastvalue, i.units)}</td>
+                            <td className="muted">{orNoData(fmtTime(i.lastclock))}</td>
+                            <td style={{ fontWeight: 500 }}>
+                              {collected ? orNoData(fmtValue(i.lastvalue, i.units)) : <NoData />}
+                            </td>
+                            {/* The dash here says three different things, so a screen reader is told which. */}
                             <td className="muted">
-                              {changed ? `${fmtValue(i.prevvalue, i.units)} →` : '—'}
+                              {changed ? (
+                                `${fmtValue(i.prevvalue, i.units)} →`
+                              ) : !collected || i.prevvalue === undefined ? (
+                                <NoData />
+                              ) : graphable(i) ? (
+                                <NoData label="No change" />
+                              ) : (
+                                <NoData label="Not compared" />
+                              )}
                             </td>
                             <td>
                               {graphable(i) && (
@@ -196,7 +208,11 @@ export default function LatestData() {
                     </tbody>
                   </table>
                 </div>
-                {pages > 1 && <Pager page={page} pages={pages} onPage={setPage} />}
+                {pages > 1 && (
+                  <Pager page={page} pages={pages} onPage={setPage}>
+                    Page {page} of {pages}
+                  </Pager>
+                )}
               </>
             ) : (
               <div className="state">
@@ -207,21 +223,5 @@ export default function LatestData() {
         </Async>
       </div>
     </>
-  );
-}
-
-function Pager({ page, pages, onPage }: { page: number; pages: number; onPage: (p: number) => void }) {
-  return (
-    <div className="pager">
-      <button type="button" className="btn ghost sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-        ‹ Prev
-      </button>
-      <span className="muted">
-        Page {page} of {pages}
-      </span>
-      <button type="button" className="btn ghost sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>
-        Next ›
-      </button>
-    </div>
   );
 }

@@ -21,10 +21,24 @@
  * for body text, 3:1 for large text and for the boundary of a user interface
  * component (1.4.11).
  *
+ * Three more things are checked, because the checker once passed while the interface
+ * shipped faults it could not see:
+ *
+ *   - Status words. A status colour used as text must be its `-text` token: the fills
+ *     (--good, --warn, --danger) fail 4.5:1 on a white panel, and so does --mid
+ *     (DESIGN.md R-3). Checked in the stylesheet and in inline styles in the TSX.
+ *   - The TSX files, which the stylesheet checks never saw: no raw colour, and no inline
+ *     font size or radius off the scale. A value that is on the scale is let through, as in
+ *     the stylesheet. SVG `fontSize={n}` attributes are map units, not CSS pixels, and are
+ *     not looked at.
+ *   - The exceptions below, which are known and named, so a new one fails and a fixed one
+ *     has to be taken off the list.
+ *
  * Read-only. No npm dependency: the relative-luminance formula is six lines,
  * the same trade validate-sli.ts made with its zip reader.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -75,13 +89,11 @@ export function contrast(fg, bg) {
 export function parseTokens(css) {
   const blocks = new Map();
 
-  // Scanned rather than matched in one pass. The regex this replaced anchored
-  // each block to the preceding "}" and then consumed it, so two adjacent token
-  // blocks could never both match: it silently returned the light theme alone
-  // and reported every dark-mode pair as passing because it had never seen one.
-  // Advance by one, not by the length of ":root": a following block can begin
-  // within a couple of characters of the previous one's closing brace, and
-  // stepping over it is how the first version lost the dark theme.
+  // Scanned rather than matched in one pass: a regex that anchored each block to the preceding "}"
+  // and consumed it could not match two adjacent token blocks, so it returned the light theme alone
+  // and reported every dark-mode pair as passing without having seen one. Advance by one, not by
+  // the length of ":root": a following block can begin within a couple of characters of the
+  // previous one's closing brace, and stepping over it loses the dark theme.
   for (let at = css.indexOf(':root'); at !== -1; at = css.indexOf(':root', at + 1)) {
     // back to the start of the selector, which is the last brace before it
     let from = at;
@@ -144,10 +156,24 @@ const PAIRS = [
   ['--warn-text', '--warn-bg', 4.5],
   ['--danger-text', '--danger-bg', 4.5],
   ['--neutral-text', '--neutral-bg', 4.5],
+  // Status words on a plain panel: the fills (--good, --danger, --warn) fail here.
+  ['--good-text', '--surface', 4.5],
+  ['--warn-text', '--surface', 4.5],
+  ['--danger-text', '--surface', 4.5],
+  // The wall screen: grey cells under a just-arrived row's tint, and a
+  // late "data as of" stamp on the page background.
+  ['--muted', '--tint', 4.5],
+  ['--warn-text', '--bg', 4.5],
+  // The logo monogram (BrandMark's fallback) on its fixed white plate.
+  ['--logo-ink', '--logo-plate', 4.5],
   // Boundaries and marks, not text. DESIGN.md R-3 keeps --mid off text.
   ['--border-strong', '--surface', 3],
+  ['--border-strong', '--bg', 3],
   ['--focus', '--surface', 3],
   ['--focus', '--bg', 3],
+  // The sidebar's focus ring (styles.css .sidebar :focus-visible).
+  ['--on-chrome', '--chrome', 3],
+  ['--on-chrome', '--chrome-2', 3],
   ['--mid', '--surface', 3],
   // Plotted lines and their legend dots are graphical objects: 3:1 (1.4.11).
   ['--series-1', '--surface', 3],
@@ -261,6 +287,105 @@ export function checkRawSizes(css, tokens) {
   return problems;
 }
 
+/**
+ * A status fill, or --mid, used as the colour of text. `color` only: borders and backgrounds
+ * are marks and fills, where these tokens belong. The fills read 2.5:1 to 3.3:1 on white.
+ */
+const FORBIDDEN = 'good|warn|danger|mid';
+
+const fillAsText = (token) =>
+  token === '--mid'
+    ? 'color: var(--mid) is for borders and icons, never text (DESIGN.md R-3)'
+    : `color: var(${token}) is a fill, not a text colour, use var(${token}-text)`;
+
+export function checkStatusText(css) {
+  const problems = [];
+  const re = new RegExp(`(?:^|[\\s;{])color\\s*:\\s*var\\(\\s*(--(?:${FORBIDDEN}))\\s*[,)]`);
+  css.split('\n').forEach((line, i) => {
+    const m = re.exec(line);
+    if (m) problems.push(`line ${i + 1}: ${fillAsText(m[1])}`);
+  });
+  return problems;
+}
+
+/**
+ * Off-scale sizes in the TSX files that are known and not yet decided, by file under src/ and
+ * the declaration, with how many. 12.5px is between --t-sm and --t-base and rounds differently
+ * per browser (the stylesheet header says so); which one it should be is the owner's call.
+ */
+export const TSX_EXCEPTIONS = {
+  'pages/Capacity.tsx': { 'fontSize: 12.5': 1 },
+  'pages/Network.tsx': { 'fontSize: 12.5': 1 },
+};
+
+const stripTsxComments = (text) =>
+  text
+    .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '))
+    .split('\n')
+    .map((line) => line.replace(/(^|\s)\/\/.*$/, '$1'))
+    .join('\n');
+
+/**
+ * What a TSX file does that the tokens exist to prevent. Returns [{ line, what, key }]: `key` names
+ * a size so TSX_EXCEPTIONS can allow it. Comments are ignored, and so is `&#8212;`, which is not a colour.
+ */
+export function scanTsx(source, tokens) {
+  const scales = { fontSize: new Set(), borderRadius: new Set() };
+  for (const [name, value] of tokens) {
+    if (name.startsWith('--t-')) scales.fontSize.add(parseFloat(value));
+    if (name.startsWith('--r-')) scales.borderRadius.add(parseFloat(value));
+  }
+  const found = [];
+  stripTsxComments(source)
+    .split('\n')
+    .forEach((text, i) => {
+      const line = i + 1;
+      for (const hit of text.match(/(?<![&\w])#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(\s*\d/g) ?? []) {
+        found.push({ line, what: `${hit.trim()} is a raw colour, use a token` });
+      }
+      // style={{ fontSize: 12 }} and style={{ borderRadius: '7px' }}, and font-size:12px inside a string.
+      for (const m of text.matchAll(/\b(fontSize|borderRadius)\s*:\s*(['"`]?)(\d+(?:\.\d+)?)(?:px)?\2(?=\s*[,}])/g)) {
+        if (!scales[m[1]].has(parseFloat(m[3]))) {
+          found.push({ line, what: `${m[1]}: ${m[3]} is not on the scale`, key: `${m[1]}: ${m[3]}` });
+        }
+      }
+      for (const m of text.matchAll(/font-size\s*:\s*(\d+(?:\.\d+)?)px/g)) {
+        if (!scales.fontSize.has(parseFloat(m[1]))) {
+          found.push({ line, what: `font-size: ${m[1]}px is not on the scale`, key: `fontSize: ${m[1]}` });
+        }
+      }
+      // A status fill as text: the literal forms only, a constant holding one cannot be seen from here.
+      const status = new RegExp(`(?:^|[\\s{,;'"\`])color\\s*:\\s*['"\`]?var\\(\\s*(--(?:${FORBIDDEN}))\\s*[,)]`).exec(text);
+      if (status) found.push({ line, what: fillAsText(status[1]) });
+    });
+  return found;
+}
+
+/** The problems in one TSX file, after the known exceptions are allowed for. */
+export function checkTsx(source, file, tokens, exceptions = TSX_EXCEPTIONS) {
+  const allowed = { ...(exceptions[file] ?? {}) };
+  const problems = [];
+  for (const f of scanTsx(source, tokens)) {
+    if (f.key && allowed[f.key] > 0) {
+      allowed[f.key]--;
+      continue;
+    }
+    problems.push(`${file}:${f.line}: ${f.what}`);
+  }
+  for (const [key, left] of Object.entries(allowed)) {
+    if (left > 0) problems.push(`${file}: "${key}" is listed as a known exception but is no longer there, take it off TSX_EXCEPTIONS`);
+  }
+  return problems;
+}
+
+function tsxFiles(dir) {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return name === '__tests__' ? [] : tsxFiles(path);
+    return name.endsWith('.tsx') ? [path] : [];
+  });
+}
+
 /** Fixtures first. A checker that has never failed has never been tested. */
 function selfTest() {
   const fail = [];
@@ -294,10 +419,9 @@ function selfTest() {
   eq('alias resolves', resolve('--alias', blocks.get(':root'), blocks.get(':root')), '#1b2733');
 
   /*
-   * The regression this fixture exists for. The first parser anchored each
-   * block to the preceding "}" and consumed it, so of these three it found
-   * only the first, and then reported every dark-mode pair as passing because
-   * it had never looked at one. A themed stylesheet must yield every theme.
+   * The regression this fixture exists for: a parser that consumed the preceding "}" found only the
+   * first of these three blocks and reported every dark-mode pair as passing. A themed stylesheet
+   * must yield every theme.
    */
   const themed = `
 :root { --primary: #0067b1; --bg: #ffffff; }
@@ -315,6 +439,40 @@ function selfTest() {
   eq('raw colour caught', checkRawColors(css).length, 1);
   eq('off-scale radius caught', checkRawSizes(css, blocks.get(':root')).length, 1);
 
+  // Status words: a fill used as text is caught, the -text token and a border are not.
+  eq('a status fill as text is caught', checkStatusText('.a { color: var(--danger); }').length, 1);
+  eq('--good as text is caught after another declaration', checkStatusText('.a { padding: 0; color: var(--good) }').length, 1);
+  eq('--mid as text is caught', checkStatusText('.a {\n  color: var(--mid);\n}').length, 1);
+  eq('a -text token is not caught', checkStatusText('.a { color: var(--danger-text); }').length, 0);
+  eq('a border in a status fill is not caught', checkStatusText('.a { border-color: var(--danger); background-color: var(--good); }').length, 0);
+  eq('a status fill with a fallback is caught', checkStatusText('.a { color: var(--warn, #fff); }').length, 1);
+
+  // The TSX files.
+  const scale = new Map([['--t-sm', '12px'], ['--t-base', '13px'], ['--r-md', '10px']]);
+  const tsx = (code) => scanTsx(code, scale);
+  eq('a raw hex colour in TSX is caught', tsx(`const c = '#ff0000';`).length, 1);
+  eq('a short hex colour in TSX is caught', tsx(`style={{ background: '#fff' }}`).length, 1);
+  eq('rgba in TSX is caught', tsx(`const c = 'rgba(0, 0, 0, 0.5)';`).length, 1);
+  eq('a colour in a comment is not', tsx(`// the ink is #2B5584\n/* #fff */\nconst a = 1;`).length, 0);
+  eq('an entity is not a colour', tsx(`<span>&#8212;</span>`).length, 0);
+  eq('a link to an anchor is not a colour', tsx(`<a href="#main">`).length, 0);
+  eq('a token is not a colour', tsx(`style={{ color: 'var(--text)' }}`).length, 0);
+  eq('an off-scale font size is caught', tsx(`style={{ fontSize: 12.5 }}`).length, 1);
+  eq('an off-scale px string is caught', tsx(`style={{ fontSize: '17px' }}`).length, 1);
+  eq('an on-scale font size is let through', tsx(`style={{ fontSize: 12 }}`).length, 0);
+  eq('a size taken from the scale is let through', tsx(`style={{ fontSize: 'var(--t-base)' }}`).length, 0);
+  eq('an off-scale radius is caught', tsx(`style={{ borderRadius: 7 }}`).length, 1);
+  eq('font-size inside a string is checked', tsx('`<div style="font-size:12px">`').length + tsx('`<div style="font-size:15px">`').length, 1);
+  eq('an svg attribute is map units, not looked at', tsx(`<text fontSize={9}>`).length, 0);
+  eq('a status fill as inline text is caught', tsx(`style={{ color: 'var(--danger)' }}`).length, 1);
+  eq('a status text token inline is fine', tsx(`style={{ color: 'var(--danger-text)' }}`).length, 0);
+  eq('a status fill as a background is fine', tsx(`style={{ background: 'var(--danger)' }}`).length, 0);
+  // Known exceptions: allowed up to their count, and a stale one is reported.
+  const withTwelveFive = `<b style={{ fontSize: 12.5 }}>`;
+  eq('a listed exception is allowed', checkTsx(withTwelveFive, 'x.tsx', scale, { 'x.tsx': { 'fontSize: 12.5': 1 } }).length, 0);
+  eq('a second one is not', checkTsx(`${withTwelveFive}\n${withTwelveFive}`, 'x.tsx', scale, { 'x.tsx': { 'fontSize: 12.5': 1 } }).length, 1);
+  eq('an exception that is gone is reported', checkTsx('const a = 1;', 'x.tsx', scale, { 'x.tsx': { 'fontSize: 12.5': 1 } }).length, 1);
+
   // and it must fail when a token goes illegible
   const bad = parseTokens(css.replace('--text: #1b2733;', '--text: #eeeeee;'));
   const badProblems = checkContrast(bad).filter((p) => p.includes('--text on --bg'));
@@ -330,7 +488,7 @@ if (failures.length) {
   process.exit(2);
 }
 
-const files = process.argv.slice(2);
+const files = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 if (!files.length) files.push(fileURLToPath(new URL('../src/styles.css', import.meta.url)));
 
 let total = 0;
@@ -342,9 +500,22 @@ for (const file of files) {
     ...checkContrast(blocks),
     ...checkRawColors(css),
     ...checkRawSizes(css, blocks.get(':root') ?? new Map()),
+    ...checkStatusText(css),
   ];
   for (const p of problems) console.error(`${file}: ${p}`);
   total += problems.length;
+
+  // The TSX beside this stylesheet, against its scales. `--no-tsx` leaves it out for a stylesheet checked alone.
+  if (!process.argv.includes('--no-tsx') && file.endsWith(join('src', 'styles.css'))) {
+    const src = join(file, '..');
+    for (const path of tsxFiles(src)) {
+      const rel = path.slice(src.length + 1).split('\\').join('/');
+      for (const p of checkTsx(readFileSync(path, 'utf8'), rel, blocks.get(':root') ?? new Map())) {
+        console.error(p);
+        total++;
+      }
+    }
+  }
 }
 
 if (total) {

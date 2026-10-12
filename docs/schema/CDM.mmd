@@ -1,5 +1,5 @@
 ---
-title: HCML Monitoring Portal — Conceptual Data Model (CDM)
+title: "HCML Monitoring Portal: Conceptual Data Model (CDM)"
 config:
   layout: elk
   elk:
@@ -7,10 +7,9 @@ config:
     nodePlacementStrategy: BRANDES_KOEPF
 ---
 flowchart TB
-    %% =================================================================
-    %%  CONCEPTUAL DATA MODEL (Merise MCD)
+    %%  Conceptual data model (Merise MCD)
     %%  What the business talks about. No keys, no foreign keys, no
-    %%  data types -- those are the ERD and the PDM.
+    %%  data types: those are the ERD and the PDM.
     %%    rectangle   an entity and the properties a manager would name
     %%    diamond     a named association, read in the verb's direction
     %%    (min,max)   how many times one occurrence of that entity
@@ -20,7 +19,6 @@ flowchart TB
     %%  This copy is hcml-portal: explanations are written by hosted
     %%  Claude, so estate data crosses the network. The local-model
     %%  copy of this diagram is in hcml-portal-ollama/schema/CDM.pdf.
-    %% =================================================================
 
     SITE["<b>SITE</b><br>name<br>code<br>worst severity now<br>device counts by state"]
     DEVICE["<b>DEVICE</b><br>visible name<br>monitored<br>in maintenance<br>network address<br>owner<br>criticality"]

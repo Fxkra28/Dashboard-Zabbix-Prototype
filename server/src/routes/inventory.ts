@@ -5,18 +5,18 @@ import { getHostsWithMeta, type ZHostMeta } from '../queries.js';
 import { resolveSite } from './sites.js';
 
 /**
- * Inventory & ownership scorecard (plan_1.2 Phase 4, HCML Goal 1).
+ * Inventory & ownership scorecard (HCML Goal 1).
  *
- * HCML's gap: *"host naming, site mapping, owner, criticality and dependency
- * are not standardised → alarms are hard to route to the right PIC."*
+ * HCML's gap: *"host naming, site mapping, owner, criticality and dependency are not standardised →
+ * alarms are hard to route to the right PIC."*
  *
- * The portal is read-only, so it cannot enforce a standard. What it can do is
- * **measure** one, turning an invisible governance problem into a number that
- * goes up as hosts get tagged. That measurement is this file.
+ * The portal is read-only, so it cannot enforce a standard. What it can do is measure one, turning
+ * an invisible governance problem into a number that goes up as hosts get tagged. That measurement
+ * is this file.
  *
- * Four dimensions are scored here. The fifth HCML names, *dependency*, is
- * answered by the Services tree (§15) rather than a per-host field: a host is
- * in a dependency map when the service hierarchy covers it.
+ * Four dimensions are scored here. The fifth HCML names, *dependency*, is answered by the Services
+ * tree (§15) rather than a per-host field: a host is in a dependency map when the service hierarchy
+ * covers it.
  */
 
 export type DimensionKey = 'naming' | 'site' | 'owner' | 'criticality';

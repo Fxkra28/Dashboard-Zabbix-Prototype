@@ -22,6 +22,15 @@ export interface ZbxProblem {
 }
 
 /**
+ * The problems that count: open, and not inside a planned maintenance window. `recent: true` below
+ * also returns problems resolved inside Zabbix's "Display OK triggers for" window, and Zabbix marks
+ * a problem raised during maintenance as suppressed. The Problems list shows both, marked; every
+ * count, colour and summary uses this instead, as Zabbix's own dashboard does.
+ */
+export const openProblems = (problems: ZbxProblem[]): ZbxProblem[] =>
+  problems.filter((p) => (!p.r_eventid || p.r_eventid === '0') && p.suppressed !== '1');
+
+/**
  * problem.get doesn't carry host names, so we enrich: collect the trigger ids,
  * look them up once via trigger.get, and attach host id + name to each problem.
  */

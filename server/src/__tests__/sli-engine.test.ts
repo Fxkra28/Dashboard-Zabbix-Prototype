@@ -74,7 +74,7 @@ describe('initialState', () => {
 
   it('uses the first later event when the trigger changed only after the window', () => {
     // Its current value is today's; what it was during the window is what the
-    // first later event changed it FROM.
+    // first later event changed it from.
     expect(initialState([], trigger('0', 50), 10, 0)).toBe(true);
     expect(initialState([], trigger('1', 50), 10, 1)).toBe(false);
   });
@@ -84,7 +84,7 @@ describe('aggregate and helpers', () => {
   const host = (sli: number | null): SliHost =>
     ({ sli, downtime: sli === null ? 0 : 60, meeting: sli === null ? null : sli >= 99 }) as SliHost;
 
-  it('is the plain mean of the hosts that have a figure — HCML’s rule', () => {
+  it('is the plain mean of the hosts that have a figure, HCML’s rule', () => {
     const g = aggregate('x', 'X', [host(100), host(98), host(null)], 99);
     expect(g.sli).toBe(99);
     expect(g).toMatchObject({ hosts: 3, withData: 2, meeting: true, belowTarget: 1, downtime: 120 });
@@ -151,6 +151,8 @@ interface Fixture {
   events: { eventid: string; objectid: string; clock: number; value: number }[];
   items?: Params[];
   trends?: { itemid: string; clock: number; num: number }[];
+  maintenance?: Params[];
+  groups?: Params[];
 }
 
 function serve(f: Fixture) {
@@ -179,6 +181,10 @@ function serve(f: Fixture) {
       }
       case 'item.get':
         return f.items ?? [];
+      case 'maintenance.get':
+        return f.maintenance ?? [];
+      case 'hostgroup.get':
+        return f.groups ?? [];
       case 'trend.get':
         return (f.trends ?? [])
           .filter((r) => p.itemids.includes(r.itemid) && r.clock >= p.time_from && r.clock <= p.time_till)
@@ -208,7 +214,7 @@ afterEach(() => {
   zbxMock.mockReset();
 });
 
-describe('computeSli — hcml-report profile', () => {
+describe('computeSli: hcml-report profile', () => {
   it('reproduces HCML’s method: clip to the month, open problems end at month end − 1 s, silent hosts are 100%', async () => {
     serve({
       triggers: [
@@ -308,7 +314,7 @@ describe('computeSli — hcml-report profile', () => {
   });
 });
 
-describe('computeSli — strict availability profile', () => {
+describe('computeSli: strict availability profile', () => {
   it('leaves out hours with no collected data and has no figure for a silent host', async () => {
     const gap: [number, number] = [AUG.from + 10 * 86400, AUG.from + 12 * 86400];
     const trends = [];
@@ -451,5 +457,54 @@ describe('fetchTrendsSliced', () => {
     });
     expect(none).toEqual([]);
     expect(folded.sort()).toEqual([...expected].sort());
+  });
+});
+
+describe('computeSli: planned maintenance (ayoyo_1.1 BK-05)', () => {
+  it('leaves maintenance windows out of downtime and total, for hosts named directly or through a group', async () => {
+    const A = AUG.from;
+    const D = 86400;
+    serve({
+      triggers: [
+        trig('1', '101', '1.2.1 IDX02CORESWITCH', 'High ICMP ping loss'),
+        trig('2', '102', '4.3.3 FPSO ARUBA 3', 'High ICMP ping loss'),
+        trig('3', '103', 'INET : SAMPANG WAN 1', 'High ICMP ping loss'),
+      ],
+      parents: {},
+      events: [
+        // An hour down, wholly inside host 101's day of maintenance.
+        { eventid: 'a', objectid: '1', clock: A + 10 * D + 3600, value: 1 },
+        { eventid: 'b', objectid: '1', clock: A + 10 * D + 7200, value: 0 },
+        // An hour down, half inside host 102's hour of maintenance.
+        { eventid: 'c', objectid: '2', clock: A + 5 * D + 1800, value: 1 },
+        { eventid: 'd', objectid: '2', clock: A + 5 * D + 5400, value: 0 },
+        // Host 103 has no maintenance: its hour counts in full.
+        { eventid: 'e', objectid: '3', clock: A + 2 * D, value: 1 },
+        { eventid: 'f', objectid: '3', clock: A + 2 * D + 3600, value: 0 },
+      ],
+      maintenance: [
+        {
+          maintenanceid: '1', active_since: String(A - D), active_till: String(A + 40 * D),
+          timeperiods: [{ timeperiod_type: '0', start_date: String(A + 10 * D), period: String(D) }],
+          hosts: [{ hostid: '101' }], hostgroups: [],
+        },
+        {
+          maintenanceid: '2', active_since: String(A - D), active_till: String(A + 40 * D),
+          timeperiods: [{ timeperiod_type: '0', start_date: String(A + 5 * D), period: '3600' }],
+          hosts: [], hostgroups: [{ groupid: '7' }],
+        },
+      ],
+      groups: [{ groupid: '7', hosts: [{ hostid: '102' }] }],
+    });
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-08', profile: 'hcml-report' });
+    const byName = Object.fromEntries(r.hosts.map((h) => [h.name, h]));
+
+    expect(byName['1.2.1 IDX02CORESWITCH']).toMatchObject({ downtime: 0, sli: 100, maintenance: D });
+    expect(byName['4.3.3 FPSO ARUBA 3']).toMatchObject({ downtime: 1800, maintenance: 3600 });
+    expect(byName['4.3.3 FPSO ARUBA 3'].sli).toBeCloseTo(100 * (1 - 1800 / (MONTH - 3600)), 10);
+    expect(byName['INET : SAMPANG WAN 1']).toMatchObject({ downtime: 3600, maintenance: 0 });
+    expect(byName['INET : SAMPANG WAN 1'].sli).toBeCloseTo(100 * (1 - 3600 / MONTH), 10);
+    expect(r.basis.maintenancePolicy).toBe('excluded');
   });
 });

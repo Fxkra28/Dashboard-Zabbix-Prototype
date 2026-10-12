@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import Fastify from 'fastify';
 import { buildTestApp } from './helpers/app.js';
 import { chatRoutes } from '../routes/chat.js';
 import { getSnapshot, streamAnswer, systemText } from '../chat.js';
-import { prefillModel, warmModel } from '../ai.js';
+import { AI_MESSAGE, AiDisabledError, AiUpstreamError, prefillModel, warmModel } from '../ai.js';
+import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../zabbix.js';
 
 /**
  * POST /api/chat as the browser sees it: validation, then a text/event-stream
@@ -15,6 +17,8 @@ import { prefillModel, warmModel } from '../ai.js';
 vi.hoisted(() => {
   process.env.AI_PROVIDER = 'openai-compatible';
   process.env.AI_BASE_URL = 'http://localhost:11434/v1';
+  // Every test here is one client asking again and again: lift the per-user cap (ai-limits.test.ts tests it).
+  process.env.AI_CHAT_PER_MINUTE = '1000';
 });
 
 vi.mock('../chat.js', async (importOriginal) => {
@@ -104,7 +108,67 @@ describe('POST /api/chat', () => {
 
     const got = frames(res.body);
     expect(got.map((f) => f.event)).toEqual(['context', 'token', 'error']);
-    expect((got[2].data as { message: string }).message).toContain('HTTP 500');
+    // An error nobody typed is a bug: its wording is for the log, not the reader.
+    const message = (got[2].data as { message: string }).message;
+    expect(message).toBe('The assistant hit an unexpected error. Details are in the BFF log.');
+    expect(res.body).not.toMatch(/HTTP 500|boom|qwen3/);
+    await app.close();
+  });
+
+  it('tells the reader what a typed AI or Zabbix error says, and logs the detail only', async () => {
+    vi.mocked(getSnapshot).mockResolvedValue(snapshot('SNAPSHOT'));
+    const { registerErrorHandler } = await import('../errors.js');
+    const lines: string[] = [];
+    const app = Fastify({ logger: { level: 'info', stream: { write: (line: string) => lines.push(line) } } });
+    registerErrorHandler(app);
+    await app.register(chatRoutes);
+    const ask = () =>
+      app.inject({ method: 'POST', url: '/api/chat', payload: { messages: [{ role: 'user', content: 'hi' }] } });
+    const told = (body: string) => (frames(body).find((f) => f.event === 'error')?.data as { message: string }).message;
+
+    vi.mocked(streamAnswer).mockImplementation(async function* () {
+      throw new AiUpstreamError(AI_MESSAGE.unreachable, 'Could not reach the model at http://10.9.8.7:11434/v1 (ECONNREFUSED)');
+    });
+    const ai = await ask();
+    expect(told(ai.body)).toBe(AI_MESSAGE.unreachable);
+    expect(ai.body).not.toMatch(/10\.9\.8\.7|ECONNREFUSED/);
+    expect(lines.join('\n')).toContain('http://10.9.8.7:11434/v1');
+
+    vi.mocked(streamAnswer).mockImplementation(async function* () {
+      throw new ZabbixApiError('Zabbix could not be reached.', 'ZBX_URL=http://zabbix.internal:8080');
+    });
+    const zbx = await ask();
+    expect(told(zbx.body)).toBe('Zabbix could not be reached.');
+    expect(zbx.body).not.toContain('zabbix.internal');
+    expect(lines.join('\n')).toContain('zabbix.internal');
+    await app.close();
+  });
+
+  it('keeps the wording of every typed error, and swaps only the untyped one', async () => {
+    vi.mocked(getSnapshot).mockResolvedValue(snapshot('SNAPSHOT'));
+    const app = await buildTestApp(chatRoutes);
+    const told = async (err: Error) => {
+      vi.mocked(streamAnswer).mockImplementation(async function* () {
+        throw err;
+      });
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/chat',
+        payload: { messages: [{ role: 'user', content: 'hi' }] },
+      });
+      return (frames(res.body).find((f) => f.event === 'error')?.data as { message: string }).message;
+    };
+
+    // Each of these reads as an instruction to the reader, so a generic line would hide what to do.
+    const typed = [
+      new AiDisabledError(),
+      new ZabbixTimeoutError('Zabbix took too long to answer.'),
+      new ZabbixAuthError('Zabbix rejected the portal token.'),
+    ];
+    for (const err of typed) expect(await told(err)).toBe(err.message);
+    expect(await told(new Error('read ECONNRESET 10.1.2.3:8080'))).toBe(
+      'The assistant hit an unexpected error. Details are in the BFF log.',
+    );
     await app.close();
   });
 
@@ -185,15 +249,25 @@ describe('GET /api/chat/warm', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('answers 202 at once and warms the model at most once per 5 minutes', async () => {
-    vi.mocked(getSnapshot).mockResolvedValue(snapshot('WARM'));
-    const app = await buildTestApp(chatRoutes);
-    const first = await app.inject({ method: 'GET', url: '/api/chat/warm' });
-    const second = await app.inject({ method: 'GET', url: '/api/chat/warm' });
-    expect(first.statusCode).toBe(202);
-    expect(first.json()).toEqual({ warming: true });
-    expect(second.statusCode).toBe(202);
-    expect(vi.mocked(warmModel)).toHaveBeenCalledTimes(1);
-    await app.close();
+    // A clock of its own, well past any warm another test made: the last warm
+    // is kept at module level, so the real clock made this pass only when first.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 3_600_000 });
+    try {
+      vi.mocked(getSnapshot).mockResolvedValue(snapshot('WARM'));
+      const app = await buildTestApp(chatRoutes);
+      const first = await app.inject({ method: 'GET', url: '/api/chat/warm' });
+      const second = await app.inject({ method: 'GET', url: '/api/chat/warm' });
+      expect(first.statusCode).toBe(202);
+      expect(first.json()).toEqual({ warming: true });
+      expect(second.statusCode).toBe(202);
+      expect(vi.mocked(warmModel)).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(Date.now() + 5 * 60_000);
+      await app.inject({ method: 'GET', url: '/api/chat/warm' });
+      expect(vi.mocked(warmModel)).toHaveBeenCalledTimes(2);
+      await app.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('has the model read a snapshot once, and again only when the snapshot changes', async () => {
@@ -249,7 +323,7 @@ describe('GET /api/chat/warm', () => {
     await app.close();
   });
 
-  it('does not prefill a snapshot an answer has just read — that would evict the conversation', async () => {
+  it('does not prefill a snapshot an answer has just read: that would evict the conversation', async () => {
     vi.mocked(getSnapshot).mockResolvedValue(snapshot('ANSWERED'));
     vi.mocked(streamAnswer).mockImplementation(async function* () {
       yield 'ok';

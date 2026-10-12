@@ -6,17 +6,16 @@ import { wanPairKey } from '../naming.js';
 import { isFresh } from '../reachability.js';
 
 /**
- * Link & WAN health (plan_1.2 Phase 5, HCML Goal 3).
+ * Link & WAN health (HCML Goal 3).
  *
- * HCML runs 12 main + 10 redundant SD-WAN links, 10 P2P radio links, 18
- * internet accesses and Starlink at the offshore sites. Their own topology
- * slide flags *"SD-WAN (to_mda_via_sapudi)(internal4): High packet loss"*,
- * that class of fault deserves a first-class view, not a row buried in Latest
- * data.
+ * HCML runs 12 main + 10 redundant SD-WAN links, 10 P2P radio links, 18 internet accesses and
+ * Starlink at the offshore sites. Their own topology slide flags *"SD-WAN
+ * (to_mda_via_sapudi)(internal4): High packet loss"*; that class of fault deserves a first-class
+ * view, not a row buried in Latest data.
  *
- * A "link" here is one ICMP-monitored path: the `icmpping` / `icmppingloss` /
- * `icmppingsec` triplet Zabbix collects per target. The portal never speaks
- * ICMP itself, Zabbix polls, this reads the items.
+ * A "link" here is one ICMP-monitored path: the `icmpping` / `icmppingloss` / `icmppingsec` triplet
+ * Zabbix collects per target. The portal never speaks ICMP itself: Zabbix polls and this reads the
+ * items.
  */
 
 export type LinkState = 'up' | 'degraded' | 'down' | 'unknown';
@@ -46,7 +45,7 @@ export interface Link {
 export interface LinkPath {
   name: string;
   links: Link[];
-  /** A redundant path survives one leg failing, up if ANY member is up. */
+  /** A redundant path survives one leg failing, up if any member is up. */
   state: LinkState;
 }
 
@@ -106,7 +105,7 @@ function classify(up: boolean | undefined, loss: number | undefined): LinkState 
 const RANK: Record<LinkState, number> = { down: 3, degraded: 2, unknown: 1, up: 0 };
 
 export async function getLinks(): Promise<LinksResponse> {
-  // `monitored: true` matters: without it Zabbix also returns TEMPLATE items,
+  // `monitored: true` matters: without it Zabbix also returns template items,
   // and the page fills with hundreds of identical unassigned prototypes.
   const items = await zbx<ZItem[]>('item.get', {
     output: ['itemid', 'name', 'key_', 'lastvalue', 'lastclock', 'units', 'state', 'delay'],
@@ -151,13 +150,12 @@ export async function getLinks(): Promise<LinksResponse> {
 
     for (const item of g.items) {
       const { name, params } = parseKey(item.key_);
-      // No collected value is not a value of 0. Zabbix reports lastvalue "0"
-      // with lastclock "0" for an item that has never collected, and keeps the
-      // last value of an unsupported item, both used to classify as DOWN,
-      // which put 42 links that had simply never been polled at the top of the
-      // list as outages. Without fresh data the metric is unknown. "Fresh" is
-      // also recent: a value hours old (the poller stopped, the host was
-      // unreachable to Zabbix) is the same rule the Sites page applies.
+      // No collected value is not a value of 0. Zabbix reports lastvalue "0" with lastclock "0" for
+      // an item that has never collected, and keeps the last value of an unsupported item; both
+      // would classify as down and put links that were simply never polled at the top of the list
+      // as outages (42 of them on HCML's data). Without fresh data the metric is unknown. "Fresh"
+      // is also recent: a value hours old (the poller stopped, or the host was unreachable to
+      // Zabbix) is judged by the same rule the Sites page applies.
       const fresh = isFresh(item, now);
       const v = fresh ? num(item.lastvalue) : undefined;
       for (const t of item.tags ?? []) tags[t.tag] = t.value;
@@ -210,12 +208,14 @@ export async function getLinks(): Promise<LinksResponse> {
     (a, b) => RANK[b.state] - RANK[a.state] || (b.loss ?? 0) - (a.loss ?? 0) || a.label.localeCompare(b.label),
   );
 
-  // Paired paths: a main + redundant pair is only really down when BOTH legs
+  // Paired paths: a main + redundant pair is only really down when both legs
   // are. That distinction is the whole point of paying for redundancy.
   const byGroup = new Map<string, Link[]>();
   for (const l of links) {
     if (!l.group) continue;
-    byGroup.set(l.group, [...(byGroup.get(l.group) ?? []), l]);
+    const members = byGroup.get(l.group);
+    if (members) members.push(l);
+    else byGroup.set(l.group, [l]);
   }
   const paths: LinkPath[] = [...byGroup.entries()]
     .map(([name, members]) => ({

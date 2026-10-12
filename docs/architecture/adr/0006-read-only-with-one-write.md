@@ -18,9 +18,9 @@ portal reads HCML's production monitoring system. Any write it can make, a bug i
 
 ## Considered Options
 
-* **No writes.** The portal stays a viewer; operators use Zabbix to acknowledge.
-* **One token with write permission**, used for both reads and the write.
-* **Two tokens**: a read-only one for everything, a separate write-capable one for the single write.
+* No writes. The portal stays a viewer; operators use Zabbix to acknowledge.
+* One token with write permission, used for both reads and the write.
+* Two tokens: a read-only one for everything, a separate write-capable one for the single write.
 
 ## Decision Outcome
 
@@ -32,11 +32,11 @@ write-capable, and used by exactly one call: `event.acknowledge`, reached only t
 
 The gates:
 
-1. **Credential.** The read token physically cannot write. A write attempt with no write token throws
+1. Credential. The read token physically cannot write. A write attempt with no write token throws
    before any request leaves the process.
-2. **Role.** The route requires `operator`. Unmatched routes default to `viewer`, so a new route is
+2. Role. The route requires `operator`. Unmatched routes default to `viewer`, so a new route is
    protected by accident rather than exposed by accident.
-3. **Configuration.** With no write token the route returns 503, and `GET /api/health` reports
+3. Configuration. With no write token the route returns 503, and `GET /api/health` reports
    `writeBack: false` so the UI hides the buttons instead of offering a call that will fail.
 
 Event ids must match `/^\d+$/` before reaching Zabbix, the message is capped at 2,048 characters, the
@@ -60,7 +60,7 @@ pushed to every open SSE client immediately.
   attribution, and the portal has nowhere to keep it either. See [ADR-0003](0003-no-database.md).
   The acting user is written to stdout and then forgotten.
 * Two credentials to provision, store and rotate rather than one.
-* `ROUTE_RULES` reserves `/api/problems/close` but **no such route exists**: a dead rule that reads
+* `ROUTE_RULES` reserves `/api/problems/close` but no such route exists: a dead rule that reads
   like a missing feature.
 * Roles gate by sensitivity and cost, not by write access: `admin` guards the inventory scorecard and
   `operator` guards the network pages, neither of which writes anything. That is deliberate, and it

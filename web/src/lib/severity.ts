@@ -1,6 +1,7 @@
 import { SEVERITIES } from '../theme';
 import type { HostState, StateReason } from '../types';
 import { formatValue } from './units';
+import { formatDateTime } from './time';
 
 export function severity(level: string | number) {
   const n = Number(level);
@@ -10,7 +11,8 @@ export function severity(level: string | number) {
 export function fmtTime(clock: string | number | undefined): string {
   const n = Number(clock);
   if (!n) return '—';
-  return new Date(n * 1000).toLocaleString();
+  // The report zone with its label, as the reports and the Assistant show it, not whatever clock this browser has.
+  return formatDateTime(n * 1000);
 }
 
 export function ago(clock: string | number): string {
@@ -71,10 +73,10 @@ const REASON_TEXT: Record<StateReason, (state: HostState) => string> = {
       ? 'Answers ping, but a Zabbix interface is unavailable'
       : state === 'nodata'
         ? 'No fresh ping value, and Zabbix doesn’t know whether the interface is available'
-        : `No fresh ping value — Zabbix marks the interface ${state === 'down' ? 'unavailable' : 'available'}`,
+        : `No fresh ping value. Zabbix marks the interface ${state === 'down' ? 'unavailable' : 'available'}`,
   'snmp-silent': () => 'Answers ping, but SNMP polling gets no reply',
   'agent-silent': () => 'Answers ping, but the Zabbix agent is not reporting',
-  stale: () => 'No recent ping value — the last one is too old to trust',
+  stale: () => 'No recent ping value: the last one is too old to trust',
   'no-interface': () => 'No interface in Zabbix, so the ping check can’t run',
   unsupported: () => 'The ping check is not supported on this host',
   disabled: () => 'Monitoring is disabled for this host in Zabbix',

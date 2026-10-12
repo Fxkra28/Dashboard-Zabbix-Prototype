@@ -8,6 +8,7 @@ import { GraphView } from '../components/TimeSeriesChart';
 import ItemPicker from '../components/ItemPicker';
 import RangePicker, { useUrlRange } from '../components/RangePicker';
 import { Loading } from '../components/states';
+import { Field, FieldGroup } from '../components/Field';
 import { groupBySite } from '../lib/sites';
 
 const MAX_ITEMS = 4;
@@ -76,8 +77,7 @@ export default function HostDetail() {
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label htmlFor="graph-host">Host</label>
+        <Field label="Host" htmlFor="graph-host">
           <select
             id="graph-host"
             value={hostid}
@@ -94,11 +94,10 @@ export default function HostDetail() {
               </optgroup>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>Range</label>
+        </Field>
+        <FieldGroup label="Range">
           <RangePicker value={range} onChange={setRange} />
-        </div>
+        </FieldGroup>
       </div>
 
       <div className="graph-layout">

@@ -14,7 +14,10 @@ import type {
 import { SEVERITIES } from '../theme';
 import { SeverityBadge } from '../components/StatusBadge';
 import { Async, Empty } from '../components/states';
+import { Field } from '../components/Field';
 import KpiCard from '../components/KpiCard';
+import { NoData } from '../components/NoData';
+import ReportDownload from '../components/ReportDownload';
 import {
   CoverageText,
   GapsNote,
@@ -26,10 +29,11 @@ import {
   fmtPct,
 } from '../components/Sli';
 import { monthLabel, recentMonths } from '../lib/time';
-import { dur } from '../lib/units';
+import { useReportTimeZone } from '../hooks/useReportTimeZone';
+import { PERCENT_DP, dur, formatPercent } from '../lib/units';
 
 /**
- * Availability & response report (plan_1.2 Phase 6, HCML Goal 6):
+ * Availability & response report (HCML Goal 6):
  * *"hard to see SLA, capacity trends, and recurring issues."*
  *
  * Two questions on one page: how much of the window was each host in trouble,
@@ -44,6 +48,9 @@ import { dur } from '../lib/units';
 /** Zabbix-style: 99.9%+ is fine, 99%+ is watch, below that is a problem. */
 const availColor = (pct: number) =>
   pct >= 99.9 ? 'var(--good)' : pct >= 99 ? 'var(--warn)' : 'var(--danger)';
+/** The same bands as text: the fills above are for the KPI stripe and fall below 4.5:1 as words. */
+const availText = (pct: number) =>
+  pct >= 99.9 ? 'var(--good-text)' : pct >= 99 ? 'var(--warn-text)' : 'var(--danger-text)';
 
 function Aging() {
   const q = useAsync<AgingReport>(() => api.aging(), [], 30_000);
@@ -101,7 +108,7 @@ function Aging() {
                           <td>
                             <SeverityBadge level={p.severity} />
                           </td>
-                          <td className="muted">{p.host || '—'}</td>
+                          <td className="muted">{p.host || <NoData />}</td>
                           <td>{p.name}</td>
                         </tr>
                       ))}
@@ -117,7 +124,7 @@ function Aging() {
   );
 }
 
-/** Period: rolling `d7`/`d30`, or `m:YYYY-MM` for a calendar month (Asia/Jakarta). */
+/** Period: rolling `d7`/`d30`, or `m:YYYY-MM` for a calendar month (in the report zone). */
 type Period = string;
 
 function periodQuery(period: Period): { days?: number; month?: string } {
@@ -136,7 +143,8 @@ const BASES: AvailabilityBasis[] = ['availability', 'all-problems'];
 const PROFILES: SliProfile[] = ['availability', 'hcml-report'];
 
 export default function Availability() {
-  const months = useMemo(() => recentMonths(12), []);
+  const zone = useReportTimeZone();
+  const months = useMemo(() => recentMonths(12, zone), [zone]);
   const periods = useMemo(() => ['d7', 'd30', ...months.map((m) => `m:${m}`)], [months]);
   // Period, basis, method and severity live in the URL, so Back from a host graph keeps the report.
   const [period, setPeriod] = useUrlState<Period>('period', 'd7', { options: periods });
@@ -149,6 +157,8 @@ export default function Availability() {
   const [picked, setPicked] = useUrlState<number>('severity', -1, { options: [-1, 0, 1, 2, 3, 4, 5] });
   const severity = picked >= 0 ? picked : availabilityMinSeverity;
   const legacy = basis === 'all-problems';
+  // The SLA report is one calendar month on the ICMP basis: a rolling window or the legacy basis has none.
+  const reportMonth = !legacy && period.startsWith('m:') ? period.slice(2) : null;
 
   const q = useAsync<AvailabilityReport>(
     () =>
@@ -164,14 +174,13 @@ export default function Availability() {
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label htmlFor="avail-period">Period</label>
+        <Field label="Period" htmlFor="avail-period">
           <select id="avail-period" value={period} onChange={(e) => setPeriod(e.target.value)}>
             <optgroup label="Rolling">
               <option value="d7">Last 7 days</option>
               <option value="d30">Last 30 days</option>
             </optgroup>
-            <optgroup label="Calendar month (Asia/Jakarta)">
+            <optgroup label={`Calendar month (${zone})`}>
               {months.map((m, i) => (
                 <option key={m} value={`m:${m}`}>
                   {monthLabel(m)}
@@ -180,9 +189,8 @@ export default function Availability() {
               ))}
             </optgroup>
           </select>
-        </div>
-        <div className="field">
-          <label htmlFor="avail-basis">Basis</label>
+        </Field>
+        <Field label="Basis" htmlFor="avail-basis">
           <select
             id="avail-basis"
             value={basis}
@@ -191,10 +199,9 @@ export default function Availability() {
             <option value="availability">Availability (ICMP)</option>
             <option value="all-problems">All problems (legacy)</option>
           </select>
-        </div>
+        </Field>
         {legacy ? (
-          <div className="field">
-            <label htmlFor="avail-severity">Counts problems of at least</label>
+          <Field label="Counts problems of at least" htmlFor="avail-severity">
             <select id="avail-severity" value={severity} onChange={(e) => setPicked(Number(e.target.value))}>
               {SEVERITIES.map((s) => (
                 <option key={s.level} value={s.level}>
@@ -202,9 +209,12 @@ export default function Availability() {
                 </option>
               ))}
             </select>
-          </div>
+          </Field>
         ) : (
           <MethodToggle value={profile} onChange={setProfile} />
+        )}
+        {reportMonth && (
+          <ReportDownload month={reportMonth} disabled={q.loading || q.stale || !q.data} />
         )}
       </div>
 
@@ -241,7 +251,7 @@ export default function Availability() {
                 <div className="grid kpis sli-kpis">
                   <KpiCard
                     label={`Overall · ${METHOD_LABEL[data.profile ?? profile]}`}
-                    value={fmtPct(data.overall.sli)}
+                    value={fmtPct(data.overall.sli, PERCENT_DP.availability, target)}
                     sub={
                       data.overall.sli === null
                         ? 'no data'
@@ -259,7 +269,7 @@ export default function Availability() {
                     <KpiCard
                       key={c.key}
                       label={c.name}
-                      value={c.sli === null ? 'No data' : fmtPct(c.sli)}
+                      value={c.sli === null ? 'No data' : fmtPct(c.sli, PERCENT_DP.availability, target)}
                       sub={
                         c.sli === null
                           ? `${c.hosts} devices, none with data`
@@ -291,13 +301,13 @@ export default function Availability() {
                   />
                   <KpiCard
                     label="Mean availability"
-                    value={`${avg.toFixed(3)}%`}
+                    value={formatPercent(avg, 'availability')}
                     sub="of affected hosts only"
                     accent={availColor(avg)}
                   />
                   <KpiCard
                     label="Worst host"
-                    value={worst?.availability != null ? `${worst.availability.toFixed(2)}%` : '—'}
+                    value={formatPercent(worst?.availability, 'availability')}
                     sub={worst?.host ?? 'nothing recorded'}
                     accent={worst?.availability != null ? availColor(worst.availability) : undefined}
                   />
@@ -313,7 +323,7 @@ export default function Availability() {
 
               {monthIgnored && (
                 <div className="notice warn">
-                  This BFF doesn’t support calendar months for the legacy basis yet — these figures
+                  This portal doesn’t support calendar months for the legacy basis yet. These figures
                   cover the last {Math.round(data.windowSeconds / 86400)} days instead.
                 </div>
               )}
@@ -321,7 +331,7 @@ export default function Availability() {
               {data.truncated && (
                 <div className="notice warn">
                   Zabbix returned a full page of events for this window, so these figures are a{' '}
-                  <strong>floor</strong> — real downtime may be higher. Narrow the period for exact
+                  <strong>floor</strong>: real downtime may be higher. Narrow the period for exact
                   numbers.
                 </div>
               )}
@@ -365,28 +375,27 @@ export default function Availability() {
                                 <Link to={`/graphs?hostid=${h.hostid}`}>{h.host}</Link>
                               </td>
                               {hasSite && (
-                                <td className="muted">{h.site ? `${h.site.code} · ${h.site.name}` : '—'}</td>
+                                <td className="muted">{h.site ? `${h.site.code} · ${h.site.name}` : <NoData />}</td>
                               )}
-                              {hasCategory && <td className="muted">{h.category ?? '—'}</td>}
+                              {hasCategory && <td className="muted">{h.category ?? <NoData />}</td>}
                               <td>
                                 {engine ? (
                                   <SliPill
                                     sli={h.availability}
                                     target={target}
                                     dataStatus={h.dataStatus}
-                                    digits={3}
                                   />
                                 ) : h.availability === null ? (
                                   <NoDataPill />
                                 ) : (
-                                  <strong style={{ color: availColor(h.availability) }}>
-                                    {h.availability.toFixed(3)}%
+                                  <strong style={{ color: availText(h.availability) }}>
+                                    {formatPercent(h.availability, 'availability')}
                                   </strong>
                                 )}
                               </td>
-                              <td className="muted nowrap">{h.availability === null ? '—' : dur(h.downtime)}</td>
-                              <td className="muted">{h.availability === null ? '—' : h.incidents}</td>
-                              <td className="muted nowrap">{h.availability === null ? '—' : dur(h.longest)}</td>
+                              <td className="muted nowrap">{h.availability === null ? <NoData /> : dur(h.downtime)}</td>
+                              <td className="muted">{h.availability === null ? <NoData /> : h.incidents}</td>
+                              <td className="muted nowrap">{h.availability === null ? <NoData /> : dur(h.longest)}</td>
                               {hasCoverage && (
                                 <td>
                                   <CoverageText coverage={h.coverage} />

@@ -26,9 +26,16 @@ function zabbix(map: Record<string, unknown | Handler>): void {
 const callsOf = (method: string) =>
   zbxMock.mock.calls.filter(([m]) => m === method).map(([, p]) => p as Params);
 
-afterEach(() => {
+/** The sign-in setting before graphApp() switched it off, so the next test file's setting is not left changed. */
+let savedAuth: boolean | undefined;
+
+afterEach(async () => {
   zbxMock.mockReset();
   vi.useRealTimers();
+  if (savedAuth !== undefined) {
+    (await import('../config.js')).config.auth.enabled = savedAuth;
+    savedAuth = undefined;
+  }
 });
 
 // /api/items
@@ -110,7 +117,7 @@ describe('/api/latest paging', () => {
 
     const [light, details] = callsOf('item.get');
     expect(light).toMatchObject({
-      output: ['itemid', 'name'],
+      output: ['itemid', 'name', 'key_'], // the key tells a viewer's pass which items to leave out
       search: { name: 'Gi1/0/1', key_: 'Gi1/0/1' },
       searchByAny: true,
       monitored: true,
@@ -164,6 +171,12 @@ const numericItem = (over: Params = {}) => ({
 });
 
 async function graphApp() {
+  // These tests run the graph pipeline with no sign-in in front of it. A caller with no user counts as
+  // a viewer, and a viewer may not graph interface items, so sign-in is off here: every caller
+  // is admin. viewer-network-ids.test.ts covers the viewer.
+  const { config } = await import('../config.js');
+  savedAuth ??= config.auth.enabled;
+  config.auth.enabled = false;
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW * 1000);
   const { historyRoutes } = await import('../routes/history.js');
@@ -365,18 +378,6 @@ describe('/api/graph', () => {
     const app = await graphApp();
     expect((await app.inject({ url: '/api/graph?itemids=69356,9&hours=1' })).statusCode).toBe(400);
     expect((await app.inject({ url: '/api/graph?itemids=69356,12345&hours=1' })).statusCode).toBe(400);
-    await app.close();
-  });
-
-  it('legacy /api/trend restricts output and bounds the window', async () => {
-    zabbix({ 'trend.get': [] });
-    const app = await graphApp();
-    expect((await app.inject({ url: '/api/trend?itemid=1&hours=24' })).statusCode).toBe(200);
-    expect(callsOf('trend.get')[0]).toMatchObject({
-      output: ['itemid', 'clock', 'num', 'value_min', 'value_avg', 'value_max'],
-      time_from: NOW - 86_400,
-      time_till: NOW,
-    });
     await app.close();
   });
 });

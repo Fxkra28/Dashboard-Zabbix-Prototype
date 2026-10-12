@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerErrorHandler } from '../../errors.js';
+import { AJV_OPTIONS } from '../../schemas.js';
 import { invalidate } from '../../cache.js';
 
 type RoutePlugin = (app: FastifyInstance) => Promise<void>;
@@ -17,7 +18,7 @@ export async function buildTestApp(...plugins: RoutePlugin[]): Promise<FastifyIn
   // be served to the next and the second test would never call its mock.
   invalidate('');
 
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, ajv: AJV_OPTIONS });
   registerErrorHandler(app);
   for (const plugin of plugins) await app.register(plugin);
   await app.ready();

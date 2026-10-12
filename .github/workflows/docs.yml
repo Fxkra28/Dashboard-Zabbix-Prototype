@@ -9,13 +9,14 @@
 # drifted twice. The rest is the routine check set, run so that a documentation change
 # cannot quietly land beside a broken build.
 #
-# Note on state, September 2026: hcml-portal is behind its remote and hcml-portal-ollama
-# is not under git at all, so this workflow has never run. It is committed to both repos
-# so the two trees stay identical, and it is written to be correct on the first run
-# rather than debugged afterwards: every step below was executed by hand locally first.
+# Where it runs: hcml-portal is the git repository, so CI runs from it. hcml-portal-ollama
+# is not under git and has no CI of its own. The file is kept in both trees so that they
+# stay identical, and web/scripts/parity.check.mjs is how that is checked, on a machine
+# that has both. The web build and the two image builds were added without a local run:
+# the first CI run is their first check.
 #
 # There is no root package.json. server/ and web/ are separate npm projects with separate
-# lockfiles, so the install runs twice. web/ has no test script and no tsx of its own; its
+# lockfiles, so the install runs twice. web/ has vitest and eslint but no tsx of its own; its
 # checkers run through server/node_modules/.bin/tsx rather than npx, which would fetch a
 # package that is in neither lockfile.
 #
@@ -31,17 +32,24 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Nothing here pushes, comments or deploys, so the token only ever reads.
+# Every action is pinned to a full commit SHA, with the tag it was taken from in the comment
+# after it: a tag can be moved to other code, a SHA cannot. Dependabot (.github/dependabot.yml)
+# proposes the new SHA when a release comes, and a test refuses an action pinned any other way.
+permissions:
+  contents: read
+
 jobs:
   validate:
     name: Checks
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20' # the server pins @types/node ^20
+          node-version: '24' # Node 24 LTS, as in both Dockerfiles; the server pins @types/node ^24
 
       - name: Install server dependencies
         run: npm ci
@@ -49,6 +57,16 @@ jobs:
 
       - name: Install web dependencies
         run: npm ci
+        working-directory: web
+
+      # Fails on a high or critical advisory in what ships; dev-only tools are
+      # left out, as they never reach an image.
+      - name: Audit the server's production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: server
+
+      - name: Audit the web's production dependencies
+        run: npm audit --omit=dev --audit-level=high
         working-directory: web
 
       - name: Typecheck the server
@@ -59,9 +77,22 @@ jobs:
         run: npm run typecheck
         working-directory: web
 
+      - name: Lint the web
+        run: npm run lint # eslint: typescript-eslint, react-hooks, jsx-a11y
+        working-directory: web
+
       - name: Test the server
-        run: npm test # 336 tests, 19 files
+        run: npm test
         working-directory: server
+
+      - name: Test the web
+        run: npm test # in jsdom
+        working-directory: web
+
+      # `tsc -b` also typechecks vite.config.ts, which `npm run typecheck` never reaches.
+      - name: Build the web
+        run: npm run build
+        working-directory: web
 
       - name: The API contract matches the code
         run: ./server/node_modules/.bin/tsx server/scripts/openapi.check.ts
@@ -80,3 +111,55 @@ jobs:
 
       - name: The unit and duration formatters
         run: ./server/node_modules/.bin/tsx web/scripts/units.check.ts
+
+      - name: Every relative link in the docs resolves, spelled exactly
+        run: node web/scripts/links.check.mjs
+
+      # CI holds one tree, so this runs the script's own checks and skips the comparison.
+      # The comparison needs the sibling copy and is run on the machine that has both.
+      - name: The two copies match
+        run: node web/scripts/parity.check.mjs
+
+  # A secret scan of what is pushed. It reads the commits of the push or
+  # the pull request, not the whole history, so a leak already in history (the token in
+  # cb97069) does not fail every run: revoking that token is the fix, and rewriting history is
+  # the repository owner's call. A manual run has no commit range and would read everything, so it
+  # skips this job. Comments on pull requests and the findings artifact are off: on a public
+  # repository either would publish the very thing the scan found. A repository owned by an
+  # organisation needs a GITLEAKS_LICENSE secret; a personal one does not. Not run before the
+  # first push, like the image builds.
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Scan the pushed commits for secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+
+  images:
+    name: Docker images
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Built, never pushed: a Dockerfile that stops building should fail here, not on a deploy.
+      - name: Build the BFF image
+        run: docker build --tag hcml-portal-bff:ci server
+
+      - name: Build the web image
+        run: docker build --tag hcml-portal-web:ci web
+
+      # nginx cannot run outside Docker where this was written, so its own syntax check runs
+      # here, in the image that ships it. Needs no portal-bff host: /bff resolves at request time.
+      - name: The nginx config is valid
+        run: docker run --rm hcml-portal-web:ci nginx -t

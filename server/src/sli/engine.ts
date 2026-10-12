@@ -12,8 +12,11 @@ import {
   type SiteRef,
 } from '../naming.js';
 import { chunk, fetchEventsSliced, fetchTrendsSliced, mapLimit } from './events.js';
+import { maintenanceByHost } from './maintenance.js';
 import { hourFloor, monthBounds } from './time.js';
 import {
+  clipIntervals,
+  complementIntervals,
   intersectIntervals,
   mergeIntervals,
   totalSeconds,
@@ -33,7 +36,7 @@ import {
  *                 and so never fires for a device that is completely down.
  *                 Periods with no collected data count as up.
  *
- *   availability  The strict figure. "Unavailable by ICMP ping" OR high loss
+ *   availability  The strict figure. "Unavailable by ICMP ping" or high loss
  *                 counts as down, and hours in which nothing was collected are
  *                 excluded from the measurement instead of being counted as up.
  *                 A host with too little collected data has no figure at all.
@@ -41,6 +44,9 @@ import {
  * The per-host arithmetic mirrors Zabbix's own `calculateAvailability`: replay
  * each trigger's PROBLEM/OK events across the window, starting from the state
  * the trigger was already in when the window opened.
+ *
+ * In both profiles, time inside a planned Zabbix maintenance window is left
+ * out of the measurement, downtime and total alike (maintenance.ts).
  */
 
 export type DataStatus = 'ok' | 'partial' | 'nodata';
@@ -59,8 +65,10 @@ export interface SliHost {
   downtime: number;
   /** Seconds in the window (from → min(to, now)). */
   window: number;
-  /** Seconds actually measured: the window minus hours with no data. */
+  /** Seconds actually measured: the window minus hours with no data and planned maintenance. */
   covered: number;
+  /** Seconds of the window inside a planned maintenance window, left out of the figure. */
+  maintenance: number;
   coverage: number;
   incidents: number;
   longest: number;
@@ -125,6 +133,8 @@ export interface SliReport {
     triggers: string[];
     gapPolicy: 'counted-as-up' | 'excluded';
     noDataPolicy: 'counted-as-100' | 'excluded';
+    /** Planned maintenance, read from the periods as Zabbix defines them now. */
+    maintenancePolicy: 'excluded';
   };
   overall: SliGroup;
   categories: SliGroup[];
@@ -186,7 +196,7 @@ export function intervalsFor(
  *   - with no events inside, a trigger unchanged since before the window is in
  *     its current state;
  *   - one that changed only after the window: the first later event says what
- *     it changed FROM (`firstLater`, 1 = PROBLEM, 0 = OK).
+ *     it changed from (`firstLater`, 1 = PROBLEM, 0 = OK).
  */
 export function initialState(
   eventsInWindow: TriggerEvent[],
@@ -547,7 +557,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
   }
   const hostids = [...hostMeta.keys()];
 
-  const [parents, icmpItems, events] = await Promise.all([
+  const [parents, icmpItems, events, maintenance] = await Promise.all([
     hostids.length
       ? counted<{ hostid: string; parentTemplates?: { name: string }[] }[]>(counter, 'host.get', {
           hostids,
@@ -578,6 +588,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
           end - 1,
         )
       : Promise.resolve([]),
+    maintenanceByHost(from, end, tz, () => counter.calls++),
   ]);
   counter.calls++;
   counter.events = events.length;
@@ -631,15 +642,22 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
     const merged = mergeIntervals(all);
     const category = categoryByHost.get(hostid) ?? 'Other';
 
+    // Planned maintenance leaves the measurement entirely, as a no-data hour
+    // does in the strict profile: neither down nor counted in the total.
+    const planned = clipIntervals(maintenance.get(hostid) ?? [], from, end);
+    const plannedSec = totalSeconds(planned);
+    const outsidePlanned = complementIntervals(planned, from, end);
+    const measurable = window - plannedSec;
+
     let covered: Interval[];
-    if (strict) covered = coverage!.byHost.get(hostid) ?? [];
-    else covered = [[from, end]];
+    if (strict) covered = intersectIntervals(coverage!.byHost.get(hostid) ?? [], outsidePlanned);
+    else covered = outsidePlanned;
     const measured = intersectIntervals(merged, covered);
     const downtime = totalSeconds(measured);
     const coveredSec = totalSeconds(covered);
-    const cov = window > 0 ? coveredSec / window : 0;
+    const cov = measurable > 0 ? coveredSec / measurable : 0;
     const nodata = strict && (coveredSec === 0 || cov < config.sla.minCoverage);
-    const denominator = strict ? coveredSec : window;
+    const denominator = strict ? coveredSec : measurable;
     const sli = nodata || denominator <= 0 ? null : Math.max(0, 100 * (1 - downtime / denominator));
 
     downByHost.set(hostid, measured);
@@ -656,10 +674,15 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
       downtime,
       window,
       covered: coveredSec,
+      maintenance: plannedSec,
       coverage: cov,
       incidents,
       longest: measured.reduce((m, [s, e]) => Math.max(m, e - s), 0),
-      dataStatus: nodata ? 'nodata' : strict && coveredSec < 0.95 * estateSeconds ? 'partial' : 'ok',
+      dataStatus: nodata
+        ? 'nodata'
+        : strict && coveredSec < 0.95 * Math.max(0, estateSeconds - plannedSec)
+          ? 'partial'
+          : 'ok',
       measured: wasMeasured(icmpByHost.get(hostid) ?? [], meta.status === '1'),
       meeting: sli === null ? null : sli >= target,
       errorBudget: sli === null ? null : (1 - target / 100) * denominator - downtime,
@@ -714,6 +737,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
       triggers: triggerNames,
       gapPolicy: strict ? 'excluded' : 'counted-as-up',
       noDataPolicy: strict ? 'excluded' : 'counted-as-100',
+      maintenancePolicy: 'excluded',
     },
     overall: aggregate('overall', 'HCML estate', hosts, target),
     categories,

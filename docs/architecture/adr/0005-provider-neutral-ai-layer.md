@@ -11,7 +11,7 @@ estate. Doing that means sending HCML's monitoring data (host names, trigger tex
 a language model. HCML's source documents are stamped Private and Confidential.
 
 Two questions, and they turned out to be one: which model, and how do you evaluate that choice
-honestly rather than asserting an answer?
+rather than assert an answer?
 
 ## Decision Drivers
 
@@ -22,17 +22,17 @@ honestly rather than asserting an answer?
 
 ## Considered Options
 
-* **Hosted model only** (Anthropic API).
-* **Local model only** (Ollama on the host).
-* **One provider-neutral layer, switched by configuration, deployed twice**: once per backend.
+* Hosted model only (Anthropic API).
+* Local model only (Ollama on the host).
+* One provider-neutral layer, switched by configuration, deployed twice: once per backend.
 
 ## Decision Outcome
 
 Chosen: **one provider-neutral layer (`server/src/ai.ts`), switched by `AI_PROVIDER`, deployed as two
 repositories that share a byte-identical source tree.**
 
-`hcml-portal` runs hosted Claude. `hcml-portal-ollama` runs `qwen3:8b` on the host. **`server/src` and
-`web/src` are byte-identical between them**: verified with `diff -rq`, not by eye. Which model
+`hcml-portal` runs hosted Claude. `hcml-portal-ollama` runs `qwen3:8b` on the host. `server/src` and
+`web/src` are byte-identical between them: verified with `diff -rq`, not by eye. Which model
 answers is a line of `.env`.
 
 ### This copy's perspective
@@ -43,12 +43,25 @@ network to a third party. The assistant sends more: the whole estate snapshot, u
 characters covering all hosts rolled up by site, open problems with host and trigger text, and derived
 SLA figures.
 
-`flow/DataFlow.pdf` draws that boundary in red, with a box reading **LEAVES THIS MACHINE**. In the
+`flow/DataFlow.pdf` draws that boundary in red, with a box reading LEAVES THIS MACHINE. In the
 sibling repo the same box is green and there is no boundary at all.
+
+**Decided 25 September 2026: this copy keeps hosted Claude.** The owner's reason: the two copies exist
+to compare a hosted API model with a local one head to head, and the local side of that comparison is
+`hcml-portal-ollama`. The two safeguards offered with the decision were held back at first and went in
+on 7 October 2026 (ayoyo_1.1 SC-01 and SC-09). Under every AI answer a line names Anthropic as the
+external service the question was sent to. The portal shows it only when `AI_PROVIDER` is `anthropic`,
+so a local model shows nothing. Both copies limit Explain and the assistant for each signed-in user,
+the same in both so the comparison stays fair: 10 calls a minute each, at most 4 hosted calls at once,
+and a daily token budget for the hosted API only (500,000 a user, 2,000,000 in all). Each number has
+an environment variable (`AI_CHAT_PER_MINUTE`, `AI_EXPLAIN_PER_MINUTE`, `AI_MAX_CONCURRENT`,
+`AI_DAILY_TOKENS_PER_USER`, `AI_DAILY_TOKENS_TOTAL`) and a default, so none is required. The API key
+flagged on 10 September is still to be rotated. This closes audit item FE-02 as a decision rather than
+a fix.
 
 ### Positive Consequences
 
-* **The comparison is real.** Both copies run the same code against the same estate, so a difference
+* The comparison is real. Both copies run the same code against the same estate, so a difference
   in answer quality or latency is a difference in the model, not in the harness.
 * Switching backends is one environment variable, not a branch.
 * A single bug fix lands in both, and `diff -rq` proves it did.
@@ -59,13 +72,14 @@ sibling repo the same box is green and there is no boundary at all.
 * **Two deployments to keep in step, forever.** The divergence is now 21 files and both READMEs state
   the count, so both have to be updated whenever it changes, and that count has already drifted once
   (audit finding DOC-10).
-* **`AI_PROVIDER` falls back to `anthropic` silently for any unrecognised value.** A typo like
-  `AI_PROVIDER=ollama` sends the estate off-box with no error anywhere. On 21 Sep the local-model
+* **`AI_PROVIDER` falls back to `anthropic` for any unrecognised value, with only a warning in the
+  startup log** (none at all for an empty value). A typo like `AI_PROVIDER=ollama` sends the estate
+  off-box with no error and nothing in the UI. On 21 Sep the local-model
   repo's own `.env.example` was found selecting the *hosted* backend (finding B3): the exact failure
   this footgun enables.
 * `@anthropic-ai/sdk` is installed in both copies and unused in one.
 * Two stacks means two caches, two restarts, and twice the recompute cost of anything not persisted.
-* The API key has been flagged for rotation since 10 September and **has still not been rotated**
+* The API key has been flagged for rotation since 10 September and has still not been rotated
   (FE-02).
 
 ## Pros and Cons of the Options

@@ -12,3 +12,9 @@ __pycache__/
 *.tsbuildinfo
 web/vite.config.js
 web/vite.config.d.ts
+
+# A downloaded SLA report names every device in the estate: never commit one.
+HCML_SLA_Report_*
+
+# Screenshots of the live portal show real host and site names: never commit them (docs/contributing.md).
+/pic/

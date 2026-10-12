@@ -1,6 +1,9 @@
-/** Assertions for web/src/lib/units.ts. Run: npx tsx web/scripts/units.check.ts */
+/** Assertions for web/src/lib/units.ts. Run from the repo root: ./server/node_modules/.bin/tsx web/scripts/units.check.ts */
 import assert from 'node:assert/strict';
-import { dur, formatValue, formatDuration } from '../src/lib/units.ts';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { PERCENT_DP, dur, formatAxis, formatPercent, formatValue, formatDuration } from '../src/lib/units.ts';
 import { naturalCompare, siteFromHostName } from '../src/lib/sites.ts';
 import { monthBounds } from '../src/lib/time.ts';
 
@@ -27,8 +30,26 @@ eq(formatValue(1_039_176_940, 'B'), '991 MB');
 eq(formatValue(1536, 'Bps'), '1.5 KB/s');
 eq(formatValue(512, 'B'), '512 B');
 
-eq(formatValue(23.77704635174604, '%'), '23.78 %');
-eq(formatValue(100, '%'), '100.00 %');
+eq(formatValue(23.77704635174604, '%'), '23.78%');
+eq(formatValue(100, '%'), '100.00%');
+eq(formatValue(0.5, '%'), '0.50%');
+
+// One rule for a percentage: the sign against the number, one precision per measure.
+eq(formatPercent(0.5, 'loss'), '0.50%');
+eq(formatPercent(99.96234, 'availability'), '99.96%');
+eq(formatPercent(12.34, 'utilisation'), '12.3%');
+eq(formatPercent(0, 'loss'), '0.00%');
+eq(formatPercent(null, 'loss'), '—');
+eq(formatPercent(undefined, 'availability'), '—');
+eq(formatPercent(NaN, 'utilisation'), '—');
+// The same figure reads the same whichever page prints it: a loss figure on Network (an item in %) and on Links.
+eq(formatPercent(0.5, 'loss'), formatValue(0.5, '%'));
+eq(formatPercent(23.777, 'item'), formatValue(23.777, '%'));
+eq(formatAxis(23.78, '%'), '23.8%');
+for (const measure of Object.keys(PERCENT_DP) as (keyof typeof PERCENT_DP)[]) {
+  assert.doesNotMatch(formatPercent(1.2345, measure), /\s/, `${measure}: no space before the percent sign`);
+  assert.equal(formatPercent(1.2345, measure).split('.')[1], `${(1.2345).toFixed(PERCENT_DP[measure]).split('.')[1]}%`);
+}
 
 eq(formatValue(0.123, 's'), '123 ms');
 eq(formatValue(0.0254, 's'), '25.4 ms');
@@ -58,5 +79,29 @@ assert.deepEqual(siteFromHostName('INET : TWSB LINI 2 WAN 1'), { code: 14, name:
 assert.equal(siteFromHostName('INTERNET'), null);
 assert.deepEqual(monthBounds('2026-08'), { from: 1785517200, to: 1788195600 });
 assert.deepEqual(monthBounds('2026-12'), { from: 1796058000, to: 1798736400 });
+
+// No page may format a percentage by hand: `x.toFixed(2)%` is how Links read 0.5% while Network read 0.50 %.
+// Everything goes through formatPercent, so a measure cannot drift from its precision.
+export const HAND_ROLLED_PERCENT = /\.toFixed\(\s*\d+\s*\)\s*\}?\s*%/;
+const withoutComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+assert.ok(HAND_ROLLED_PERCENT.test('`${v.toFixed(2)}%`'), 'self-test: the pattern sees a template literal');
+assert.ok(HAND_ROLLED_PERCENT.test('{r.utilisation.toFixed(1)} %'), 'self-test: the pattern sees JSX text with a space');
+assert.ok(!HAND_ROLLED_PERCENT.test('formatPercent(v, "loss")'), 'self-test: the pattern leaves the formatter alone');
+assert.ok(!HAND_ROLLED_PERCENT.test('{r.avg.toFixed(1)}{r.units}'), 'self-test: the pattern leaves a value with its own unit alone');
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return name === '__tests__' ? [] : sourceFiles(path);
+    return /\.tsx?$/.test(name) ? [path] : [];
+  });
+}
+const SRC = fileURLToPath(new URL('../src', import.meta.url));
+const offenders = sourceFiles(SRC)
+  // units.ts is the rule itself, and percent.ts the Met/Missed text that adds digits to stay on the right side of a target.
+  .filter((f) => !f.endsWith(join('lib', 'units.ts')) && !f.endsWith(join('lib', 'percent.ts')))
+  .filter((f) => HAND_ROLLED_PERCENT.test(withoutComments(readFileSync(f, 'utf8'))))
+  .map((f) => f.slice(SRC.length + 1));
+assert.deepEqual(offenders, [], `format percentages with formatPercent (lib/units.ts), not toFixed: ${offenders.join(', ')}`);
 
 console.log('units.check: all assertions passed');

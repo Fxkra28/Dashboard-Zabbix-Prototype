@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
 import { useAiEnabled } from '../hooks/useAi';
+import { useReportTimeZone } from '../hooks/useReportTimeZone';
+import { useUrlState } from '../hooks/useUrlState';
 import type {
   DerivedKind,
   DerivedServiceNode,
@@ -13,8 +15,11 @@ import type {
 import { SEVERITIES } from '../theme';
 import { SeverityBadge } from '../components/StatusBadge';
 import { Async, Empty } from '../components/states';
+import { FieldSpacer } from '../components/Field';
 import { SlaExplainPanel, type DerivedSlaScope } from '../components/ExplainPanel';
 import { IconChevron } from '../components/icons';
+import { percentText } from '../lib/percent';
+import { recentMonths } from '../lib/time';
 import {
   DERIVED_BANNER,
   GapsNote,
@@ -26,7 +31,7 @@ import {
 } from '../components/Sli';
 
 /**
- * Services tree (plan_1.2 Phase 2, HCML Goal 2): the portal's answer to
+ * Services tree (HCML Goal 2): the portal's answer to
  * "monitoring is still device-centric and reactive".
  *
  * A failure reads as *"BD FPSO, Voice path is degraded, because the agent on
@@ -64,7 +69,7 @@ function collectDegraded(nodes: ServiceNode[], into: Set<string>, maxDepth = Inf
 function SlaChip({ sla }: { sla: NonNullable<ServiceNode['sla']> }) {
   return (
     <span className={`svc-sla ${sla.meeting ? 'ok' : 'miss'}`} title={`Target ${sla.slo}%`}>
-      {sla.sli.toFixed(2)}% <em>/ {sla.slo}%</em>
+      {percentText(sla.sli, sla.slo)} <em>/ {sla.slo}%</em>
     </span>
   );
 }
@@ -197,7 +202,7 @@ function Row({
         </span>
       </div>
 
-      {/* Only leaves show causes — parents would repeat their children's. */}
+      {/* Only leaves show causes: parents would repeat their children's. */}
       {!hasKids &&
         node.problems.map((p) => (
           <div className="svc-cause" style={{ paddingLeft: 12 + depth * 22 + 46 }} key={p.eventid}>
@@ -277,25 +282,22 @@ function ServiceTree({
     <>
       <div className="controls">
         {extraControls}
-        <div className="field">
-          <label>&nbsp;</label>
+        <FieldSpacer>
           <span className="pill">{data.total} services</span>
-        </div>
-        <div className="field">
-          <label>&nbsp;</label>
+        </FieldSpacer>
+        <FieldSpacer>
           <span className={`pill ${data.degraded ? 'down' : 'up'}`}>
             {data.degraded ? `${data.degraded} degraded` : 'All healthy'}
           </span>
-        </div>
-        <div className="field">
-          <label>&nbsp;</label>
+        </FieldSpacer>
+        <FieldSpacer>
           <button
             className="btn ghost sm"
             onClick={() => setExpanded(expanded.size >= allIds.size ? new Set() : new Set(allIds))}
           >
             {expanded.size >= allIds.size ? 'Collapse all' : 'Expand all'}
           </button>
-        </div>
+        </FieldSpacer>
       </div>
 
       <div className="panel">
@@ -318,9 +320,14 @@ function ServiceTree({
   );
 }
 
+const PROFILES: SliProfile[] = ['availability', 'hcml-report'];
+
 function DerivedServices() {
-  const [month, setMonth] = useState(lastClosedMonth);
-  const [profile, setProfile] = useState<SliProfile>('availability');
+  const zone = useReportTimeZone();
+  const months = useMemo(() => recentMonths(12, zone), [zone]);
+  // Month and method live in the URL, so Back from a device graph returns to the same tree. One not offered reads as the default.
+  const [month, setMonth] = useUrlState<string>('month', lastClosedMonth(), { options: months });
+  const [profile, setProfile] = useUrlState<SliProfile>('method', 'availability', { options: PROFILES });
   const [explaining, setExplaining] = useState<DerivedSlaScope | null>(null);
   const q = useAsync<DerivedServicesResponse>(
     () => api.servicesDerived(month, profile),
@@ -389,12 +396,15 @@ function DerivedServices() {
 }
 
 export default function Services() {
-  // Asked once: it decides between Zabbix's tree and the derived one, which polls on its own.
-  const q = useAsync<ServicesResponse>(() => api.services(), []);
+  // The first answer decides between Zabbix's tree and the derived one, for good. The Zabbix tree
+  // refreshes like the other pages; the derived one polls on its own, so this stops asking.
+  const [derived, setDerived] = useState<boolean | null>(null);
+  const q = useAsync<ServicesResponse>(() => api.services(), [], derived ? undefined : 60_000);
   const [explaining, setExplaining] = useState<ServiceNode | null>(null);
+  if (derived === null && q.data) setDerived(q.data.total === 0);
 
   // Zabbix has no services: derive them from the estate instead of an empty page.
-  if (q.data && q.data.total === 0) return <DerivedServices />;
+  if (derived ?? (q.data?.total === 0)) return <DerivedServices />;
 
   return (
     <>

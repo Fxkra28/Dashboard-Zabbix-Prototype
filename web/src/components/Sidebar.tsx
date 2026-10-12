@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth, roleAllows } from '../hooks/useAuth';
+import { useCapabilities } from '../hooks/useAi';
+import { useBuild } from '../hooks/useBuild';
+import { buildLabel } from '../lib/build';
 import BrandMark from './BrandMark';
 import type { Role } from '../types';
 import {
@@ -26,13 +29,13 @@ type Item = {
   label: string;
   icon: (p: { size?: number }) => JSX.Element;
   end?: boolean;
-  /** Minimum role; omitted means viewer. Mirrors the BFF's ROUTE_RULES. */
-  role?: Role;
 };
 type Section = { title: string; items: Item[] };
 
 // Mirrors Zabbix's native left menu (Monitoring / Reports sections), read-only
-// subset, plus the views Zabbix has no equivalent for (Sites, Links).
+// subset, plus the views Zabbix has no equivalent for (Sites, Links). Each label
+// is also the title of the page it opens (DESIGN.md section 9). Which role
+// may see a page is not written here: the server says so in /api/auth/me.
 const SECTIONS: Section[] = [
   {
     title: 'Monitoring',
@@ -44,8 +47,8 @@ const SECTIONS: Section[] = [
       { to: '/latest', label: 'Latest data', icon: IconLatest },
       { to: '/graphs', label: 'Graphs', icon: IconGraph },
       { to: '/maps', label: 'Maps', icon: IconMap },
-      { to: '/network', label: 'Network', icon: IconNetwork, role: 'operator' },
-      { to: '/links', label: 'Links & WAN', icon: IconLink, role: 'operator' },
+      { to: '/network', label: 'Network', icon: IconNetwork },
+      { to: '/links', label: 'Links & WAN health', icon: IconLink },
       { to: '/services', label: 'Services', icon: IconService },
       { to: '/sla', label: 'SLA', icon: IconSla },
     ],
@@ -53,35 +56,40 @@ const SECTIONS: Section[] = [
   {
     title: 'Reports',
     items: [
-      { to: '/reports/availability', label: 'Availability', icon: IconReport },
-      { to: '/reports/capacity', label: 'Capacity', icon: IconGraph },
+      { to: '/reports/availability', label: 'Availability & response', icon: IconReport },
+      { to: '/reports/capacity', label: 'Capacity trends', icon: IconGraph },
       { to: '/reports/noise', label: 'Alert noise', icon: IconAlert },
       { to: '/reports/top-triggers', label: 'Top 100 triggers', icon: IconReport },
-      { to: '/reports/inventory', label: 'Inventory scorecard', icon: IconShield, role: 'admin' },
+      { to: '/reports/inventory', label: 'Inventory & ownership scorecard', icon: IconShield },
     ],
   },
   {
     // The one section with no Zabbix equivalent. Viewer role on purpose: the
     // assistant is only ever shown what a viewer can already see.
     title: 'Assistant',
-    items: [{ to: '/assistant', label: 'Ask the assistant', icon: IconChat }],
+    items: [{ to: '/assistant', label: 'Assistant', icon: IconChat }],
   },
 ];
 
+/** The top bar's page title for each route: the menu label that opens it. */
+export const PAGE_TITLES: Record<string, string> = Object.fromEntries(
+  SECTIONS.flatMap((s) => s.items.map((i) => [i.to, i.label])),
+);
+
 function MenuSection({
   section,
-  role,
+  allowed,
   collapsed,
 }: {
   section: Section;
-  role: Role | null;
+  allowed: (to: string) => boolean;
   collapsed: boolean;
 }) {
   const [open, setOpen] = useState(true);
 
   // Hide what this role can't reach: the BFF enforces it regardless, but
   // offering a link that can only 403 is worse than not offering it.
-  const items = section.items.filter((i) => !i.role || roleAllows(role, i.role));
+  const items = section.items.filter((i) => allowed(i.to));
   if (!items.length) return null;
 
   // A rail has no room for a section heading, and collapsing a section you
@@ -124,18 +132,34 @@ function MenuSection({
 
 export default function Sidebar({
   collapsed,
+  locked = false,
   onToggle,
 }: {
   collapsed: boolean;
+  /** The screen is too narrow to offer the full sidebar, so the rail stays and has no toggle. */
+  locked?: boolean;
   onToggle: () => void;
 }) {
-  const { role } = useAuth();
+  const { me, role, pages } = useAuth();
+  const { writeBack } = useCapabilities();
+  const build = buildLabel(useBuild(Boolean(me)));
+
+  // The server's table decides. Until it has answered nothing is offered; a BFF that predates
+  // the table offers everything, as it still refuses what the role may not open.
+  const allowed = (to: string) => {
+    if (!me) return false;
+    if (!pages) return true;
+    const needs: Role | undefined = pages[to];
+    return needs !== undefined && roleAllows(role, needs);
+  };
+  // Acknowledge is the one write, and only for operators on a portal that has it on.
+  const canAck = writeBack && roleAllows(role, 'operator');
 
   return (
     <aside className="sidebar">
       <div className="brand">
         {/* The rail hides the wordmark beside it, so there the image carries the name. */}
-        <BrandMark variant={collapsed ? 'mark' : 'lockup'} alt={collapsed ? 'HCML' : ''} />
+        <BrandMark variant={collapsed ? 'icon' : 'lockup'} alt={collapsed ? 'HCML' : ''} />
         {!collapsed && (
           <div>
             <div className="title">HCML</div>
@@ -146,23 +170,31 @@ export default function Sidebar({
 
       <div className="nav-scroll">
         {SECTIONS.map((s) => (
-          <MenuSection key={s.title} section={s} role={role} collapsed={collapsed} />
+          <MenuSection key={s.title} section={s} allowed={allowed} collapsed={collapsed} />
         ))}
       </div>
 
       <div className="spacer" />
-      {!collapsed && <div className="foot">Read-only · powered by Zabbix API</div>}
+      {!collapsed && (
+        <div className="foot">
+          {canAck ? 'Read-only except acknowledge' : 'Read-only'} · powered by Zabbix
+          {build && <div className="foot-build">{build}</div>}
+        </div>
+      )}
 
-      <button
-        type="button"
-        className="rail-toggle"
-        onClick={onToggle}
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-        title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-      >
-        <IconChevron />
-      </button>
+      {/* A toggle that cannot change anything would only mislead, so a forced rail has none. */}
+      {!locked && (
+        <button
+          type="button"
+          className="rail-toggle"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+          title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+        >
+          <IconChevron />
+        </button>
+      )}
     </aside>
   );
 }

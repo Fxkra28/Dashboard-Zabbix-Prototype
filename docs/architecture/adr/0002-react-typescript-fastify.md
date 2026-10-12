@@ -24,10 +24,10 @@ own rather than pointing at a brief.
 
 ## Considered Options
 
-* **React + TypeScript + Vite / Fastify + TypeScript**
-* **Vue + Vite / FastAPI (Python)**
-* **Plain PHP, matching Zabbix's own stack**
-* **Next.js full stack**
+* React + TypeScript + Vite / Fastify + TypeScript
+* Vue + Vite / FastAPI (Python)
+* Plain PHP, matching Zabbix's own stack
+* Next.js full stack
 
 ## Decision Outcome
 
@@ -44,14 +44,15 @@ explicit rather than a matter of `app.use` call order.
 
 ### Positive Consequences
 
-* **The dependency surface stayed small**: 7 runtime dependencies on the server, 5 on the web.
+* The dependency surface stayed small: 7 runtime dependencies on the server, 5 on the web (8 on
+  the server since the session cookie of ADR-0010).
 * ECharts handles the dense series without a wrapper library.
 * The hook ordering is visible in one file, `index.ts`.
 * Vite's dev server makes the edit-reload loop immediate.
 
 ### Negative Consequences
 
-* **Two build toolchains** to keep working, and two `node_modules` trees.
+* Two build toolchains to keep working, and two `node_modules` trees.
 * **The type mirror is hand-maintained.** `web/src/types.ts` is not generated, and it has already
   drifted: in six places it declares a field optional that the server always sends. Nothing checks it.
 * A TypeScript/Node stack is a second language in a shop whose monitoring system is PHP. If HCML's

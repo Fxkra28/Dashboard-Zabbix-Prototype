@@ -1,5 +1,5 @@
 ---
-title: HCML Monitoring Portal — Physical Data Model (PDM), MySQL 8.0
+title: "HCML Monitoring Portal: Physical Data Model (PDM), MySQL 8.0"
 config:
   layout: elk
   elk:
@@ -9,8 +9,7 @@ config:
 erDiagram
     direction TB
 
-    %% =================================================================
-    %%  PHYSICAL MODEL -- real MySQL tables, real column types, real
+    %%  Physical model: real MySQL tables, real column types, real
     %%  keys. Read from information_schema of the running database
     %%  (Zabbix 7.0.30 on MySQL 8.0), metadata only, no rows.
 
@@ -22,7 +21,7 @@ erDiagram
 
     %%  Solid line  a real FOREIGN KEY, labelled with its column, and
     %%              "cascade" when deleting the parent deletes these.
-    %%  Dashed line a relationship that exists only in the data --
+    %%  Dashed line a relationship that exists only in the data:
     %%              MySQL enforces nothing. History has no foreign key
     %%              on purpose: the cost per inserted row is too high.
     %%  Blue        rows come back to the portal.
@@ -32,7 +31,6 @@ erDiagram
     %%  Where the rows go afterwards: in this copy the explanation
     %%  layer sends a problem, its host and its tags to the Anthropic
     %%  API. The local-model copy is hcml-portal-ollama/schema/PDM.pdf.
-    %% =================================================================
 
     subgraph P_HOSTS["Hosts &amp; inventory"]
         hosts {

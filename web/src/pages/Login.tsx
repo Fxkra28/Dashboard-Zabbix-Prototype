@@ -1,11 +1,31 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { login } from '../api';
 import { resetAuthProbe } from '../hooks/useAuth';
 import BrandMark from '../components/BrandMark';
 
+/**
+ * Where to go after signing in: the page the session ended on (api.ts
+ * goToSignIn), but only a path on this site, never another origin.
+ */
+export function returnPath(search: string): string {
+  const next = new URLSearchParams(search).get('next') ?? '';
+  // eslint-disable-next-line no-control-regex -- refusing control characters is the point
+  if (!/^\/(?![/\\])/.test(next) || /[\u0000-\u001f]/.test(next)) return '/';
+  try {
+    const url = new URL(next, location.origin);
+    // The router matches /LOGIN and /%6Cogin to this page too.
+    const path = decodeURIComponent(url.pathname).toLowerCase();
+    const isLogin = path === '/login' || path.startsWith('/login/');
+    return url.origin === location.origin && !isLogin ? next : '/';
+  } catch {
+    return '/';
+  }
+}
+
 export default function Login() {
   const nav = useNavigate();
+  const { search } = useLocation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -13,6 +33,7 @@ export default function Login() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     // Checked here, not only by `required`, so a whitespace-only username is
     // refused without a round trip to the BFF.
     if (!username.trim() || !password) {
@@ -27,10 +48,10 @@ export default function Login() {
       // different user keeps the previous role until a full page reload,
       // and the sidebar shows the wrong menu.
       resetAuthProbe();
-      nav('/');
+      nav(returnPath(search));
     } catch (err) {
       // login() distinguishes wrong credentials from a rate limit or a BFF
-      // that is down; every failure used to read "Invalid username or password".
+      // that is down; not every failure reads "Invalid username or password".
       setError(err instanceof Error ? err.message : 'Sign-in failed.');
     } finally {
       setBusy(false);
@@ -53,6 +74,7 @@ export default function Login() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- signing in is this page's only task
             autoFocus
           />
         </div>
@@ -68,7 +90,9 @@ export default function Login() {
           />
         </div>
 
-        <button className="btn" type="submit" disabled={busy}>
+        {/* aria-disabled, not disabled: a disabled button drops the keyboard focus
+            it holds, so after a failed sign-in nothing on the page had focus. */}
+        <button className="btn" type="submit" aria-disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
         {error && (

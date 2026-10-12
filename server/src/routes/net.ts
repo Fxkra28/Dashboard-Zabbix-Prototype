@@ -172,11 +172,10 @@ export async function netRoutes(app: FastifyInstance): Promise<void> {
       };
       if (config.netGroupIds.length) hostParams.groupids = config.netGroupIds;
 
-      // ICMP items: icmpping (up/down), icmppingloss (%), icmppingsec (latency),
-      // read once for every monitored host and shared with Sites and Hosts.
-      // A value is only believed while fresh: collected, supported and recent.
-      // `lastclock '0'` (never polled / no recent data) used to read as
-      // `lastvalue ''` → "down"; it is `unknown`, and so is a value hours old.
+      // ICMP items: icmpping (up/down), icmppingloss (%), icmppingsec (latency), read once for
+      // every monitored host and shared with Sites and Hosts. A value is only believed while fresh:
+      // collected, supported and recent. `lastclock '0'` (never polled / no recent data) is
+      // `unknown`, not `lastvalue ''` read as "down", and so is a value hours old.
       const [hosts, icmp] = await Promise.all([
         zbx<{ hostid: string; name: string; status: string }[]>('host.get', hostParams),
         getIcmpByHost(),
@@ -196,20 +195,6 @@ export async function netRoutes(app: FastifyInstance): Promise<void> {
         .sort((a, b) => naturalCompare(a.name, b.name));
     }),
   );
-
-  // Interfaces / ports of one device (SNMP LLD traffic items) with latest values.
-  app.get('/api/net/ports', async (req) => {
-    const hostid = requireId((req.query as { hostid?: string }).hostid, 'hostid');
-    return cached(`net:ports:${hostid}`, 15_000, () =>
-      zbx('item.get', {
-        hostids: [hostid],
-        search: { key_: 'net.if.' },
-        startSearch: true,
-        output: ['itemid', 'name', 'key_', 'lastvalue', 'units', 'value_type'],
-        sortfield: 'name',
-      }),
-    );
-  });
 
   // One row per physical/logical interface: the ~9 net.if.* items Zabbix
   // discovers per SNMP ifIndex folded together (1,119 items → ~122 rows on
@@ -252,30 +237,5 @@ export async function netRoutes(app: FastifyInstance): Promise<void> {
       page,
       pageSize,
     };
-  });
-
-  // Oper status (up/down) items per port. Not called by the web app today.
-  app.get('/api/net/status', async (req) => {
-    const hostid = requireId((req.query as { hostid?: string }).hostid, 'hostid');
-    return cached(`net:status:${hostid}`, 15_000, () =>
-      zbx('item.get', {
-        hostids: [hostid],
-        search: { key_: 'ifOperStatus' },
-        startSearch: true,
-        output: ['itemid', 'name', 'key_', 'lastvalue'],
-        sortfield: 'name',
-      }),
-    );
-  });
-
-  // Topology map.  ?mapid=  Not called by the web app: the Maps page uses
-  // /api/maps/detail, which also resolves labels and host status.
-  app.get('/api/net/map', async (req) => {
-    const mapid = requireId((req.query as { mapid?: string }).mapid, 'mapid');
-    return zbx('map.get', {
-      sysmapids: [mapid],
-      selectSelements: 'extend',
-      selectLinks: 'extend',
-    });
   });
 }

@@ -1,5 +1,5 @@
 ---
-title: HCML Monitoring Portal — database ERD
+title: "HCML Monitoring Portal: database ERD"
 config:
   layout: elk
   elk:
@@ -9,7 +9,6 @@ config:
 erDiagram
     direction TB
 
-    %% ==================================================================
     %%  The MySQL tables behind the portal, and every foreign key between
     %%  them. The portal itself owns no database: it reaches all of this
     %%  through the Zabbix API. Logical model: ERD-Mermaid.mmd.
@@ -25,7 +24,6 @@ erDiagram
     %%           purple  written by event.acknowledge
     %%           grey    read inside Zabbix, never returned to the portal
     %%  Every bigint here is bigint unsigned.
-    %% ==================================================================
 
     subgraph D_HOSTS["Hosts &amp; Inventory"]
         hosts {
@@ -405,9 +403,7 @@ erDiagram
         usrgrp               ||--o{ rights               : "groupid, cascade"
     end
 
-    %% ------------------------------------------------------------------
     %%  Relationships that cross domains
-    %% ------------------------------------------------------------------
 
     hosts                ||--o{ items                : "hostid"
     interface            |o--o{ items                : "interfaceid"
@@ -428,9 +424,7 @@ erDiagram
     service_tag          }o..o{ sla_service_tag      : "matched on tag and value, no key"
     problem_tag          }o..o{ service_problem_tag  : "matched on tag and value by the server"
 
-    %% ------------------------------------------------------------------
-    %%  Colours, and domain frames that MUST stay unfilled (see erd.md)
-    %% ------------------------------------------------------------------
+    %%  Colours, and domain frames that must stay unfilled (see erd.md)
 
     classDef returned fill:#dbeafe,stroke:#2563eb,color:#14213d
     classDef written  fill:#ede9fe,stroke:#7c3aed,color:#2e1065

@@ -1,3 +1,5 @@
+import { noteStale } from './staleness.js';
+
 /**
  * In-memory TTL cache. Every Zabbix call hits its server + DB, so we cache
  * aggressively with short TTLs. Swap for Redis when scaling (setup.md §9).
@@ -5,9 +7,10 @@
  * Coalesces concurrent misses: while one fetch is in flight for a key, other
  * callers await the same promise instead of stampeding Zabbix.
  *
- * Bounded to MAX_ENTRIES keys, least recently used evicted first. Keys that
- * carry parameters (`graph:<items>:<from>:<to>`, `explain:problem:<id>`) used
- * to accumulate for as long as the process ran.
+ * Bounded to MAX_ENTRIES keys and to about MAX_BYTES of values, least recently
+ * used evicted first. Keys that carry parameters (`graph:<items>:<from>:<to>`,
+ * `explain:problem:<id>`) would otherwise accumulate for as long as the process runs.
+ * The size of a value is an estimate (approxBytes).
  *
  * Two opt-in ways to answer with an expired value, for slow reports whose
  * figures move slowly (the derived SLA, availability, capacity). Never for
@@ -23,11 +26,22 @@
  *                 value this cache still holds, however old, and log it. A
  *                 report from an hour ago beats an error page while Zabbix is
  *                 struggling. Values dropped by invalidate() are gone for
- *                 good, so a write is never undone this way.
+ *                 good, so a write is never undone this way. The request is
+ *                 told (staleness.ts: X-Data-Stale, X-Data-Age-Seconds).
+ *
+ * One opt-in way to keep a value that costs seconds to rebuild:
+ *
+ *   pin           ordinary eviction takes every unpinned entry first, so a
+ *                 flood of graph keys cannot push out a closed month's SLA
+ *                 report. Pins share at most MAX_PINNED_BYTES; past that the
+ *                 least recently used pinned entry goes too.
  */
 type Entry = {
   t: number;
   v: unknown;
+  /** approxBytes(v), measured once when the value is stored. */
+  bytes: number;
+  pinned?: boolean;
   /** Set once this value's background refresh has started: one per stale window. */
   refreshing?: boolean;
 };
@@ -44,6 +58,8 @@ export interface CacheOptions {
   staleMs?: number;
   /** On a failed fetch, answer with the last value held, of any age, rather than the error. */
   staleIfError?: boolean;
+  /** Evict this entry only after every unpinned one: for reports that take seconds to rebuild. */
+  pin?: boolean;
 }
 
 /** The part of Fastify's logger the cache uses. */
@@ -62,9 +78,54 @@ export interface InvalidateOptions {
 }
 
 export const MAX_ENTRIES = 500;
+/** About 130 KB per entry at the entry cap: the problem list is ~450 KB (stream.ts), most values far less. */
+export const MAX_BYTES = 64 * 1024 * 1024;
+export const MAX_PINNED_BYTES = MAX_BYTES / 2;
 export const HOLD_TTL_MS = 2_000;
 
+/**
+ * A rough size in bytes: strings by length, numbers as 8, objects and arrays
+ * by their slots, Maps and typed arrays by what they hold. Within about 40% of
+ * the real heap growth on a problem list, graph series and a Map of readings.
+ * Walks at most `budget` values, so a huge one costs a bounded few
+ * milliseconds and is counted as at least what was seen; shared objects and
+ * cycles are counted once.
+ */
+export function approxBytes(value: unknown, budget = 500_000): number {
+  const seen = new Set<object>();
+  const todo: unknown[] = [value];
+  let bytes = 0;
+  for (let n = 0; todo.length && n < budget; n++) {
+    const v = todo.pop();
+    if (typeof v === 'string') bytes += 16 + v.length;
+    else if (typeof v === 'number') bytes += 8;
+    else if (typeof v === 'bigint') bytes += 16;
+    else if (typeof v === 'object' && v !== null && !seen.has(v)) {
+      seen.add(v);
+      if (ArrayBuffer.isView(v)) bytes += v.byteLength;
+      else if (v instanceof Map) {
+        bytes += 40 + 24 * v.size;
+        for (const [k, x] of v) todo.push(k, x);
+      } else if (v instanceof Set) {
+        bytes += 40 + 16 * v.size;
+        for (const x of v) todo.push(x);
+      } else if (Array.isArray(v)) {
+        bytes += 16 + 8 * v.length;
+        for (const x of v) todo.push(x);
+      } else {
+        const keys = Object.keys(v);
+        bytes += 24 + 8 * keys.length;
+        for (const k of keys) todo.push((v as Record<string, unknown>)[k]);
+      }
+    }
+  }
+  return bytes;
+}
+
 const store = new Map<string, Entry>();
+/** Sum of `bytes` over `store`, and over its pinned entries. */
+let heldBytes = 0;
+let pinnedBytes = 0;
 const inflight = new Map<string, Flight>();
 /** Invalidated prefix → when its hold ends (epoch ms). */
 const holds = new Map<string, number>();
@@ -103,7 +164,7 @@ export async function cached<T>(
         hit.refreshing = true;
         // Nobody awaits this promise. Left unhandled, a rejection would take
         // the whole process down; caught, the stale value simply stays.
-        begin(key, fn).promise.catch((err: unknown) => {
+        begin(key, fn, opts.pin).promise.catch((err: unknown) => {
           log?.warn({ key, reason: reason(err) }, 'cache: background refresh failed; keeping the stale value');
         });
       }
@@ -111,7 +172,7 @@ export async function cached<T>(
     }
   }
 
-  const flight = inflight.get(key) ?? begin(key, fn);
+  const flight = inflight.get(key) ?? begin(key, fn, opts.pin);
   try {
     return (await flight.promise) as T;
   } catch (err) {
@@ -119,10 +180,9 @@ export async function cached<T>(
     const last = opts.staleIfError && !held ? store.get(key) : undefined;
     if (!last) throw err;
     remember(key, last);
-    log?.warn(
-      { key, ageMs: Date.now() - last.t, reason: reason(err) },
-      'cache: fetch failed; answering with the last cached value',
-    );
+    const ageMs = Date.now() - last.t;
+    noteStale(ageMs);
+    log?.warn({ key, ageMs, reason: reason(err) }, 'cache: fetch failed; answering with the last cached value');
     return last.v as T;
   }
 }
@@ -131,13 +191,13 @@ export async function cached<T>(
  * Start a fetch and register it as the key's in-flight one. Registered before
  * `fn` runs, so that a synchronous throw inside `fn` still gets cleaned up.
  */
-function begin(key: string, fn: () => Promise<unknown>): Flight {
+function begin(key: string, fn: () => Promise<unknown>, pin?: boolean): Flight {
   const flight: Flight = { promise: Promise.resolve(), cancelled: false };
   inflight.set(key, flight);
   flight.promise = (async () => {
     try {
       const v = await fn();
-      if (!flight.cancelled) remember(key, { t: Date.now(), v });
+      if (!flight.cancelled) keep(key, v, pin);
       return v;
     } finally {
       // Only our own record: after an invalidate a newer fetch may own the key.
@@ -147,14 +207,54 @@ function begin(key: string, fn: () => Promise<unknown>): Flight {
   return flight;
 }
 
-/** Store (or re-store) as most recently used; evict the least recently used past the cap. */
-function remember(key: string, entry: Entry): void {
+/** Store a fetched value. One bigger than the whole budget is not kept: it would only empty the cache. */
+function keep(key: string, v: unknown, pin?: boolean): void {
+  const bytes = approxBytes(v);
+  if (bytes > MAX_BYTES) {
+    discard(key);
+    log?.warn({ key, bytes }, 'cache: value is larger than the whole cache budget; not storing it');
+    return;
+  }
+  remember(key, { t: Date.now(), v, bytes, pinned: pin || undefined });
+}
+
+function discard(key: string): void {
+  const entry = store.get(key);
+  if (!entry) return;
   store.delete(key);
+  heldBytes -= entry.bytes;
+  if (entry.pinned) pinnedBytes -= entry.bytes;
+}
+
+/** Store (or re-store) as most recently used, then evict past the entry and byte caps. */
+function remember(key: string, entry: Entry): void {
+  discard(key);
   store.set(key, entry);
-  while (store.size > MAX_ENTRIES) {
-    const oldest = store.keys().next();
-    if (oldest.done) break;
-    store.delete(oldest.value);
+  heldBytes += entry.bytes;
+  if (entry.pinned) pinnedBytes += entry.bytes;
+  evict();
+}
+
+/** The least recently used key, among the entries `want` accepts when it is given. */
+function oldest(want?: (e: Entry) => boolean): string | undefined {
+  for (const [key, entry] of store) if (!want || want(entry)) return key;
+  return undefined;
+}
+
+/**
+ * Least recently used first, unpinned before pinned. Pins are kept only up to
+ * MAX_PINNED_BYTES; after that the oldest of them is as fair a victim as any.
+ */
+function evict(): void {
+  while (pinnedBytes > MAX_PINNED_BYTES) {
+    const key = oldest((e) => e.pinned === true);
+    if (key === undefined) break;
+    discard(key);
+  }
+  while (store.size > MAX_ENTRIES || heldBytes > MAX_BYTES) {
+    const key = oldest((e) => !e.pinned) ?? oldest();
+    if (key === undefined) break;
+    discard(key);
   }
 }
 
@@ -168,26 +268,20 @@ function isHeld(key: string, now: number): boolean {
 }
 
 /**
- * Drop cached entries so the next read refetches. Used after a write-back
- * (§20): without this an acknowledgement wouldn't show for up to the TTL, and
- * the UI would look like it silently failed.
- *
- * Fetches already in flight for a matching key are cancelled too: their
- * callers still get an answer, but it is not stored. Before, a read that
- * started just ahead of an acknowledge could land afterwards and put the
- * pre-acknowledge list back in the cache for a full TTL.
- *
- * `prefix` matches by string prefix, so `invalidate('avail:')` clears every
- * parameterised availability report at once. `invalidate('')` clears
- * everything, holds included, how the tests start from a clean cache.
- *
- * Returns how many stored entries were dropped.
+ * Drop cached entries so the next read refetches. Used after a write-back (§20): without it an
+ * acknowledgement would not show for up to the TTL and the UI would look as if it silently failed.
+ * Fetches already in flight for a matching key are cancelled too: their callers still get an
+ * answer, but it is not stored, so a read that started just ahead of an acknowledge cannot put the
+ * pre-acknowledge list back for a full TTL. `prefix` matches by string prefix, so
+ * `invalidate('avail:')` clears every parameterised availability report at once, and
+ * `invalidate('')` clears everything, holds included (how the tests start clean). Returns how many
+ * stored entries were dropped.
  */
 export function invalidate(prefix: string, opts: InvalidateOptions = {}): number {
   let dropped = 0;
   for (const key of store.keys()) {
     if (key.startsWith(prefix)) {
-      store.delete(key);
+      discard(key);
       dropped++;
     }
   }

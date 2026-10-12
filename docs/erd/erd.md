@@ -1,27 +1,27 @@
 # Data model: HCML Monitoring Portal
 
-An entity-relationship view of the portal. Read [README.md](README.md) for the project overview and
-[setup.md](setup.md) for how each subsystem works.
+An entity-relationship view of the portal. Read [README.md](../../README.md) for the project overview and
+[setup.md](../../setup.md) for how each subsystem works.
 
-**The complete schema lives in [`ERD-Mermaid.mmd`](docs/erd/vanilla/ERD-Mermaid.mmd)**: one unified `erDiagram`
+The complete schema lives in [`ERD-Mermaid.mmd`](vanilla/ERD-Mermaid.mmd): one unified `erDiagram`
 covering both layers and the derivation edges between them, which the two split diagrams below cannot
 show. Its entities are grouped into nine domain subgraphs and colour-coded by layer: blue `ZBX_*` read
 from Zabbix, green derived by the portal, amber local to it.
 
-**If you only want to read it, start with [`ERD-Domains.md`](docs/erd/vanilla/ERD-Domains.md)**: the same schema split
+If you only want to read it, start with [`ERD-Domains.md`](vanilla/ERD-Domains.md): the same schema split
 into a one-screen domain map plus one detail diagram per domain. Forty-odd entities in a single
 picture is a lot to take in; that file is the readable form, and nothing in it differs from the
 `.mmd`. Pre-rendered copies of the single diagram sit alongside it:
 
-- [`ERD-Mermaid.pdf`](docs/erd/vanilla/ERD-Mermaid.pdf): **vector**; zoom to any attribute and it stays sharp, and the
+- [`ERD-Mermaid.pdf`](vanilla/ERD-Mermaid.pdf): vector; zoom to any attribute and it stays sharp, and the
   text is searchable. The one to read.
-- [`ERD-Mermaid.png`](docs/erd/vanilla/ERD-Mermaid.png): 5168 px wide, rendered at 2× scale, for slides and documents.
+- [`ERD-Mermaid.png`](vanilla/ERD-Mermaid.png): 5168 px wide, rendered at 2× scale, for slides and documents.
 
-**The tables underneath are in [`ERD-Database.md`](docs/erd/database/ERD-Database.md).** This diagram is the portal's
+The tables underneath are in [`ERD-Database.md`](database/ERD-Database.md). This diagram is the portal's
 model: what it reads through the Zabbix API and what it derives. `ERD-Database.md`, with its own
 `.mmd`, `.pdf` and `.png`, goes one level down to the 45 MySQL tables those API calls read and write,
 with every column, key and foreign key taken from the live database's schema. Each blue entity here
-names its table in its header, after the dot. [`ERD-DatabaseSchema.md`](docs/erd/database-schema/ERD-DatabaseSchema.md) maps
+names its table in its header, after the dot. [`ERD-DatabaseSchema.md`](database-schema/ERD-DatabaseSchema.md) maps
 every one of them to its tables, as a table and as a diagram.
 
 To regenerate after editing the `.mmd`:
@@ -41,8 +41,8 @@ boxes; ELK brings those to 2 and zero. Do not remove that frontmatter block, and
 
 **Every `subgraph` must keep `fill:none`, and that is not cosmetic.** Mermaid paints cluster
 rectangles *after* the relationship lines, and the default theme fills them opaque (`#ffffde`), so a
-filled domain frame hides every edge that lies under it. On 14 September, with the fill left on, **33 of the then 46 edges
-were completely invisible** in the rendered PNG and PDF and another 11 were partly covered: labels
+filled domain frame hides every edge that lies under it. On 14 September, with the fill left on, 33 of the then 46 edges
+were completely invisible in the rendered PNG and PDF and another 11 were partly covered: labels
 such as *"selectTags"* floated with nothing attached to them. Nothing had been deleted: the `.mmd`
 source and the SVG both still held all 46 edges, they were simply painted over. The file sets
 `style <DOMAIN> fill:none,stroke:#94a3b8` for each of the nine domains, and `ERD-Database.mmd` does
@@ -69,10 +69,10 @@ is the index.
 
 | Level | The question it answers | Artefact | Notation |
 |---|---|---|---|
-| **Conceptual** (MCD) | What the business talks about | [`erd/Conceptual/ERD-Conceptual.md`](docs/erd/conceptual/ERD-Conceptual.md) | Merise: entities and named associations, `(min,max)` on each leg. No keys, no types |
-| **Logical** (MLD) | What the portal reads and derives | [`erd/Vanilla/ERD-Domains.md`](docs/erd/vanilla/ERD-Domains.md), from [`erd/Vanilla/ERD-Mermaid.mmd`](docs/erd/vanilla/ERD-Mermaid.mmd) | Crow's foot; attributes named, PK/FK marked |
-| **Physical** (MPD) | What MySQL actually stores | [`erd/Database/ERD-Database.md`](docs/erd/database/ERD-Database.md) | Crow's foot; real MySQL types, PK/FK, cascade |
-| *Bridge* | Which logical entity uses which table | [`erd/Database-Schema/ERD-DatabaseSchema.md`](docs/erd/database-schema/ERD-DatabaseSchema.md) | Flowchart |
+| Conceptual (MCD) | What the business talks about | [`erd/Conceptual/ERD-Conceptual.md`](conceptual/ERD-Conceptual.md) | Merise: entities and named associations, `(min,max)` on each leg. No keys, no types |
+| Logical (MLD) | What the portal reads and derives | [`erd/Vanilla/ERD-Domains.md`](vanilla/ERD-Domains.md), from [`erd/Vanilla/ERD-Mermaid.mmd`](vanilla/ERD-Mermaid.mmd) | Crow's foot; attributes named, PK/FK marked |
+| Physical (MPD) | What MySQL actually stores | [`erd/Database/ERD-Database.md`](database/ERD-Database.md) | Crow's foot; real MySQL types, PK/FK, cascade |
+| *Bridge* | Which logical entity uses which table | [`erd/Database-Schema/ERD-DatabaseSchema.md`](database-schema/ERD-DatabaseSchema.md) | Flowchart |
 
 The document you are reading is the narrative for the logical level, and the entry point to all four.
 
@@ -89,22 +89,23 @@ anywhere in the codebase, no `.sql` file, and `docker-compose.yml` defines exact
 `portal-bff` and `portal-web`. Neither is a datastore.
 
 Every fact the portal displays is Zabbix's, read over JSON-RPC through the single client in
-[`server/src/zabbix.ts`](server/src/zabbix.ts). The only persistence in the process is an in-memory
-TTL `Map` in [`server/src/cache.ts`](server/src/cache.ts), which is discarded on restart.
+[`server/src/zabbix.ts`](../../server/src/zabbix.ts). The only persistence in the process is an in-memory
+TTL `Map` in [`server/src/cache.ts`](../../server/src/cache.ts), which is discarded on restart.
 
 So this ERD does not show the portal's tables and foreign keys, it has none. What it shows, and
-what actually matters when working on this codebase is a **two-layer domain model**:
+what actually matters when working on this codebase is a two-layer domain model:
 
 | Layer | What it is | Where it lives |
 |---|---|---|
-| **Zabbix entities** | The objects the portal reads, and *only the fields it actually asks for* | Zabbix's MySQL database, reached via 12 read methods and 1 write |
-| **Portal entities** | Objects the portal computes that Zabbix has no equivalent for | Nowhere: built per request, cached briefly, never stored |
+| Zabbix entities | The objects the portal reads, and *only the fields it actually asks for* | Zabbix's MySQL database, reached via 13 read methods and 1 write |
+| Portal entities | Objects the portal computes that Zabbix has no equivalent for | Nowhere: built per request, cached briefly, never stored |
 
 The tables do exist; they are Zabbix's. Since 15 September the dev stack runs Zabbix 7.0.30 on MySQL
-8.0, restored from HCML's own backup, and [`ERD-Database.md`](docs/erd/database/ERD-Database.md) draws the 45 of its
-203 tables that the portal's 13 API methods read or write. Every column, key and foreign key there
+8.0, restored from HCML's own backup, and [`ERD-Database.md`](database/ERD-Database.md) draws 45 of its
+203 tables: the ones the portal's 14 API methods read or write, apart from the maintenance tables
+`maintenance.get` reads. Every column, key and foreign key there
 was taken from the live schema, which is identical to stock Zabbix 7.0.30. Each blue entity below
-names its table in its header; [`ERD-DatabaseSchema.md`](docs/erd/database-schema/ERD-DatabaseSchema.md) lists them all.
+names its table in its header; [`ERD-DatabaseSchema.md`](database-schema/ERD-DatabaseSchema.md) lists them all.
 
 The second layer is the point of the project. `Site`, `Link`, `Incident`, the inventory scorecard and
 the availability report are not in Zabbix in any form; they are arithmetic and grouping the portal
@@ -118,7 +119,7 @@ How Zabbix objects become portal objects. Each arrow is labelled with the deriva
 
 ```mermaid
 flowchart LR
-    subgraph ZBX["Zabbix — 12 read methods, 1 write"]
+    subgraph ZBX["Zabbix: 13 read methods, 1 write"]
         direction TB
         HOST[["host<br/>+ tags, groups,<br/>interfaces, inventory"]]
         ITEM[[item]]
@@ -128,7 +129,7 @@ flowchart LR
         SLA[["sla / sli"]]
     end
 
-    subgraph PORTAL["Portal — entities Zabbix has no equivalent for"]
+    subgraph PORTAL["Portal: entities Zabbix has no equivalent for"]
         direction TB
         SITE[SITE]
         LINK["LINK / LINK_PATH"]
@@ -157,7 +158,7 @@ flowchart LR
 
 ## 3. Zabbix entities, as actually consumed
 
-This is **not** Zabbix's full schema: that is 203 tables. These are the entities the portal
+This is not Zabbix's full schema: that is 203 tables. These are the entities the portal
 reads, carrying only the fields the code genuinely asks for. Everything else Zabbix offers is
 deliberately absent, and that absence is itself useful information: it is the true coupling surface
 between this project and Zabbix.
@@ -307,22 +308,22 @@ erDiagram
 
 ### What the portal deliberately does not read
 
-Worth stating, because it bounds the blast radius of a Zabbix upgrade:
+This bounds the blast radius of a Zabbix upgrade:
 
-- **`trigger`**: only `triggerid`, `manual_close` and the host. Not `expression`, `priority`,
+- `trigger`: only `triggerid`, `manual_close` and the host. Not `expression`, `priority`,
   `status`, `value`, `lastchange`, `comments` or dependencies. Problem name and severity always come
-  from the **event**, never from the trigger.
-- **`host`**: the technical `host` name only for map labels; not proxy, template links or `flags`.
+  from the event, never from the trigger.
+- `host`: the technical `host` name only for map labels; not proxy, template links or `flags`.
   `host.get` still filters on `flags` and `status` for it: the `hosts` table also holds templates
   (`status` 3) and host prototypes (`flags` 2), and neither is ever returned.
-- **`host inventory`**: 5 of its 70 fields.
-- **Whole entities never touched**: `user`, `usergroup`, `template`, `action`, `mediatype`,
-  `maintenance`, `script`, `dashboard`, `httptest`, `valuemap`, `proxy`, `correlation`,
+- `host inventory`: 5 of its 70 fields.
+- Whole entities never touched: `user`, `usergroup`, `template`, `action`, `mediatype`,
+  `script`, `dashboard`, `httptest`, `valuemap`, `proxy`, `correlation`,
   `discoveryrule`. Portal authentication is entirely local (`PORTAL_USERS` in the environment), not
   Zabbix users, although every Zabbix call runs *as* the Zabbix user that owns the API token, and
   that user's role and host-group rights decide what `host.get` returns
-  ([API token & permissions](docs/erd/database/ERD-Database.md#api-token--permissions)).
-- **`map_selement.elements[]`**: followed for host elements only. `/api/maps/detail` resolves each
+  ([API token & permissions](database/ERD-Database.md#api-token--permissions)).
+- `map_selement.elements[]`: followed for host elements only. `/api/maps/detail` resolves each
   host element's label macros and attaches its live problems (`MAP_ELEMENT`); map, trigger and
   host-group elements are still plain labelled boxes. No foreign key backs the link:
   `sysmaps_elements.elementid` means a host, map or host group depending on `elementtype`, so MySQL
@@ -480,41 +481,41 @@ Where each derived entity is built, and from what.
 
 | Entity | Built by | Inputs |
 |---|---|---|
-| `Site`, `SiteHost` | `getSites()`, [`routes/sites.ts`](server/src/routes/sites.ts) | `getHostsWithMeta()` + `getProblems()` |
-| `Link`, `LinkPath` | `getLinks()`, [`routes/links.ts`](server/src/routes/links.ts) | `item.get` on `icmpping*`, plus item tags |
-| `Incident` | `fetchIncidents()`, [`routes/analytics.ts`](server/src/routes/analytics.ts) | `event.get` problems + a batched recovery lookup |
+| `Site`, `SiteHost` | `getSites()`, [`routes/sites.ts`](../../server/src/routes/sites.ts) | `getHostsWithMeta()` + `getProblems()` |
+| `Link`, `LinkPath` | `getLinks()`, [`routes/links.ts`](../../server/src/routes/links.ts) | `item.get` on `icmpping*`, plus item tags |
+| `Incident` | `fetchIncidents()`, [`routes/analytics.ts`](../../server/src/routes/analytics.ts) | `event.get` problems + a batched recovery lookup |
 | `HostAvailability` | `getAvailability()` | `Incident[]` grouped by host, intervals merged |
 | `NoisyTrigger` | `getNoise()` | `Incident[]` grouped by trigger |
 | `AgingReport` | `getAging()` | `getProblems()`, unacknowledged only |
 | `CapacityRow` | `getCapacity()` | `item.get` + `trend.get`, falling back to `history.get` |
-| `MapElement` | `/api/maps/detail`: [`routes/maps.ts`](server/src/routes/maps.ts) | `map.get` elements, one `host.get` for label macros, and `getProblems()` |
-| `Dimension`, `HostGap` | `getScorecard()`, [`routes/inventory.ts`](server/src/routes/inventory.ts) | `getHostsWithMeta()` |
-| `ServiceNode` | `getServiceTree()`, [`routes/services.ts`](server/src/routes/services.ts) | `service.get` + one `sla.getsli` per SLA |
-| `SlaSli` | `getSli()`, [`routes/sla.ts`](server/src/routes/sla.ts) | `sla.getsli` flattened, names from `service.get` |
-| `ProblemExplanation` | `humanize()`: [`server/src/ai.ts`](server/src/ai.ts) | one problem, reshaped and sent to an LLM |
-| `ChatSnapshot` | `buildSnapshot()`: [`server/src/chat.ts`](server/src/chat.ts) | problems + sites + SLA + services, capped and rendered as plain text |
+| `MapElement` | `/api/maps/detail`: [`routes/maps.ts`](../../server/src/routes/maps.ts) | `map.get` elements, one `host.get` for label macros, and `getProblems()` |
+| `Dimension`, `HostGap` | `getScorecard()`, [`routes/inventory.ts`](../../server/src/routes/inventory.ts) | `getHostsWithMeta()` |
+| `ServiceNode` | `getServiceTree()`, [`routes/services.ts`](../../server/src/routes/services.ts) | `service.get` + one `sla.getsli` per SLA |
+| `SlaSli` | `getSli()`, [`routes/sla.ts`](../../server/src/routes/sla.ts) | `sla.getsli` flattened, names from `service.get` |
+| `ProblemExplanation` | `humanize()`: [`server/src/ai.ts`](../../server/src/ai.ts) | one problem, reshaped and sent to an LLM |
+| `ChatSnapshot` | `buildSnapshot()`: [`server/src/chat.ts`](../../server/src/chat.ts) | problems + sites + SLA + services, capped and rendered as plain text |
 
 ### How a site is resolved
 
 `Site` has no Zabbix equivalent at all, so its definition lives entirely in code:
-`resolveSite()` in [`routes/sites.ts`](server/src/routes/sites.ts). First match wins:
+`resolveSite()` in [`routes/sites.ts`](../../server/src/routes/sites.ts). First match wins:
 
-1. **Host tag** named by `SITE_TAG` (default `site`) → `source: 'tag'`
-2. **The host's own name**, parsed by `siteFromHostName()` in
-   [`naming.ts`](server/src/naming.ts) against HCML's `<code>.<class>.<seq>` convention, or an
+1. Host tag named by `SITE_TAG` (default `site`) → `source: 'tag'`
+2. The host's own name, parsed by `siteFromHostName()` in
+   [`naming.ts`](../../server/src/naming.ts) against HCML's `<code>.<class>.<seq>` convention, or an
    `INET:` / `SERVER:` prefix → `source: 'name'`
-3. **Inventory** `site_city`, else `location` → `source: 'inventory'`
-4. **Host group**: with `SITE_GROUP_PREFIX` set, the first group with that prefix, prefix stripped;
+3. Inventory `site_city`, else `location` → `source: 'inventory'`
+4. Host group: with `SITE_GROUP_PREFIX` set, the first group with that prefix, prefix stripped;
    without it, the first group verbatim → `source: 'group'`
-5. **`'Unassigned'`** when the host has no groups, or a prefix is set and nothing matches
+5. `'Unassigned'` when the host has no groups, or a prefix is set and nothing matches
 
-Two consequences worth knowing. Host → Site is a **total function**: every host lands in exactly one
+Two consequences follow. Host → Site is a total function: every host lands in exactly one
 site, so sites partition the estate. And the inventory scorecard treats `source === 'group'` as a
 *failure* to declare a site: the group fallback keeps the page usable while still scoring the gap.
 
 ### What makes a link
 
-A `Link` is one **(host, ping target)** pair, keyed `hostid:target`, where the target is parsed out of
+A `Link` is one (host, ping target) pair, keyed `hostid:target`, where the target is parsed out of
 the item key, `icmppingsec[10.0.0.1,3,,,,max]` yields target `10.0.0.1` and mode `max`. Up to three
 Zabbix items collapse into one link:
 
@@ -524,11 +525,11 @@ Zabbix items collapse into one link:
 | `icmppingloss` | `loss`, and the label (it carries the most descriptive name) |
 | `icmppingsec` | `latency`; with `min` and `max` modes present, also `jitter` |
 
-State is classified in order: `up === false` → **down**; loss ≥ `LINK_LOSS_CRIT` (10%) → **down**;
-loss ≥ `LINK_LOSS_WARN` (2%) → **degraded**; nothing known → **unknown**; else **up**.
+State is classified in order: `up === false` → down; loss ≥ `LINK_LOSS_CRIT` (10%) → down;
+loss ≥ `LINK_LOSS_WARN` (2%) → degraded; nothing known → unknown; else up.
 
-Links carrying a `link_group` item tag are gathered into a `LinkPath`, which is **down only when
-every leg is down**: that is the entire reason the entity exists, since a main plus standby pair
+Links carrying a `link_group` item tag are gathered into a `LinkPath`, which is down only when
+every leg is down: that is the entire reason the entity exists, since a main plus standby pair
 with one leg down is degraded, not lost.
 
 ---
@@ -540,7 +541,7 @@ Each of these is a deliberate in-process join.
 
 | Join | Why Zabbix cannot do it in one call |
 |---|---|
-| problem → trigger → host | `problem.get` has **no** `selectHosts`. One batched `trigger.get` stitches host names onto every problem. In MySQL the trigger → host step alone is three hops: `triggers` → `functions` → `items` → `hosts`. |
+| problem → trigger → host | `problem.get` has no `selectHosts`. One batched `trigger.get` stitches host names onto every problem. In MySQL the trigger → host step alone is three hops: `triggers` → `functions` → `items` → `hosts`. |
 | problem event → recovery event | Zabbix stores the problem and its recovery as two separate rows; they are paired through `r_eventid` in one batched second call. |
 | host ← live problem counts | `host.get` exposes no problem-count selector. |
 | host + tags + inventory + groups → `Site` | There is no site object in Zabbix, in any form. |
@@ -569,10 +570,10 @@ Every magic string the model depends on, in one place.
 | `interface.available` | `0` unknown · `1` available · `2` unavailable |
 | `item.value_type` | `0` float · `1` char · `2` log · `3` uint · `4` text, which is also the table: `history`, `history_str`, `history_log`, `history_uint`, `history_text` |
 | `item.state` | `0` normal · `1` not supported |
-| `event.object` | `0` trigger: **the only value handled**; items (`4`), LLD rules (`5`) and services (`6`) share the column |
+| `event.object` | `0` trigger: the only value handled; items (`4`), LLD rules (`5`) and services (`6`) share the column |
 | `event.source` | `0` triggers, always sent, never read back |
 | `event.value` | `1` PROBLEM events only |
-| `r_eventid` | `'0'` means **still open** |
+| `r_eventid` | `'0'` means still open |
 | `service.status` | `-1` OK · otherwise the severity that propagated up |
 | `sla.period` | `0` daily · `1` weekly · `2` monthly · `3` quarterly · `4` annually |
 | `sla.status` | `0` disabled · `1` enabled |
@@ -581,7 +582,7 @@ Every magic string the model depends on, in one place.
 | `event.acknowledge` action | bitmask, `1` close · `2` acknowledge · `4` message |
 
 Database-level values: `hosts.flags`, `hstgrp.type`, `role.type`, `rights.permission` and the rest
-are listed in [`ERD-Database.md`](docs/erd/database/ERD-Database.md#enum-columns).
+are listed in [`ERD-Database.md`](database/ERD-Database.md#enum-columns).
 
 Portal-defined enums, which exist only in this codebase:
 
@@ -617,13 +618,13 @@ Things a reader would otherwise get wrong.
 
 - **The SLA → SLI join is positional, not keyed.** `sla.getsli` returns a `serviceids` array and a
   parallel metric matrix; row *i* belongs to service *i*. Nothing validates that correspondence.
-  Those ids also come back as **numbers** while every other Zabbix method returns strings.
+  Those ids also come back as numbers while every other Zabbix method returns strings.
   Underneath, nothing keys an SLA to its services either: `sla.getsli` matches `sla_service_tag`
   rows against `service_tag` when it runs, and computes every SLI on the fly: no table stores one.
 
 - **Host inventory is `[]`, not `null`, when disabled.** Zabbix returns an empty *array* rather than
   an object (in MySQL the host simply has no `host_inventory` row) which is guarded in three
-  places. Note also that Zabbix has **no `site_name` field**:
+  places. Note also that Zabbix has no `site_name` field:
   `site_city` and `location` are the real ones, and asking for a field that does not exist is
   silently ignored rather than an error.
 
@@ -669,9 +670,9 @@ calls as the pages, so it touches no extra table.
 
 `CHAT_SNAPSHOT` is the whole of what the assistant knows. The model has no tools and cannot query
 Zabbix; a host missing from the snapshot does not exist as far as any answer is concerned. That makes
-its **caps** part of the data model rather than an implementation detail:
+its caps part of the data model rather than an implementation detail:
 
-The caps are **character budgets per section**, not row counts: rewritten that way so that the
+The caps are character budgets per section, not row counts: rewritten that way so that the
 sections a question usually turns on (estate, sites, what is new, what is down) can never be pushed out
 by a long problem list, which is how the model once named a host as the "worst site".
 
@@ -684,13 +685,13 @@ by a long problem list, which is how the model once named a host as the "worst s
 | SLA | 700 | |
 | Services | 400 | |
 | Problems | 1 850 | at most 20, worst first |
-| **Whole snapshot** | **5 500** | hard cut with a visible marker |
+| Whole snapshot | 5 500 | hard cut with a visible marker |
 
 A section that overruns its budget is cut and the snapshot is marked `truncated`, which the page shows
 as *partial view*.
 
 The character cap is the important one. Ollama serves `qwen3:8b` with a 4 096-token context window by
-default, and a prompt that overflows it is truncated **from the front**, which would silently drop
+default, and a prompt that overflows it is truncated from the front, which would silently drop
 the system prompt and every rule in it, leaving a model that answers confidently with no constraints.
 Capping the snapshot is what prevents that.
 

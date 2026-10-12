@@ -1,6 +1,6 @@
 /**
  * Web copy of server/src/naming.ts (the browser cannot import server code).
- * Keep the two in step: site codes 1–14 read from HCML's host names.
+ * Keep the two in step: site codes 1 to 14 read from HCML's host names.
  */
 
 export interface SiteRef {

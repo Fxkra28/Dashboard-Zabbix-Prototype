@@ -4,7 +4,7 @@ The system at rest, the system in motion, and why it is shaped the way it is.
 
 ## Why it is the way it is
 
-[**Architecture Decision Records**](adr/): eight decisions in MADR format, each with what was
+[Architecture Decision Records](adr/): eleven decisions in MADR format, each with what was
 considered, what was chosen, and what it cost. Start with
 [ADR-0001](adr/0001-bff-over-zabbix-api.md) if you are new; it explains why there is a portal at all.
 
@@ -12,7 +12,7 @@ considered, what was chosen, and what it cost. Start with
 
 [`../flow/`](../flow/): three views, best read in this order. If you want the shape before the
 detail, the same nine flows are written as one line each at the top of that folder's README:
-[**the nine flows**](../flow/README.md#the-nine-flows-one-line-each).
+[the nine flows](../flow/README.md#the-nine-flows-one-line-each).
 
 | Diagram | Question it answers |
 |---|---|
@@ -21,11 +21,11 @@ detail, the same nine flows are written as one line each at the top of that fold
 | [`DataFlow.pdf`](../flow/DataFlow.pdf) | Where a number comes from and where it goes, with the trust boundary marked |
 
 `ServerFlow` is the one to read before changing `index.ts`: the registration order of helmet, CORS,
-the rate limit, compression, the error handler and the auth guard **is** the design, because a Fastify
+the rate limit, compression, the error handler and the auth guard is the design, because a Fastify
 hook only covers routes registered after it.
 
-`DataFlow` is the one to read before touching the AI layer. In this copy it carries a red box marked
-*LEAVES THIS MACHINE*.
+`DataFlow` is the one to read before touching the AI layer. In `hcml-portal` it carries a red box marked
+*LEAVES THIS MACHINE*; in `hcml-portal-ollama` the same box is green and reads *STAYS ON THIS MACHINE*.
 
 ## The system at rest
 
@@ -33,9 +33,9 @@ hook only covers routes registered after it.
 |---|---|
 | [`../schema/`](../schema/) | Three one-page models, conceptual, logical, physical. What to hand someone |
 | [`../erd/`](../erd/) | The exhaustive reference set: 43 entities across 9 domains, plus the 45 MySQL tables read from `information_schema` |
-| [`../../erd.md`](../../erd.md) | The data model in prose, and the index to the three levels |
+| [`../erd/erd.md`](../erd/erd.md) | The data model in prose, and the index to the three levels |
 
-The gap between the logical and physical models **is the project**: every green entity, `SITE`,
+The gap between the logical and physical models is the project: every green entity, `SITE`,
 `LINK`, `INCIDENT`, `HOST_AVAILABILITY` has nothing beneath it in the physical model, because the
 portal owns no database ([ADR-0003](adr/0003-no-database.md)).
 
@@ -46,8 +46,8 @@ code and response schema. Checked against the code by `npx tsx scripts/openapi.c
 
 ## The subsystems in prose
 
-[`../../setup.md`](../../setup.md), 29 sections, one per subsystem. §1 is the big picture and §2
-traces a request end to end: the same ground as `ServerFlow`, in words. **§§14–26 are the only
+[`../../setup.md`](../../setup.md), 30 sections, one per subsystem. §1 is the big picture and §2
+traces a request end to end: the same ground as `ServerFlow`, in words. **§§14 to 26 are the only
 written record of how the derived figures are computed**; if you are changing the SLA engine, read §25
 first.
 

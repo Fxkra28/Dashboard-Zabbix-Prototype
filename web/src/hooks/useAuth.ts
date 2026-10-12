@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, AUTH_CHANGED } from '../api';
 import type { Me, Role } from '../types';
 
 /**
- * Who is signed in, and what may they see (plan_1.2 Phase 7).
+ * Who is signed in, and what may they see.
  *
- * One shared /api/auth/me probe. With auth disabled the BFF reports role
- * "admin", so the scaffold shows everything and nothing has to special-case
- * the unauthenticated path.
+ * One shared /api/auth/me probe. With auth disabled the BFF reports role "admin", so the scaffold
+ * shows everything and nothing has to special-case the unauthenticated path. The answer also says
+ * how long the session has left, which `api.me()` records for useSessionRenewal.
  */
 const RANK: Record<Role, number> = { viewer: 1, operator: 2, admin: 3 };
 
@@ -21,23 +21,58 @@ export function resetAuthProbe(): void {
   probe = null;
 }
 
-export function useAuth(): { me: Me | null; role: Role | null; loading: boolean } {
+// Registered before any hook's listener, so all of them share one new probe.
+window.addEventListener(AUTH_CHANGED, resetAuthProbe);
+
+export function useAuth(): {
+  me: Me | null;
+  role: Role | null;
+  /** The role each menu page needs, as the server states it; null until known. */
+  pages: Record<string, Role> | null;
+  loading: boolean;
+} {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    probe ??= api.me().catch(() => null);
-
     let alive = true;
-    void probe.then((v) => {
-      if (!alive) return;
-      setMe(v);
-      setLoading(false);
-    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let delay = 5_000;
+
+    // A 401 never lands here (request() signs the user out), so null means the BFF did not answer:
+    // a restart or a 502. Caching that for the whole tab would hide Sign out, the role menus and
+    // Acknowledge until a reload (useAi had the same bug), so a failure is forgotten and asked
+    // again, backing off.
+    const load = () => {
+      probe ??= api.me().catch(() => {
+        probe = null;
+        return null;
+      });
+      void probe.then((v) => {
+        if (!alive) return;
+        setMe(v);
+        setLoading(false);
+        if (v === null) {
+          timer = setTimeout(load, delay);
+          delay = Math.min(delay * 2, 60_000);
+        }
+      });
+    };
+    load();
+    // A renewal, or another tab's sign-in, brought a different user or role:
+    // ask again, so the menus and the role chip follow what the BFF now enforces.
+    const onChange = () => {
+      clearTimeout(timer);
+      delay = 5_000;
+      load();
+    };
+    window.addEventListener(AUTH_CHANGED, onChange);
     return () => {
       alive = false;
+      clearTimeout(timer);
+      window.removeEventListener(AUTH_CHANGED, onChange);
     };
   }, []);
 
-  return { me, role: me?.user?.role ?? null, loading };
+  return { me, role: me?.user?.role ?? null, pages: me?.pages ?? null, loading };
 }

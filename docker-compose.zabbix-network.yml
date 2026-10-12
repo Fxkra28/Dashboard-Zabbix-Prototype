@@ -1,0 +1,33 @@
+# Optional. Reaches Zabbix by its service name, over the Zabbix compose project's own network,
+# instead of through the host's published port.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.zabbix-network.yml up -d
+#
+# Why: the portal reaches Zabbix as host.docker.internal:8080. On Docker Desktop that name is the
+# host. On a Linux server it is the Docker bridge, where a Zabbix published on 127.0.0.1 does not
+# answer, so the default fails there. The shared network has no such problem, and the Zabbix web
+# port need not be published at all.
+#
+# What it costs: the BFF joins the whole Zabbix network, so it can also reach the `mysql` and
+# `zabbix-server` containers on it. The database still wants its password, which the BFF never
+# holds, but that is more reach than the one API port the default gives it. Use this where the
+# default cannot work, not as the everyday way.
+#
+# Needs the Zabbix stack running first, because its network must already exist. This file sets
+# ZBX_URL itself and ignores the ZBX_URL in .env, which names the host's port for the default
+# setup; ZBX_NETWORK_URL changes the address if the Zabbix web service is called something else,
+# and ZABBIX_NETWORK names the network if the Zabbix project is not called proto1. Tested here
+# only by reading the file and by `docker compose config`; nothing in this repository was run on
+# Linux.
+services:
+  portal-bff:
+    networks:
+      - default
+      - zabbix
+    environment:
+      ZBX_URL: ${ZBX_NETWORK_URL:-http://zabbix-web:8080/api_jsonrpc.php}
+
+networks:
+  zabbix:
+    name: ${ZABBIX_NETWORK:-proto1_default}
+    external: true

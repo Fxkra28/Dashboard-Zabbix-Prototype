@@ -1,16 +1,15 @@
 /**
  * Query-string parsing for route handlers.
  *
- * Everything in `req.query` arrives as a string or not at all, and both ways
- * that went wrong here were silent:
+ * Everything in `req.query` arrives as a string or not at all, and both failure modes are silent:
  *
- *   - a missing id reached Zabbix as `[undefined]` and came back as an opaque
+ *   - a missing id reaches Zabbix as `[undefined]` and comes back as an opaque
  *     500 ("Database error occurred") instead of telling the caller what was
  *     missing;
- *   - a non-numeric window (`?hours=abc`) became NaN, which Zabbix reads as
+ *   - a non-numeric window (`?hours=abc`) becomes NaN, which Zabbix reads as
  *     "no time limit": one request returned an item's entire history
  *     (20,218 points, 1.4 MB). `Math.min(Math.max(NaN, 1), 365)` is still NaN,
- *     so the existing clamps did not catch it.
+ *     so a plain clamp does not catch it.
  */
 
 /** A malformed request. Mapped to 400 `{ error: 'bad_request', message }` in errors.ts. */

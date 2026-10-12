@@ -1,16 +1,18 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useId, useMemo } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useUrlState } from '../hooks/useUrlState';
 import type { HostOverview } from '../types';
-import { HostStatePill, SeverityCounts } from '../components/StatusBadge';
 import { Async } from '../components/states';
-import { ifaceType } from '../lib/severity';
+import { Field, FieldGroup, FieldSpacer } from '../components/Field';
+import { HostTable } from '../components/HostTable';
 
 export default function Hosts() {
+  const searchId = useId();
   const q = useAsync<HostOverview[]>(() => api.hostsOverview(), [], 30_000);
-  const [search, setSearch] = useState('');
-  const [problemsOnly, setProblemsOnly] = useState(false);
+  // Both filters live in the URL, so Back from a graph and a shared link keep them.
+  const [search, setSearch] = useUrlState<string>('q', '', { debounceMs: 400 });
+  const [problemsOnly, setProblemsOnly] = useUrlState<boolean>('problems', false);
 
   const filtered = useMemo(() => {
     const list = q.data ?? [];
@@ -25,17 +27,16 @@ export default function Hosts() {
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label>Search host</label>
+        <Field label="Search host" htmlFor={searchId}>
           <input
+            id={searchId}
             type="text"
             placeholder="host name…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </div>
-        <div className="field">
-          <label>Filter</label>
+        </Field>
+        <FieldGroup label="Filter">
           <label
             style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, cursor: 'pointer' }}
           >
@@ -47,71 +48,15 @@ export default function Hosts() {
             />
             With problems only
           </label>
-        </div>
-        <div className="field">
-          <label>&nbsp;</label>
+        </FieldGroup>
+        <FieldSpacer>
           <span className="pill">{filtered.length} hosts</span>
-        </div>
+        </FieldSpacer>
       </div>
 
       <div className="panel">
         <Async loading={q.loading} error={q.error} data={q.data} updatedAt={q.updatedAt}>
-          {() => (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Host</th>
-                    <th>Interface</th>
-                    <th>Availability</th>
-                    <th>Status</th>
-                    <th>Problems</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((h) => {
-                    const iface = h.interfaces?.[0];
-                    return (
-                      <tr key={h.hostid}>
-                        <td style={{ fontWeight: 500 }}>{h.name}</td>
-                        <td className="muted mono">
-                          {iface ? `${iface.ip} · ${ifaceType(iface.type)}` : '—'}
-                        </td>
-                        <td>
-                          <HostStatePill host={h} />
-                        </td>
-                        <td>
-                          {h.maintenance_status === '1' ? (
-                            <span className="pill">Maintenance</span>
-                          ) : h.status === '0' ? (
-                            <span className="pill up">Monitored</span>
-                          ) : (
-                            <span className="pill">Disabled</span>
-                          )}
-                        </td>
-                        <td>
-                          {h.problems.total > 0 ? (
-                            <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                              <SeverityCounts bySeverity={h.problems.bySeverity} />
-                              <span className="muted">({h.problems.total})</span>
-                            </span>
-                          ) : (
-                            <span className="muted">None</span>
-                          )}
-                        </td>
-                        <td>
-                          <Link className="btn ghost sm" to={`/graphs?hostid=${h.hostid}`}>
-                            Graphs
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {() => <HostTable hosts={filtered} />}
         </Async>
       </div>
     </>

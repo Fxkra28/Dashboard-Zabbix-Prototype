@@ -3,17 +3,14 @@ import { brotliCompress, constants, gzip } from 'node:zlib';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 /**
- * Compression for the JSON API, without a dependency.
+ * Compression for the JSON API, without a dependency. /api/problems alone is ~446 KB, polled every
+ * few seconds by every open Problems page. Brotli at quality 4 takes it to ~25 KB in ~1.4 ms; gzip
+ * level 6 (for clients without brotli) to ~28 KB in ~3 ms. Quality 4 on purpose: Node's default of
+ * 11 took 612 ms on the same body, all of it on the event loop every other request waits behind.
  *
- * Nothing was compressed: /api/problems alone is ~446 KB, polled every few
- * seconds by every open Problems page. Brotli at quality 4 takes it to ~25 KB
- * in ~1.4 ms; gzip level 6 (for clients without brotli) to ~28 KB in ~3 ms.
- * Quality 4 on purpose, Node's default of 11 took 612 ms on the same body,
- * all of it on the event loop every other request waits behind.
- *
- * An onSend hook, so it only ever sees bodies that go through `reply.send()`.
- * /api/stream and /api/chat write server-sent events straight to the socket and
- * are untouched: compressing them would hold each event back in a buffer.
+ * An onSend hook, so it only sees bodies sent through `reply.send()`. /api/stream and /api/chat
+ * write server-sent events straight to the socket and are untouched: compressing them would hold
+ * each event back in a buffer.
  */
 
 const brotli = promisify(brotliCompress);

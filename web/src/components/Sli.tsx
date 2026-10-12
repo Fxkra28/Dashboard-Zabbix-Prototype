@@ -1,6 +1,10 @@
 import type { DataStatus, SliGap, SliProfile } from '../types';
-import { REPORT_TZ, monthLabel, recentMonths } from '../lib/time';
-import { formatDuration } from '../lib/units';
+import { reportTimeZone, monthLabel, recentMonths } from '../lib/time';
+import { useReportTimeZone } from '../hooks/useReportTimeZone';
+import { PERCENT_DP, formatDuration } from '../lib/units';
+import { percentText } from '../lib/percent';
+import { NoData } from './NoData';
+import { Field } from './Field';
 
 /**
  * Small shared pieces for the derived monthly SLA views (SLA, Services,
@@ -9,7 +13,7 @@ import { formatDuration } from '../lib/units';
  */
 
 export const DERIVED_BANNER =
-  'Derived from ICMP availability triggers — Zabbix has no services configured';
+  'Derived from ICMP availability triggers: Zabbix has no services configured';
 
 export const METHOD_LABEL: Record<SliProfile, string> = {
   availability: 'Strict',
@@ -21,8 +25,11 @@ export const METHOD_NOTE =
   'HCML’s report counts only high ping loss, so a device that is completely down still counts as up; ' +
   'the strict figure counts unreachable devices and leaves out hours with no collected data.';
 
-export const fmtPct = (v: number | null | undefined, digits = 2) =>
-  v === null || v === undefined ? '—' : `${v.toFixed(digits)}%`;
+/** Pass `target` whenever the figure is shown beside Met or Missed, so rounding cannot print it as the target. */
+export const fmtPct = (v: number | null | undefined, digits: number = PERCENT_DP.availability, target?: number) => {
+  if (v === null || v === undefined) return '—';
+  return target === undefined ? `${v.toFixed(digits)}%` : percentText(v, target, digits);
+};
 
 export const fmtDur = (seconds: number | null | undefined) =>
   seconds === null || seconds === undefined ? '—' : formatDuration(seconds);
@@ -40,7 +47,7 @@ export function SliPill({
   sli,
   target,
   dataStatus,
-  digits = 2,
+  digits = PERCENT_DP.availability,
 }: {
   sli: number | null;
   target: number;
@@ -48,23 +55,25 @@ export function SliPill({
   digits?: number;
 }) {
   if (sli === null || dataStatus === 'nodata') return <NoDataPill />;
+  const met = sli >= target;
+  // Met or Missed in words too, not by colour alone; nowrap keeps it one lozenge in a narrow cell.
   return (
     <span
-      className={`pill ${sli >= target ? 'up' : 'down'}`}
+      className={`pill nowrap ${met ? 'up' : 'down'}`}
       title={dataStatus === 'partial' ? 'Measured on partial data' : undefined}
     >
-      {sli.toFixed(digits)}%{dataStatus === 'partial' && <span className="sli-partial">*</span>}
+      {percentText(sli, target, digits)}{dataStatus === 'partial' && <span className="sli-partial">*</span>} {met ? 'Met' : 'Missed'}
     </span>
   );
 }
 
 export function CoverageText({ coverage }: { coverage: number | null | undefined }) {
-  if (coverage === null || coverage === undefined) return <span className="muted">—</span>;
+  if (coverage === null || coverage === undefined) return <span className="muted"><NoData /></span>;
   const pct = Math.round(coverage * 100);
   return <span className={pct < 50 ? 'sli-cov low' : 'sli-cov'}>{pct}%</span>;
 }
 
-/** The current month (marked "so far") and the 11 before it, Asia/Jakarta. */
+/** The current month (marked "so far") and the 11 before it, in the report zone. */
 export function MonthSelect({
   value,
   onChange,
@@ -74,10 +83,10 @@ export function MonthSelect({
   onChange: (m: string) => void;
   label?: string;
 }) {
+  useReportTimeZone(); // the list follows the server's zone once it is known
   const months = recentMonths(12);
   return (
-    <div className="field">
-      <label>{label}</label>
+    <Field label={label}>
       <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
         {months.map((m, i) => (
           <option key={m} value={m}>
@@ -86,7 +95,7 @@ export function MonthSelect({
           </option>
         ))}
       </select>
-    </div>
+    </Field>
   );
 }
 
@@ -103,8 +112,7 @@ export function MethodToggle({
   label?: string;
 }) {
   return (
-    <div className="field">
-      <label>{label}</label>
+    <Field label={label}>
       <div className="seg" role="group" aria-label="Calculation method">
         {(['availability', 'hcml-report'] as SliProfile[]).map((p) => (
           <button
@@ -118,27 +126,31 @@ export function MethodToggle({
           </button>
         ))}
       </div>
-    </div>
+    </Field>
   );
 }
 
-const dayFmt = new Intl.DateTimeFormat('en-GB', { timeZone: REPORT_TZ, day: 'numeric', month: 'short' });
-const hourFmt = new Intl.DateTimeFormat('en-GB', {
-  timeZone: REPORT_TZ,
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
+// Built per call: the zone is the server's SLA_TIMEZONE, known only once /api/health has answered.
+const dayFmt = () => new Intl.DateTimeFormat('en-GB', { timeZone: reportTimeZone(), day: 'numeric', month: 'short' });
+const hourFmt = () =>
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: reportTimeZone(),
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
 
 function spanText(g: SliGap): string {
   const a = new Date(g.from * 1000);
   const b = new Date((g.to - 1) * 1000);
-  const da = dayFmt.format(a);
-  const db = dayFmt.format(b);
+  const day = dayFmt();
+  const hour = hourFmt();
+  const da = day.format(a);
+  const db = day.format(b);
   if (g.to - g.from < 86400) {
     return da === db
-      ? `${da} ${hourFmt.format(a)}–${hourFmt.format(new Date(g.to * 1000))}`
-      : `${da} ${hourFmt.format(a)} – ${db} ${hourFmt.format(new Date(g.to * 1000))}`;
+      ? `${da} ${hour.format(a)}–${hour.format(new Date(g.to * 1000))}`
+      : `${da} ${hour.format(a)} – ${db} ${hour.format(new Date(g.to * 1000))}`;
   }
   if (da === db) return da;
   const [dA, mA] = da.split(' ');

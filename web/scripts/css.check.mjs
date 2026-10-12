@@ -47,7 +47,7 @@ export function checkCss(text) {
       const parent = stack[stack.length - 1];
       if (parent && !parent.atRule) {
         errors.push(
-          `line ${line}: "${head.slice(0, 60)}" opens inside the rule from line ${parent.line} — missing "}"?`,
+          `line ${line}: "${head.slice(0, 60)}" opens inside the rule from line ${parent.line}. Missing "}"?`,
         );
       }
       stack.push({ line, atRule: head.startsWith('@') });

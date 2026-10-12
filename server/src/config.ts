@@ -6,13 +6,36 @@ import 'dotenv/config';
  */
 export const DEFAULT_JWT_SECRET = 'dev-insecure-secret-change-me';
 
+/** Secrets published in this repo: the built-in default and the old .env.example value. */
+const KNOWN_JWT_SECRETS = [DEFAULT_JWT_SECRET, 'change-me-to-a-long-random-string'];
+/** HS256 wants a key at least as long as its 32-byte hash. */
+const MIN_JWT_SECRET_BYTES = 32;
+
+/** A sign-in lasts this many hours unless SESSION_HOURS says otherwise. */
+export const SESSION_HOURS_DEFAULT = 12;
+/** Renewal comes an hour before the end, so a shorter session could never be renewed in time. */
+export const SESSION_HOURS_MIN = 2;
+export const SESSION_HOURS_MAX = 24;
+export const SESSION_EPOCH_DEFAULT = '1';
+/** What SESSION_EPOCH may hold: a short label, so it can sit in a token and in a log line. */
+export const SESSION_EPOCH_PATTERN = /^[A-Za-z0-9._-]{1,32}$/;
+
+/** SESSION_HOURS as a number when it is a whole or decimal number from 2 to 24, else undefined (unset counts as valid by the caller). */
+function validSessionHours(raw: string | undefined): number | undefined {
+  const text = (raw ?? '').trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) return undefined;
+  const hours = Number(text);
+  return hours >= SESSION_HOURS_MIN && hours <= SESSION_HOURS_MAX ? hours : undefined;
+}
+/** A cookie name is an RFC 6265 token: no spaces, separators or control characters. */
+const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
 /**
  * A numeric environment variable. Unset, empty and non-numeric all fall back.
  *
- * `Number(process.env.X ?? fallback)` looked equivalent and was not: `??` lets
- * an empty string through (docker-compose interpolates an unset `${X}` to ""),
- * and `Number('')` is 0, so `PORT=` in a .env meant "listen on any free port"
- * and `ZABBIX_TIMEOUT_MS=` meant every Zabbix call timed out immediately.
+ * `Number(process.env.X ?? fallback)` looks equivalent and is not: `??` lets an empty string
+ * through (docker-compose interpolates an unset `${X}` to ""), and `Number('')` is 0, so `PORT=`
+ * meant "listen on any free port" and `ZABBIX_TIMEOUT_MS=` made every Zabbix call time out at once.
  */
 function envNum(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
@@ -43,16 +66,22 @@ function toAiProvider(raw: string): AiProvider {
  */
 const aiProvider = toAiProvider(process.env.AI_PROVIDER || 'anthropic');
 /**
- * `AI_API_KEY` is the provider-neutral name. `ANTHROPIC_API_KEY` still works,
- * but **only** for the Anthropic backend: falling back to it for every provider
- * would send an Anthropic key as a Bearer token to whatever host AI_BASE_URL
- * names: a local Ollama, or someone else's gateway. A local model wants no
- * key at all, so absent AI_API_KEY the header is simply omitted.
+ * `AI_API_KEY` is the provider-neutral name. `ANTHROPIC_API_KEY` still works, but only for the
+ * Anthropic backend: falling back to it for every provider would send an Anthropic key as a Bearer
+ * token to whatever host AI_BASE_URL names, a local Ollama or someone else's gateway. A local model
+ * wants no key, so without AI_API_KEY the header is omitted.
  */
-const aiApiKey =
-  aiProvider === 'anthropic'
-    ? process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY || ''
-    : process.env.AI_API_KEY || '';
+const aiKeys: Array<[name: string, value: string | undefined]> = [['AI_API_KEY', process.env.AI_API_KEY]];
+if (aiProvider === 'anthropic') aiKeys.push(['ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY]);
+/**
+ * .env.example ships `ANTHROPIC_API_KEY=your_anthropic_api_key_here`. Taken as a
+ * key, an unedited copy turned Explain and the Assistant on, and every click sent
+ * estate data to Anthropic only to fail authentication. A value
+ * starting `your_` is that placeholder, and reads as unset.
+ */
+const isPlaceholderKey = (v: string | undefined) => /^your_/i.test((v ?? '').trim());
+const aiKeyPlaceholders = aiKeys.filter(([, value]) => isPlaceholderKey(value)).map(([name]) => name);
+const aiApiKey = aiKeys.map(([, value]) => value || '').find((v) => v && !isPlaceholderKey(v)) ?? '';
 const aiBaseUrl = process.env.AI_BASE_URL || '';
 
 /**
@@ -75,7 +104,7 @@ function csv(raw: string): string[] {
 
 /**
  * How the derived SLA measures a host (see sli/engine.ts).
- *   availability, strict: total outages AND high loss count, hours with no
+ *   availability, strict: total outages and high loss count, hours with no
  *                  collected data are excluded rather than counted as up.
  *   hcml-report: reproduces HCML's published Availability Reports: only
  *                  "High ICMP ping loss", gaps and silent hosts count as up.
@@ -84,6 +113,38 @@ const SLI_PROFILES = ['availability', 'hcml-report'] as const;
 export type SliProfile = (typeof SLI_PROFILES)[number];
 export function toSliProfile(raw: string | undefined): SliProfile | undefined {
   return (SLI_PROFILES as readonly string[]).includes(raw ?? '') ? (raw as SliProfile) : undefined;
+}
+
+/**
+ * TRUST_PROXY as Fastify's hop count: `true` is the one nginx in front, a
+ * number is that many proxies, anything else trusts none.
+ */
+function trustProxyHops(raw: string | undefined): number | false {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (v === 'true') return 1;
+  return /^[1-9]\d*$/.test(v) ? Number(v) : false;
+}
+
+/**
+ * The hop count as the `trustProxy` option Fastify 5 takes. Fastify 5.12
+ * reads a bare number as "trust nobody", which would put every user behind
+ * nginx in one rate-limit bucket, so this is Fastify 4's own hop rule.
+ */
+export function trustProxyOption(hops: number | false): false | ((addr: string, hop: number) => boolean) {
+  return hops === false ? false : (_addr, hop) => hop < hops;
+}
+
+/**
+ * AUTH_ENABLED: unset or empty is on; `true`, `1` and `yes` are on; `false`, `0` and `no` are off,
+ * in any case. Anything else is undefined: `config` reads that as on, so a typo never opens the
+ * portal, and `assertConfig` refuses to start on it.
+ */
+const AUTH_ON_VALUES = ['true', '1', 'yes'];
+const AUTH_OFF_VALUES = ['false', '0', 'no'];
+export function parseAuthEnabled(raw: string | undefined): boolean | undefined {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (v === '' || AUTH_ON_VALUES.includes(v)) return true;
+  return AUTH_OFF_VALUES.includes(v) ? false : undefined;
 }
 
 /** Central, typed view of the environment. */
@@ -108,10 +169,10 @@ export const config = {
    */
   zbxToken: process.env.ZABBIX_API_TOKEN || process.env.ZBX_TOKEN || '',
   /**
-   * Separate WRITE-capable token for acknowledge/close (§20). Deliberately not
+   * Separate write-capable token for acknowledge/close (§20). Deliberately not
    * the read token: if writing shared the read credential, every read path in
    * the BFF would silently gain the power to modify Zabbix. Blank = the portal
-   * stays strictly read-only and the ack/close routes return 503.
+   * stays strictly read-only and POST /api/problems/acknowledge (close is a flag on it) returns 503.
    */
   zbxWriteToken: process.env.ZABBIX_WRITE_TOKEN || '',
   port: envNum('PORT', 4000),
@@ -125,16 +186,27 @@ export const config = {
   host: process.env.HOST || '0.0.0.0',
   webOrigin: process.env.WEB_ORIGIN || 'http://localhost:5173',
   /**
-   * Trust `X-Forwarded-For` when the BFF sits behind nginx (the Docker path).
-   * Off by default and deliberately opt-in: trusting the header when nothing
-   * is in front lets any client forge its own IP, which would let one caller
-   * evade the rate limiter by rotating a header. On when nginx is real, where
-   * the opposite is true, without it every request looks like the proxy and
-   * all users share one rate-limit bucket.
+   * Trust `X-Forwarded-For` when the BFF sits behind nginx (the Docker path). Off by default:
+   * trusting the header with nothing in front lets any client forge its own IP and rotate past the
+   * rate limiter. Behind nginx the opposite holds: without it every request looks like the proxy
+   * and all users share one rate-limit bucket.
+   *
+   * `true` means one hop, the nginx in front, not "trust every hop": plain `true` took the
+   * left-most X-Forwarded-For entry, which the client writes, so anyone could pick their own
+   * rate-limit key. A number trusts that many proxies.
    */
-  trustProxy: (process.env.TRUST_PROXY ?? 'false').toLowerCase() === 'true',
+  trustProxy: trustProxyHops(process.env.TRUST_PROXY),
   /** Requests per minute per IP, before the rate limiter starts returning 429. */
   rateLimitPerMinute: envNum('RATE_LIMIT_PER_MINUTE', 300),
+  /**
+   * Live screens (GET /api/stream) allowed at once, overall and for one
+   * signed-in user. That route is exempt from the rate limit, so this is its
+   * only cap. At least 1: a 0 would refuse every screen.
+   */
+  stream: {
+    maxClients: Math.max(1, Math.floor(envNum('STREAM_MAX_CLIENTS', 100))),
+    maxPerUser: Math.max(1, Math.floor(envNum('STREAM_MAX_PER_USER', 5))),
+  },
   /** Zabbix host group ids that hold network devices (§13). Empty = all hosts. */
   netGroupIds: (process.env.NET_GROUP_IDS ?? '')
     .split(',')
@@ -152,12 +224,11 @@ export const config = {
     groupPrefix: process.env.SITE_GROUP_PREFIX ?? '',
   },
   /**
-   * Inventory scorecard (§16, HCML Goal 1). Which host tags carry ownership
-   * and criticality, and the naming convention to score names against.
+   * Inventory scorecard (§16, HCML Goal 1). Which host tags carry ownership and criticality, and
+   * the naming convention to score names against.
    *
-   * HCML's real convention, read off the 2026-06/07/08 Availability Reports,
-   * is `<site>.<class>[.<seq>] NAME` for devices and `<TYPE> : NAME` for
-   * services, not the SITE-DEVTYPE-SEQ scheme this originally guessed at.
+   * HCML's real convention, read off the 2026-06/07/08 Availability Reports, is
+   * `<site>.<class>[.<seq>] NAME` for devices and `<TYPE> : NAME` for services.
    */
   inventory: {
     ownerTag: process.env.OWNER_TAG || 'owner',
@@ -215,28 +286,59 @@ export const config = {
   auth: {
     // Secure by default: every HCML source slide is stamped Private and
     // Confidential, so an unguarded portal must be an explicit opt-out.
-    enabled: (process.env.AUTH_ENABLED ?? 'true').toLowerCase() === 'true',
+    enabled: parseAuthEnabled(process.env.AUTH_ENABLED) ?? true,
     jwtSecret: process.env.JWT_SECRET || DEFAULT_JWT_SECRET,
     user: process.env.PORTAL_USER ?? 'admin',
     pass: process.env.PORTAL_PASS ?? 'admin',
+    /**
+     * The session cookie's name. Cookies ignore ports, so two portals on one
+     * host (127.0.0.1:8081 and :8082) need different names, or signing in to
+     * one signs the other out.
+     */
+    sessionCookie: process.env.SESSION_COOKIE || 'hcml_session',
+    /**
+     * How long one sign-in lasts, in hours: twelve unless SESSION_HOURS says otherwise. An open
+     * portal renews its own an hour before the end, so this bounds how long a copied or forgotten
+     * session works, not how long a wall screen stays signed in. A value outside 2 to 24 stops the
+     * BFF from starting (`assertConfig`), so the default here is only read for an unset or valid
+     * value.
+     */
+    sessionHours: validSessionHours(process.env.SESSION_HOURS) ?? SESSION_HOURS_DEFAULT,
+    /**
+     * Raising this ends every session at the next start, without a new JWT_SECRET: a token carries
+     * the epoch it was issued under and is refused under any other. A token with none counts as
+     * epoch 1, so the default changes nothing for tokens issued before this setting existed.
+     */
+    sessionEpoch: (process.env.SESSION_EPOCH ?? '').trim() || SESSION_EPOCH_DEFAULT,
+    /**
+     * Acknowledge and close with sign-in off. With auth off every caller is
+     * admin, so a write token in a dev .env let any page that reached the dev server write to
+     * Zabbix. Off unless this is "true"; it never reaches the container (compose-env.test.ts).
+     */
+    allowWriteWithoutAuth: (process.env.ALLOW_WRITE_WITHOUT_AUTH ?? '').trim().toLowerCase() === 'true',
   },
   /**
-   * Plain-language layer (plan_1.1). Optional: unconfigured, the portal still
-   * serves every data endpoint, only the "Explain" actions go away.
+   * Plain-language layer. Optional: unconfigured, the portal still serves every data endpoint and
+   * only the "Explain" actions go away.
    *
-   * Two backends behind one switch. `anthropic` is the hosted default;
-   * `openai-compatible` points at a locally-served model (Ollama, vLLM,
-   * llama.cpp), which keeps every host name and alert on this machine.
+   * Two backends behind one switch: `anthropic` is the hosted default; `openai-compatible` points
+   * at a locally served model (Ollama, vLLM, llama.cpp), which keeps every host name and alert on
+   * this machine.
    */
   ai: {
     provider: aiProvider,
     /**
-     * What "configured" means differs by backend: a hosted API needs a key, a
-     * local one needs a URL and usually has no key at all. This is the line
-     * that fails silently if it is wrong, /api/explain/* would 503 and the UI
-     * would hide the buttons while the model sits there answering perfectly.
+     * What "configured" means differs by backend: a hosted API needs a key, a local one needs a URL
+     * and usually has no key at all. This is the line that fails silently if wrong: /api/explain/*
+     * would 503 and the UI would hide the buttons while the model sits there answering perfectly.
      */
     enabled: aiProvider === 'anthropic' ? Boolean(aiApiKey) : Boolean(aiBaseUrl),
+    /**
+     * Questions and estate data leave this machine: only the hosted Anthropic
+     * backend does that. The UI says so next to every AI answer,
+     * and a local model, on whatever address, shows nothing.
+     */
+    external: aiProvider === 'anthropic',
     apiKey: aiApiKey,
     /** Base URL of an OpenAI-compatible server, e.g. http://localhost:11434/v1 */
     baseUrl: aiBaseUrl,
@@ -283,66 +385,136 @@ export const config = {
      */
     temperature: envNum('AI_TEMPERATURE', 0.7),
     topP: envNum('AI_TOP_P', 0.8),
+    /**
+     * What Explain and the Assistant may spend (limits.ts, ai.ts). The per-minute and concurrency
+     * numbers are at least 1, since 0 would refuse every call. A daily token budget of 0, or less,
+     * switches that budget off. The budgets count the hosted API only: a local model has no bill.
+     */
+    limits: {
+      /** Assistant questions per minute, for each signed-in user. */
+      chatPerMinute: Math.max(1, Math.floor(envNum('AI_CHAT_PER_MINUTE', 10))),
+      /** Explain calls (problem and SLA together) per minute, for each signed-in user. */
+      explainPerMinute: Math.max(1, Math.floor(envNum('AI_EXPLAIN_PER_MINUTE', 10))),
+      /** Hosted calls in flight at once; the local model already takes one at a time. */
+      maxConcurrent: Math.max(1, Math.floor(envNum('AI_MAX_CONCURRENT', 4))),
+      /** Tokens one user may use a day, input and output together. */
+      dailyTokensPerUser: Math.max(0, Math.floor(envNum('AI_DAILY_TOKENS_PER_USER', 500_000))),
+      /** Tokens the whole portal may use a day. */
+      dailyTokensTotal: Math.max(0, Math.floor(envNum('AI_DAILY_TOKENS_TOTAL', 2_000_000))),
+    },
   },
 };
 
 /**
- * Warn on suspicious config so the scaffold still boots, with one exception.
+ * Whether acknowledge and close may run: a write token is set, and either sign-in is on or the
+ * dev opt-in is. Read live, so the health reply and the route always agree.
+ */
+export function writeBackEnabled(): boolean {
+  return Boolean(config.zbxWriteToken) && (config.auth.enabled || config.auth.allowWriteWithoutAuth);
+}
+
+/**
+ * Warn on suspicious config so the scaffold still boots, except for a weak
+ * signing secret when auth is on, an AUTH_ENABLED it cannot read, or a session
+ * cookie name no browser takes.
  *
- * An authenticated portal signing tokens with a publicly known secret is not a
- * degraded state, it is a security hole that looks healthy: every page loads,
- * every login succeeds, and anyone who has read this repo can mint an admin
- * token. That one case throws.
+ * An authenticated portal signing tokens with a secret published in this repo,
+ * or one short enough to guess offline, is not a degraded state, it is a
+ * security hole that looks healthy: every page loads, every login succeeds,
+ * and anyone can mint an admin token. Both cases throw. Weak passwords are
+ * refused the same way, by `assertUsers` in auth.ts.
  */
 export function assertConfig(warn: (msg: string) => void): void {
-  if (config.auth.enabled && config.auth.jwtSecret === DEFAULT_JWT_SECRET) {
+  if (parseAuthEnabled(process.env.AUTH_ENABLED) === undefined) {
     throw new Error(
-      `AUTH_ENABLED=true but JWT_SECRET is still the built-in default ("${DEFAULT_JWT_SECRET}"). ` +
-        'Anyone with this repo could forge an admin token. Set a strong JWT_SECRET before starting.',
+      `AUTH_ENABLED="${process.env.AUTH_ENABLED}" is not a value the portal knows. ` +
+        'Use true, 1 or yes to turn sign-in on, false, 0 or no to turn it off, or leave it unset or empty to keep it on.',
+    );
+  }
+  if (config.auth.enabled && KNOWN_JWT_SECRETS.includes(config.auth.jwtSecret)) {
+    throw new Error(
+      'AUTH_ENABLED=true but JWT_SECRET is a value published in this repo. ' +
+        'Anyone with the repo could forge an admin token. Set one from `openssl rand -hex 32`.',
+    );
+  }
+  if (config.auth.enabled && Buffer.byteLength(config.auth.jwtSecret) < MIN_JWT_SECRET_BYTES) {
+    throw new Error(
+      `AUTH_ENABLED=true but JWT_SECRET is shorter than ${MIN_JWT_SECRET_BYTES} bytes, ` +
+        'short enough to guess offline from one token. Set one from `openssl rand -hex 32`.',
+    );
+  }
+  // A name the cookie format cannot carry makes every sign-in fail with a 500.
+  if (!COOKIE_NAME.test(config.auth.sessionCookie)) {
+    throw new Error(
+      `SESSION_COOKIE "${config.auth.sessionCookie}" is not a valid cookie name. ` +
+        'Use letters, digits, "_" or "-", for example hcml_session.',
+    );
+  }
+  // A session length or epoch that cannot be read must not fall back quietly: someone who wrote
+  // SESSION_HOURS=1 to shorten sessions would otherwise get twelve hours and no word of it.
+  const hours = (process.env.SESSION_HOURS ?? '').trim();
+  if (hours !== '' && validSessionHours(hours) === undefined) {
+    throw new Error(
+      `SESSION_HOURS="${hours}" is not a length of session the portal can use. ` +
+        `Use a number of hours from ${SESSION_HOURS_MIN} to ${SESSION_HOURS_MAX} (an open portal renews an hour before the end), ` +
+        `or leave it unset for ${SESSION_HOURS_DEFAULT}.`,
+    );
+  }
+  if (!SESSION_EPOCH_PATTERN.test(config.auth.sessionEpoch)) {
+    throw new Error(
+      `SESSION_EPOCH "${config.auth.sessionEpoch}" is not a label the portal can put in a token. ` +
+        'Use up to 32 letters, digits, "." "_" or "-", for example 2.',
     );
   }
   try {
     new URL(config.zbxUrl);
   } catch {
-    warn(`ZBX_URL is not a valid URL ("${config.zbxUrl}") — every Zabbix call will fail.`);
+    warn(`ZBX_URL is not a valid URL ("${config.zbxUrl}"): every Zabbix call will fail.`);
   }
   if (!config.zbxToken) {
-    warn('ZABBIX_API_TOKEN is not set — Zabbix calls will fail until you set it in server/.env');
+    warn('ZABBIX_API_TOKEN is not set: Zabbix calls will fail until you set it in server/.env');
   }
   if (!process.env.ZABBIX_API_TOKEN && process.env.ZBX_TOKEN) {
-    warn('ZBX_TOKEN is deprecated — rename it to ZABBIX_API_TOKEN in server/.env.');
+    warn('ZBX_TOKEN is deprecated. Rename it to ZABBIX_API_TOKEN in server/.env.');
   }
-  // The case plan_1.2 defect #5 actually cares about: running wide open.
+  // The case that matters most: running wide open.
   if (!config.auth.enabled) {
-    warn('AUTH_ENABLED=false — the portal is UNAUTHENTICATED. Never do this outside local dev.');
+    warn('AUTH_ENABLED=false: the portal is UNAUTHENTICATED. Never do this outside local dev.');
     if (config.host === '0.0.0.0') {
       warn(
-        'AUTH_ENABLED=false and HOST=0.0.0.0 — every data endpoint is reachable from the network ' +
+        'AUTH_ENABLED=false and HOST=0.0.0.0: every data endpoint is reachable from the network ' +
           'with no login. Set HOST=127.0.0.1 in server/.env for local dev.',
       );
     }
   }
-  // A single-admin portal still on the built-in password is open to anyone who
-  // has read the README. Warned rather than refused: refusing changes whether
-  // existing deployments start, which is the operator's call.
-  if (config.auth.enabled && !process.env.PORTAL_USERS?.trim() && config.auth.pass === 'admin') {
-    warn('PORTAL_PASS is the built-in default "admin" — set PORTAL_PASS or PORTAL_USERS before exposing the portal.');
-  }
   if (!config.zbxWriteToken) {
-    warn('ZABBIX_WRITE_TOKEN is not set — acknowledge/close is disabled (portal stays read-only).');
+    warn('ZABBIX_WRITE_TOKEN is not set: acknowledge/close is disabled (portal stays read-only).');
+  } else if (!config.auth.enabled) {
+    warn(
+      config.auth.allowWriteWithoutAuth
+        ? 'ALLOW_WRITE_WITHOUT_AUTH=true: with sign-in off, anyone who reaches this server can acknowledge and close problems.'
+        : 'ZABBIX_WRITE_TOKEN is set but AUTH_ENABLED=false: acknowledge/close is refused. ' +
+            'For local dev only, set ALLOW_WRITE_WITHOUT_AUTH=true to allow it.',
+    );
   }
   const rawProvider = process.env.AI_PROVIDER;
   if (rawProvider && !(AI_PROVIDERS as readonly string[]).includes(rawProvider)) {
     warn(
-      `AI_PROVIDER="${rawProvider}" is not a known backend — expected ` +
+      `AI_PROVIDER="${rawProvider}" is not a known backend: expected ` +
         `${AI_PROVIDERS.join(' or ')}. Falling back to "anthropic".`,
+    );
+  }
+  if (aiKeyPlaceholders.length) {
+    warn(
+      `Ignoring ${aiKeyPlaceholders.join(' and ')}: the value is still the placeholder from .env.example. ` +
+        'Set a real key, or leave it empty.',
     );
   }
   if (!config.ai.enabled) {
     warn(
       config.ai.provider === 'anthropic'
-        ? 'ANTHROPIC_API_KEY is not set — /api/explain/* will return 503 and the UI hides "Explain".'
-        : 'AI_BASE_URL is not set — /api/explain/* will return 503 and the UI hides "Explain". ' +
+        ? 'ANTHROPIC_API_KEY is not set: /api/explain/* will return 503 and the UI hides "Explain".'
+        : 'AI_BASE_URL is not set: /api/explain/* will return 503 and the UI hides "Explain". ' +
             'Point it at your local model, e.g. http://localhost:11434/v1',
     );
   }

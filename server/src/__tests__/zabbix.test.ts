@@ -20,6 +20,9 @@ const saved = { zbxUrl: config.zbxUrl, zbxTimeoutMs: config.zbxTimeoutMs };
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
+    // No keep-alive: afterEach closes idle connections, and fetch would reuse
+    // a closed one in the next test and fail it with ECONNRESET.
+    res.setHeader('Connection', 'close');
     req.resume();
     req.on('end', () => answer(res));
   });
@@ -30,10 +33,12 @@ beforeAll(async () => {
 afterEach(() => {
   config.zbxUrl = saved.zbxUrl;
   config.zbxTimeoutMs = saved.zbxTimeoutMs;
-  server.closeAllConnections();
+  server.closeIdleConnections();
 });
 
 afterAll(async () => {
+  // The stalled body's response never ends by itself.
+  server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
 });
 

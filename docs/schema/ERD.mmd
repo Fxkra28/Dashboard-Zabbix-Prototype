@@ -1,5 +1,5 @@
 ---
-title: HCML Monitoring Portal — Entity-Relationship Diagram (logical)
+title: "HCML Monitoring Portal: Entity-Relationship Diagram (logical)"
 config:
   layout: elk
   elk:
@@ -9,8 +9,7 @@ config:
 erDiagram
     direction TB
 
-    %% =================================================================
-    %%  LOGICAL MODEL -- the entities the portal actually works with,
+    %%  Logical model: the entities the portal actually works with,
     %%  with their attributes and identifiers. One level below the CDM,
     %%  one above the PDM.
 
@@ -24,7 +23,6 @@ erDiagram
 
     %%  Crow's foot: || exactly one, o| zero or one,
     %%               o{ zero or many, |{ one or many.
-    %% =================================================================
 
     subgraph L_HOSTS["Hosts, sites and links"]
         HOST["HOST · hosts"] {

@@ -5,10 +5,11 @@ The shortest path from a clone to a working portal. The full environment referen
 
 ## Prerequisites
 
-* **Node.js 20+** and npm
-* **Docker + Docker Compose**, for the deployment route
-* **A reachable Zabbix 7.0** and a read-only API token for it
-* **A model endpoint**, only if you want the plain-language layer: an Anthropic API key in
+* Node.js 24 (LTS) and npm. The tests run on 22.22.2 or 24.15 at the oldest, the floor the web
+  tests' jsdom sets
+* Docker + Docker Compose, for the deployment route
+* A reachable Zabbix 7.0 and a read-only API token for it
+* A model endpoint, only if you want the plain-language layer: an Anthropic API key in
   `hcml-portal`, a running Ollama with `qwen3:8b` in `hcml-portal-ollama`. Everything else works
   without it.
 
@@ -17,7 +18,7 @@ The shortest path from a clone to a working portal. The full environment referen
 In Zabbix: *Users → Roles* → a read-only role; *Users → Users* → a user with it, scoped to the host
 groups the portal should see; *Users → API tokens* → generate and copy.
 
-Smoke-test it before going further, most first-run problems are the token:
+Most first-run problems are the token, so smoke-test it before going further:
 
 ```bash
 curl -s http://localhost:8080/api_jsonrpc.php \
@@ -32,10 +33,15 @@ A JSON `result` array means you are ready. An `error` about permissions means th
 provably read-only and `/api/health` reports `writeBack: false` so the UI hides the control.
 [ADR-0006](architecture/adr/0006-read-only-with-one-write.md).
 
+Acknowledge and close also need sign-in. A dev server with `AUTH_ENABLED=false` refuses them, even
+with the write token set, unless you add `ALLOW_WRITE_WITHOUT_AUTH=true` to `server/.env`. With sign-in
+off every caller is an admin, so only do that on a machine nobody else can reach. Every message the
+portal sends to Zabbix starts with `[portal:<user>]`, since Zabbix files the write under the token's owner.
+
 ## 2. Run it, two processes
 
 ```bash
-cd server && cp .env.example .env    # then set ZBX_URL and ZABBIX_API_TOKEN
+cd server && cp .env.example .env    # then set ZBX_URL and ZABBIX_API_TOKEN, and see §4
 npm install && npm run dev           # BFF on :4000
 
 cd ../web
@@ -50,51 +56,96 @@ Check the BFF before opening the browser:
 
 ```bash
 curl -s localhost:4000/api/health
-# {"ok":true,"ts":…,"ai":false,"writeBack":false,"defaults":{…}}
+# With sign-in off, as in the dev server/.env, you get all of this. With sign-in on, a call with no
+# session gets only ok, ts, ai, writeBack and defaults (see below).
+# {"ok":true,"ts":…,"ai":false,"writeBack":false,"defaults":{…},"version":"0.1.0","startedAt":"…",
+#  "build":{"commit":"unknown","time":"unknown"},"ready":{"ok":true,"zabbix":"ok","zabbixMs":41,…},"streams":0}
 ```
 
 `ok: true` with `ai: false` is a correct, complete portal without the plain-language layer.
 
+`ok` only says the process is up. `ready.ok` says the BFF can read Zabbix right now: when it cannot,
+`ready.zabbix` is `token_rejected` (the token was revoked or expired), `timeout` or `error`, and the
+reply is still a 200. The check is one cheap call, at most once every 15 s however often health is polled.
+`build` shows the commit and time the image was built with (`unknown` unless they were passed, see
+section 3). The route is public, but the version, the build, when it started, whether Zabbix answers
+and how many screens are live go only to a signed-in caller (a session cookie or a Bearer token), so
+a stranger cannot learn that the Zabbix token was revoked. An unsigned call, or a bad token, gets the
+basic fields (`ok`, `ts`, `ai`, `writeBack`, `defaults`) with a 200. Neither reply ever carries an address or a token.
+
 ## 3. Or run it in Docker
 
 ```bash
-cp .env.example .env                 # then set ZBX_URL and ZABBIX_API_TOKEN
+cp .env.example .env                 # then set ZBX_URL, ZABBIX_API_TOKEN, JWT_SECRET, PORTAL_PASS
 docker compose up -d --build         # hcml-portal → :8081 · hcml-portal-ollama → :8082
 curl -s localhost:8081/bff/api/health   # :8082 in the ollama copy
 ```
 
-`ZBX_URL` must be reachable **from inside the container**: on Docker Desktop that usually means
+`ZBX_URL` must be reachable from inside the container: on Docker Desktop that usually means
 `http://host.docker.internal:8080/api_jsonrpc.php`, not `localhost`.
+
+To make `/api/health` say which build is running, pass the commit and time when you build, and
+`build` shows them instead of `unknown`:
+
+```bash
+BUILD_COMMIT=$(git rev-parse --short HEAD) BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+```
+
+The BFF container has a healthcheck on `/api/health`, so `docker ps` shows `healthy`. It checks that the
+process answers, not Zabbix (that is `ready` in the reply a signed-in user gets), and `portal-web` starts
+once it is healthy.
+`docker compose stop` and `restart` end the live streams and exit within a few seconds instead of
+waiting out Docker's 10 s.
 
 ## 4. Signing in
 
-With `AUTH_ENABLED=false` (the `server/.env` default) there is no login and every caller is treated as
+With `AUTH_ENABLED=false`, an opt-in for local work (the default is `true`), there is no login and every caller is treated as
 `admin`. With it on you need `PORTAL_USER`/`PORTAL_PASS`, or `PORTAL_USERS` as comma-separated
-`name:password:role` triples.
+`name:password:role` triples, and the BFF refuses to start while any of those passwords is empty or
+`admin`. Sign-in allows 10 attempts a minute per account from one address.
 
-**Turning auth on also requires a real `JWT_SECRET`**: the BFF refuses to boot on the built-in
-placeholder. Generate one with `openssl rand -hex 32`, and use a **different** secret per portal: the
-token carries no audience claim, so one portal's session is otherwise accepted by the other.
+**Turning auth on also requires a real `JWT_SECRET`**: the BFF refuses to boot on either value
+published in this repo, or on one shorter than 32 bytes. Generate one with `openssl rand -hex 32`,
+and prefer a different secret per portal. A token names its portal (the cookie name decides), so one
+portal refuses the other's session even with a shared secret, but a leaked shared secret would forge sessions
+on both.
+
+The browser keeps the session in an httpOnly cookie, `hcml_session` by default, that no script on the
+page can read; signing out clears it. Cookies ignore ports, so two portals on one machine also need
+different `SESSION_COOKIE` names, or signing in to one signs you out of the other. hcml-portal-ollama's
+`docker-compose.yml` sets `hcml_session_ollama` for that reason.
+
+A sign-in lasts 12 hours unless `SESSION_HOURS` says otherwise (2 to 24), and an open portal renews it
+before then. To sign everyone out at once, raise `SESSION_EPOCH` and restart the BFF.
+
+Both `.env.example` files ship `AUTH_ENABLED=true` with `JWT_SECRET` and `PORTAL_PASS` empty, so a
+freshly copied `.env` will not start until both are filled in, or, for local work only,
+`AUTH_ENABLED=false` is set.
 
 ## Checks you can run
 
 ```bash
 cd server
-npm test                                  # 336 tests, 19 files
+npm test                                  # 1495 tests, 65 files
 npm run typecheck
 npx tsx scripts/openapi.check.ts          # the API contract matches the code
 npx tsx scripts/erd.check.ts              # the database ERD matches its .erd model
 npx tsx scripts/validate-sli.ts           # the derived SLA against HCML's published reports
 
 cd ../web
+npm test                                  # 788 tests, 54 files, in jsdom
+npm run lint                              # eslint
 npm run typecheck
-npx tsx scripts/markdown.check.ts
-npx tsx scripts/units.check.ts
+../server/node_modules/.bin/tsx scripts/markdown.check.ts   # web/ has no tsx of its own
+../server/node_modules/.bin/tsx scripts/units.check.ts
 node scripts/css.check.mjs
 node scripts/tokens.check.mjs             # contrast, and no raw values past the tokens
+node scripts/links.check.mjs              # every relative link in the docs resolves
+node scripts/parity.check.mjs            # the two copies match (needs both folders side by side)
 ```
 
-All of them add **zero dependencies**: they are standalone scripts, not a second test runner.
+The checkers add zero dependencies: they are standalone scripts. The web's tests and lint use
+vitest and eslint, dev dependencies that never reach the built site.
 `validate-sli.ts` needs HCML's Availability Report spreadsheets in `~/Downloads` and will skip
 politely without them.
 
@@ -105,8 +156,12 @@ politely without them.
 | `503 zabbix_auth` | Zabbix rejected the API token. Re-run the curl in step 1 |
 | `503 zabbix_timeout` | Zabbix did not answer within `ZABBIX_TIMEOUT_MS`, default 10 s |
 | `502 zabbix_error` | Unreachable, non-2xx, or a JSON-RPC error. Check `ZBX_URL` first |
-| `401 unauthorized` | The **portal** JWT, not the Zabbix token. Sign in again |
-| BFF will not start, complains about the secret | `AUTH_ENABLED=true` with the placeholder `JWT_SECRET` |
+| `401 unauthorized` | The portal JWT, not the Zabbix token. Sign in again |
+| `403 csrf` | A POST sent with the session cookie, or a sign-in, without the `X-HCML-CSRF: 1` header, or from another site. A script adds the header to sign in and then sends `Authorization: Bearer` |
+| Signing in to one portal signs you out of the other | Both portals use the same `SESSION_COOKIE` on one host. Give each its own name |
+| BFF will not start, complains about the secret | `AUTH_ENABLED=true` with `JWT_SECRET` empty, a value published in this repo, or shorter than 32 bytes |
+| BFF will not start, complains about a password | `AUTH_ENABLED=true` with `PORTAL_PASS` empty or `admin`, or a `PORTAL_USERS` entry whose password is `admin` |
+| `429` on sign-in | More than 10 attempts in a minute on one account from one address, more than 300 requests in a minute from that address, or 10 failed sign-ins in a row, which lock the account from that address for 1 to 5 minutes. Wait for the time the message gives |
 | Pages load but every panel is empty | The token's role cannot see the host groups |
 
 Full status-code semantics, including why nothing ever returns 504, are in

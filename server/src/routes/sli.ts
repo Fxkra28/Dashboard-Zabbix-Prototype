@@ -31,7 +31,9 @@ export function getMonthlySli(month: string, profile: SliProfile): Promise<SliRe
   // Keyed by `closed` too: a report computed while the month was still running
   // must not be kept for a day as that month's final figure once it ends.
   const key = `derived-sli:${profile}:${month}:${closed ? 'closed' : 'open'}`;
-  return cached(key, ttl, () => computeSli({ month, profile }), { staleMs: ttl, staleIfError: true });
+  // A closed month costs a full recompute and cannot change: pinned, so a run
+  // of graph keys cannot push it out of the cache.
+  return cached(key, ttl, () => computeSli({ month, profile }), { staleMs: ttl, staleIfError: true, pin: closed });
 }
 
 export async function sliRoutes(app: FastifyInstance): Promise<void> {

@@ -23,7 +23,7 @@ describe('mergedSeconds', () => {
   });
 
   it('does not double-count overlapping problems', () => {
-    // Two triggers firing on one host over the same window is ONE outage.
+    // Two triggers firing on one host over the same window is one outage.
     // Summing them naively gave 60s of downtime in a 40s window, which is how
     // availability could once compute as negative.
     expect(mergedSeconds([

@@ -66,7 +66,8 @@ number or identifier is meant to be scanned or compared row-to-row, not read as 
 **ENERGY 2/5 · RHYTHM 2/5 · MOTION 1/5**, with a concrete exception for the one page that differs.
 
 The Dashboard streams over SSE and doubles as a NOC-wall display: the rate limiter explicitly exempts
-`/api/stream` so a wall poller doesn't throttle itself. Motion there is signal, not decoration. A
+`/api/stream` so a wall poller doesn't throttle itself, and a separate cap (100 screens in all, 5 for one
+signed-in user) keeps that exemption from being an open door. Motion there is signal, not decoration. A
 problem appearing or clearing should be visible at a glance from across a room. The same logic covers
 the Assistant's token-by-token streaming text.
 
@@ -179,10 +180,11 @@ Input, select and button boundaries move to a stronger step that clears 3:1.
 Section 3's "38 endpoints" was challenged during verification as stale, on the grounds that
 `openapi.yaml` holds 41 paths. The challenge was wrong and the brief was right.
 
-`openapi.check.ts` reports **41 endpoints (38 GET + 3 POST)**, and `README.md` states the same split
-twice: "17 route modules register onto it, 38 endpoints, plus health, login and `/api/auth/me`". The
-three that make up the difference are health, login and `auth/me`, none of which returns a row of
-anything. For a sentence about how much of this interface is tabular data competing with severity for
+At the time, `openapi.check.ts` reported **41 endpoints (38 GET + 3 POST)**, and `README.md` stated
+the same split twice: "17 route modules register onto it, 38 endpoints, plus health, login and
+`/api/auth/me`". The three that made up the difference were health, login and `auth/me`, none of
+which returns a row of anything. Batch 4 added a fourth, `POST /api/auth/refresh` (42 in all), which
+returns no rows either. For a sentence about how much of this interface is tabular data competing with severity for
 attention, 38 is the more accurate figure, so it stands.
 
 Recorded because the useful lesson is the near miss: two numbers that disagree are not automatically
@@ -218,8 +220,8 @@ Section 4 offered JetBrains Mono or IBM Plex Mono. **IBM Plex Mono** is used, fo
 it ships a slashed zero, which matters on a page full of IPs and host IDs; its tabular figures align
 in the SLA and packet-loss columns that exist to be compared down a row; and JetBrains Mono sits on
 the short list of faces an AI reaches for by default, which is the one quality this portal's
-typography should not have. It loads from the same Google Fonts request that already serves Inter,
-so it adds no package to either lockfile.
+typography should not have. It first came from the same Google Fonts request that served Inter. Since
+12 October 2026 both faces are files in `web/public/fonts`, so it still adds no package to either lockfile.
 
 
 ---
@@ -295,8 +297,8 @@ The three bands are 200px, 103px and 76px tall. Rendered, that gives:
 | Asset | Size | Used by |
 |---|---|---|
 | `logo.png` | 810 x 485 | Sidebar expanded, login card |
-| `logo-mark.png` | 782 x 224 | The rail: the HCML band alone |
-| `logo-icon.png` | 201 x 201 | Favicon and touch icon: the H glyph, flattened onto white |
+| `logo-mark.png` | 782 x 224 | Nothing since 25 September: the rail took the square icon (section 9, UX-22). Kept in `web/public` |
+| `logo-icon.png` | 201 x 201 | Favicon, touch icon, the collapsed rail and the wall-mode header: the H glyph, flattened onto white |
 
 All three are crops of the supplied file. Nothing is redrawn and nothing is recoloured. The favicon
 is the real "H" from the wordmark rather than a monogram set in Inter, because at 16px no wordmark
@@ -309,3 +311,19 @@ It is flattened onto white on purpose: a transparent favicon disappears into dar
 colours where there should be one. Flattening every pixel to `#2B5584` and letting the alpha channel
 carry the anti-aliasing would remove the ringing and take it under 10 KB, but it rewrites pixels in a
 trademark, so it is not done without a decision. A vector original would make the question moot.
+
+
+## 9. Batch 4 decisions, 25 September 2026
+
+The owner's answers to the design questions left open by the inspection (`ayoyo_1.1.md`, UX items). They are
+direction, recorded as given; how each is built is checked against sections 1 to 8.
+
+| Item | Decision |
+|---|---|
+| UX-12, the Dashboard's live list | Worst first: severity, then newest. The panel says "12 of N" and links to the full Problems list |
+| UX-15, the wall screen | A wall mode with all four parts: a fullscreen toggle that hides the chrome and enlarges the Dashboard; a short highlight on problems that appear or clear, off under reduced motion; a live clock and a large "data as of" stamp; and no sign-in timeout |
+| Wall sign-in | Any open portal renews its own sign-in before it expires, for every user. Accepted trade-off: an unattended, open portal also stays signed in |
+| UX-14, narrow screens | Not needed. The portal is used on desktops and the wall; section 6 stands as written |
+| UX-24, the sidebar | Keep the current groups. Each menu label matches the title of the page it opens |
+| UX-22, the collapsed rail | The square HCML icon (`logo-icon.png`), not the wide mark. The wide logo stays in the expanded sidebar |
+| UX-23, dashes in UI text | Replace em dashes in sentences with a colon, period or comma, by what each does. Keep the "—" placeholder that means "no value", with hidden "No data" text for screen readers |

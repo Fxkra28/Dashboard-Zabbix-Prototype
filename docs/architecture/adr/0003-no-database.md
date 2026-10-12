@@ -3,6 +3,7 @@
 * Status: accepted
 * Deciders: HCML internship project
 * Date: 2026-09-07 (recorded as an ADR 2026-09-22)
+* Amended: 2026-10-07, the claim that the portal has no state to back up (the `.env` files are state)
 
 ## Context and Problem Statement
 
@@ -18,40 +19,51 @@ a monthly SLA. Something has to produce them. Should the portal own a datastore 
 
 ## Considered Options
 
-* **No store.** Derive on every request; cache in process for seconds.
-* **Redis.** A shared cache, so several BFF instances and SSE fan-out can share state.
-* **An application database** (PostgreSQL) holding the derived entities.
-* **A mirror of Zabbix's measurement data**, so the portal queries its own copy.
+* No store. Derive on every request; cache in process for seconds.
+* Redis. A shared cache, so several BFF instances and SSE fan-out can share state.
+* An application database (PostgreSQL) holding the derived entities.
+* A mirror of Zabbix's measurement data, so the portal queries its own copy.
 
 ## Decision Outcome
 
 Chosen: **no store at all.** Every derived value is computed per request and held in a single
-module-level `Map` with a 500-entry LRU cap and per-key TTLs from 5 seconds to 24 hours.
+module-level `Map` with an LRU cap of 500 entries or about 64 MB and per-key TTLs from 5 seconds to 24 hours.
 
 The cache coalesces concurrent misses onto one upstream fetch, so twenty NOC screens cost one Zabbix
-read. Four report families may serve a stale value rather than an error; problem and acknowledgement
-state never may.
+read. The slow report families may serve a stale value rather than an error, and say so in two response
+headers (`X-Data-Stale`, `X-Data-Age-Seconds`); problem and acknowledgement state never may.
 
 ### Positive Consequences
 
 * **There is one source of truth, and it is Zabbix.** The portal cannot disagree with it.
-* Nothing to back up, no migration to run, no schema to version.
-* Deleting the portal leaves nothing behind. The compose file declares **no volumes at all**.
+* No database to back up, no migration to run, no schema to version. The portal's settings are the
+  exception: see the first negative consequence below.
+* Deleting the portal leaves no data behind, only its `.env` files. The compose file declares no
+  volumes at all.
 * Freshness is a TTL, visible in one place per route, not an ETL schedule.
 
 ### Negative Consequences
 
-* **Everything is lost on restart**: including a closed month's SLA report that had been cached for
+* **The `.env` files are the portal's only state, and nothing backs them up.** The users and their
+  roles (`PORTAL_USERS`), the Zabbix read and write tokens, the model key, `JWT_SECRET` and the SLA
+  settings live there. Git ignores them on purpose, so a lost laptop or a deleted file takes all of
+  it, and this ADR once said the portal had no state to back up, which was wrong (corrected
+  2026-10-07, ayoyo_1.1 IN-24). The answer is a backup of those files, kept encrypted and off the
+  machine, and a versioned list of the non-secret settings:
+  [`operations/backup-and-restore.md`](../../operations/backup-and-restore.md) and
+  `deploy/settings.example`.
+* Everything is lost on restart: including a closed month's SLA report that had been cached for
   24 hours and is, by definition, never going to change again. That report costs ~20 Zabbix calls to
   rebuild and it is rebuilt after every deploy, twice, because two stacks run.
-* **The 24-hour TTL is a ceiling, not a floor.** Keys are parameterised: `graph:<ids>:<from>:<to>`,
-  `net:ports:<hostid>` across 139 hosts, against a 500-entry cap, so ordinary browsing can evict a
+* The 24-hour TTL is a ceiling, not a floor. Keys are parameterised: `graph:<ids>:<from>:<to>`,
+  `net:interfaces:<hostid>` across 139 hosts, against a 500-entry cap, so ordinary browsing can evict a
   fresh SLA report within minutes. **Nobody has measured the real hit rate.**
-* **Portal-side state has nowhere to live.** `auth.ts:55` says it outright: *"Users come from env:
-  there is no database yet (that phase was deferred)."* Consequences: passwords are compared in plain
-  text, adding a user needs a restart, there are no saved views, and, because the single write uses
-  one shared Zabbix token, **Zabbix structurally cannot record which portal operator acknowledged an
-  event.** No Zabbix table could hold that.
+* Portal-side state has nowhere to live. `auth.ts:178` says it outright: *"Users come from env:
+  there is no database yet (that phase was deferred)."* Consequences: a password may still sit in
+  plain text in the `.env` file (an scrypt hash is accepted since 7 October 2026), adding a user needs
+  a restart, there are no saved views, and, because the single write uses one shared Zabbix token,
+  Zabbix structurally cannot record which portal operator acknowledged an event. No Zabbix table could
+  hold that.
 * Horizontal scaling would need Redis, because the cache and the SSE client set are per process.
 
 ## Pros and Cons of the Options
@@ -65,7 +77,7 @@ state never may.
 
 * Good, because it survives a restart and allows more than one instance.
 * Bad, because it is a third container for an estate of 139 hosts and one instance.
-* The `docker-compose.yml` service exists, **commented out**, for exactly this reason.
+* The `docker-compose.yml` service exists, commented out, for exactly this reason.
 
 ### An application database for derived entities
 
@@ -79,11 +91,12 @@ state never may.
 * Bad, because it is a third copy of HCML production data, plus an ETL to keep alive.
 * Bad, because Zabbix's own tables are hostile to it: `trends_uint` (102.9 M rows) has exactly one
   index, the clustered primary key.
-* **Rejected in [ADR-0007](0007-keep-the-zabbix-api.md) after measurement**, not on principle.
+* Rejected in [ADR-0007](0007-keep-the-zabbix-api.md) after measurement, not on principle.
 
 ## Links
 
 * Follows [ADR-0001](0001-bff-over-zabbix-api.md)
 * Confirmed by [ADR-0007](0007-keep-the-zabbix-api.md)
+* [`operations/backup-and-restore.md`](../../operations/backup-and-restore.md): what the portal does keep
 * `setup.md` §9 *Caching strategy*; `server/src/cache.ts`
 * `flow/DataFlow.pdf`: every green box is derived and has no table anywhere

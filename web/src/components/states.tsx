@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
+import { useAuth, roleAllows } from '../hooks/useAuth';
+import { staleCopyOf, staleWhen } from '../lib/freshness';
 
 export function Loading({ label = 'Loading…' }: { label?: string }) {
   return (
-    <div className="state">
+    <div className="state" role="status">
       <span className="spinner" />
       <div style={{ marginTop: 10 }}>{label}</div>
     </div>
@@ -10,29 +12,34 @@ export function Loading({ label = 'Loading…' }: { label?: string }) {
 }
 
 /**
- * What to check, when the message says. A Zabbix failure reaches the page as
- * the BFF's sentence ("Zabbix rejected the API token…", "Could not reach
- * Zabbix…"); a JSON-RPC error names a bad request, not the connection. A fetch
- * that never reached the BFF, or a proxy with nothing behind it, means the BFF
- * itself.
+ * What to check, when the message says. A Zabbix failure reaches the page as the BFF's sentence
+ * ("Zabbix rejected the API token…", "Could not reach Zabbix…"); a JSON-RPC error names a bad
+ * request, not the connection. A fetch that never reached the BFF, or a proxy with nothing behind
+ * it, means the BFF itself. Setting names and the BFF are for the portal admin; everyone else is
+ * told who to ask, in plain words.
  */
-function hintFor(message: string): string | null {
+function hintFor(message: string, admin: boolean): string | null {
   const zabbix =
     (/zabbix/i.test(message) && !/"code":\s*-?\d/.test(message)) ||
     // Zabbix's web server itself failing: "problem.get: HTTP 502 Bad Gateway"
     /^[a-z]+\.[a-z]+: HTTP \d{3}/i.test(message);
-  if (zabbix) return 'Check that ZBX_URL and ZABBIX_API_TOKEN are set on the BFF and that Zabbix is reachable.';
+  if (zabbix) {
+    return admin
+      ? 'Check that ZBX_URL and ZABBIX_API_TOKEN are set on the BFF and that Zabbix is reachable.'
+      : 'Cannot reach the monitoring server. Tell the portal admin.';
+  }
   // No JSON body at all: the request never reached a working BFF.
   if (/failed to fetch|networkerror|load failed|: HTTP 5\d\d$/i.test(message)) {
-    return 'Check that the BFF is running.';
+    return admin ? 'Check that the BFF is running.' : 'The portal is not answering. Try again, or tell the portal admin.';
   }
   return null;
 }
 
 export function ErrorState({ message }: { message: string }) {
-  const hint = hintFor(message);
+  const { role } = useAuth();
+  const hint = hintFor(message, roleAllows(role, 'admin'));
   return (
-    <div className="state error">
+    <div className="state error" role="alert">
       <div style={{ fontWeight: 600 }}>Couldn’t load data</div>
       <div className="mono" style={{ marginTop: 8 }}>
         {message}
@@ -57,7 +64,22 @@ const clockTime = (ms: number) =>
 export function RefreshFailed({ error, updatedAt }: { error: string; updatedAt?: number | null }) {
   return (
     <div className="refresh-failed" role="status" title={error}>
-      Refresh failed — showing data from {updatedAt ? clockTime(updatedAt) : 'earlier'}
+      Refresh failed: showing data from {updatedAt ? clockTime(updatedAt) : 'earlier'}
+    </div>
+  );
+}
+
+/**
+ * The BFF could not reach Zabbix and answered with the last copy it kept
+ * (X-Data-Stale, see lib/freshness.ts). The page would otherwise pass it off
+ * as just updated.
+ */
+export function StaleCopy({ asOf, what = 'this' }: { asOf: number | null; what?: string }) {
+  const when = staleWhen(asOf);
+  return (
+    <div className="refresh-failed" role="status">
+      Zabbix did not answer, so {what} is the last copy the portal kept
+      {when && `, ${when}`}.
     </div>
   );
 }
@@ -115,8 +137,10 @@ export function Async<T>({
   if (error && (data == null || stale)) return <ErrorState message={error} />;
   if (loading && data == null) return <Loading label={loadingLabel} />;
   if (data == null) return <Empty>No data.</Empty>;
+  const copy = staleCopyOf(data);
   return (
     <Loaded stale={stale} error={error} updatedAt={updatedAt}>
+      {copy && <StaleCopy asOf={copy.asOf} />}
       {children(data)}
     </Loaded>
   );

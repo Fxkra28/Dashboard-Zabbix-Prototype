@@ -47,15 +47,13 @@ export class ZabbixTimeoutError extends Error {
 }
 
 /**
- * Zabbix could not be reached, answered with a non-2xx status or something
- * that is not JSON-RPC, or returned a JSON-RPC error: bad parameters, or a
- * rejected write such as closing a trigger that does not allow manual close.
- * An upstream failure rather than a portal bug, so it maps to 502 carrying
- * Zabbix's own words, which usually name what to fix. These used to surface
- * as a bare 500.
+ * Zabbix could not be reached, answered with a non-2xx status or something that is not JSON-RPC, or
+ * returned a JSON-RPC error: bad parameters, or a rejected write such as closing a trigger that
+ * does not allow manual close. An upstream failure rather than a portal bug, so it maps to 502
+ * carrying Zabbix's own words, which usually name what to fix.
  *
- * The message reaches the browser, so it never carries the Zabbix address:
- * that, and whatever Zabbix sent back, go in `detail` for the log.
+ * The message reaches the browser, so it never carries the Zabbix address: that, and whatever
+ * Zabbix sent back, go in `detail` for the log.
  */
 export class ZabbixApiError extends Error {
   readonly code = 'zabbix_error';
@@ -72,8 +70,8 @@ export class ZabbixWriteDisabledError extends Error {
   readonly code = 'zabbix_write_disabled';
   constructor() {
     super(
-      'Write-back is not configured. Set ZABBIX_WRITE_TOKEN in server/.env — ' +
-        'it must be a separate, write-capable Zabbix token, never the read-only one.',
+      'Write-back is not configured. Set ZABBIX_WRITE_TOKEN in server/.env. ' +
+        'It must be a separate, write-capable Zabbix token, never the read-only one.',
     );
   }
 }
@@ -108,7 +106,7 @@ async function call<T>(method: string, params: unknown, token: string): Promise<
     if (name === 'TimeoutError' || name === 'AbortError') {
       throw new ZabbixTimeoutError(
         `Zabbix did not respond to ${method} within ${config.zbxTimeoutMs} ms. ` +
-          'It may be overloaded or unreachable — check ZBX_URL and the Zabbix server.',
+          'It may be overloaded or unreachable. Check ZBX_URL and the Zabbix server.',
         `ZBX_URL=${config.zbxUrl}`,
       );
     }
@@ -159,7 +157,7 @@ async function call<T>(method: string, params: unknown, token: string): Promise<
   return json.result as T;
 }
 
-/** Every portal READ goes through here, using the read-only token. */
+/** Every portal read goes through here, using the read-only token. */
 export async function zbx<T = unknown>(method: string, params: unknown = {}): Promise<T> {
   return call<T>(method, params, config.zbxToken);
 }

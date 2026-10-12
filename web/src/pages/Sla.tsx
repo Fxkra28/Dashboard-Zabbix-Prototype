@@ -1,13 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
 import { useAiEnabled } from '../hooks/useAi';
 import { useUrlState } from '../hooks/useUrlState';
 import type { Sla, SlaSli, SlaSource, SliGroup, SliHost, SliPath, SliProfile, SliReport } from '../types';
-import { Async, Empty } from '../components/states';
+import { Async, Empty, StaleCopy } from '../components/states';
+import { FieldSpacer } from '../components/Field';
 import { SlaExplainPanel, type DerivedSlaScope } from '../components/ExplainPanel';
 import KpiCard from '../components/KpiCard';
+import { NoData } from '../components/NoData';
+import ReportDownload from '../components/ReportDownload';
 import {
   CoverageText,
   DERIVED_BANNER,
@@ -22,9 +25,11 @@ import {
   fmtPct,
   lastClosedMonth,
 } from '../components/Sli';
+import { staleCopyOf, staleWhen } from '../lib/freshness';
 import { naturalCompare } from '../lib/sites';
 import { recentMonths } from '../lib/time';
-import { dur } from '../lib/units';
+import { useReportTimeZone } from '../hooks/useReportTimeZone';
+import { PERCENT_DP, dur } from '../lib/units';
 
 /**
  * Services → SLA, read-only.
@@ -61,21 +66,18 @@ function SliTable({ sla, rows }: { sla: Sla; rows: SlaSli[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
-            const met = r.sli >= target;
-            return (
-              <tr key={r.serviceid}>
-                <td>{r.name}</td>
-                <td>
-                  <span className={`pill ${met ? 'up' : 'down'}`}>{r.sli.toFixed(4)}%</span>
-                </td>
-                <td className="muted">{target}%</td>
-                <td className="muted">{dur(r.uptime)}</td>
-                <td className="muted">{dur(r.downtime)}</td>
-                <td className={r.error_budget < 0 ? 'sla-over' : 'muted'}>{dur(r.error_budget)}</td>
-              </tr>
-            );
-          })}
+          {rows.map((r) => (
+            <tr key={r.serviceid}>
+              <td>{r.name}</td>
+              <td>
+                <SliPill sli={r.sli} target={target} />
+              </td>
+              <td className="muted">{target}%</td>
+              <td className="muted">{dur(r.uptime)}</td>
+              <td className="muted">{dur(r.downtime)}</td>
+              <td className={r.error_budget < 0 ? 'sla-over' : 'muted'}>{dur(r.error_budget)}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -176,7 +178,7 @@ function ZabbixSlas() {
                   >
                     <span className="name">{s.name}</span>
                     <span className="muted">
-                      {PERIODS[s.period] ?? '—'} · {s.slo}%
+                      {PERIODS[s.period] ?? <NoData />} · {s.slo}%
                     </span>
                   </button>
                 ))}
@@ -219,10 +221,10 @@ function GroupTable({
               <th>Availability</th>
               <th>Devices</th>
               <th>Below target</th>
-              <th title="Every measured device's downtime, added up — devices down at the same time count separately">
+              <th title="Every device's downtime in the group, added up. Devices down at the same time count separately">
                 Downtime (sum)
               </th>
-              {aiEnabled && <th />}
+              {aiEnabled && <th><span className="sr-only">Actions</span></th>}
             </tr>
           </thead>
           <tbody>
@@ -238,7 +240,7 @@ function GroupTable({
                 <td className={g.belowTarget ? 'sla-over' : 'muted'}>{g.belowTarget}</td>
                 <td className="muted nowrap">
                   {g.sli === null ? (
-                    '—'
+                    <NoData />
                   ) : (
                     <>
                       {fmtDur(g.downtime)}
@@ -369,12 +371,12 @@ function DeviceTable({ report }: { report: SliReport }) {
                   <Link to={`/graphs?hostid=${h.hostid}`}>{h.name}</Link>
                   {h.hostStatus === '1' && <span className="muted"> · disabled</span>}
                 </td>
-                <td className="muted">{h.site ? `${h.site.code} · ${h.site.name}` : '—'}</td>
+                <td className="muted">{h.site ? `${h.site.code} · ${h.site.name}` : <NoData />}</td>
                 <td className="muted">{h.category}</td>
                 <td>
-                  <SliPill sli={h.sli} target={report.target} dataStatus={h.dataStatus} digits={3} />
+                  <SliPill sli={h.sli} target={report.target} dataStatus={h.dataStatus} />
                 </td>
-                <td className="muted nowrap">{h.sli === null ? '—' : fmtDur(h.downtime)}</td>
+                <td className="muted nowrap">{h.sli === null ? <NoData /> : fmtDur(h.downtime)}</td>
                 <td>
                   <CoverageText coverage={h.coverage} />
                 </td>
@@ -434,9 +436,9 @@ function PathsTable({ report }: { report: SliReport }) {
                     </div>
                   </td>
                   <td>
-                    <SliPill sli={p.sli} target={report.target} dataStatus={p.dataStatus} digits={3} />
+                    <SliPill sli={p.sli} target={report.target} dataStatus={p.dataStatus} />
                   </td>
-                  <td className="muted nowrap">{p.sli === null ? '—' : fmtDur(p.downtime)}</td>
+                  <td className="muted nowrap">{p.sli === null ? <NoData /> : fmtDur(p.downtime)}</td>
                 </tr>
               ))}
             </tbody>
@@ -445,7 +447,7 @@ function PathsTable({ report }: { report: SliReport }) {
       )}
       {silent.length > 0 && (
         <div className="nodata-paths">
-          <NoDataPill /> on every leg — {silent.length} path{silent.length === 1 ? '' : 's'}:{' '}
+          <NoDataPill /> on every leg, {silent.length} path{silent.length === 1 ? '' : 's'}:{' '}
           {silent.map((p, i) => (
             <span key={p.key} title={p.legs.map((l) => legLabel(l.name)).join(' · ')}>
               {p.name}
@@ -478,9 +480,9 @@ function WebTable({ report }: { report: SliReport }) {
                 <tr key={w.itemid}>
                   <td style={{ fontWeight: 500 }}>{w.name}</td>
                   <td>
-                    <SliPill sli={w.sli} target={report.target} dataStatus={w.dataStatus} digits={3} />
+                    <SliPill sli={w.sli} target={report.target} dataStatus={w.dataStatus} />
                   </td>
-                  <td className="muted nowrap">{w.sli === null ? '—' : fmtDur(w.downtime)}</td>
+                  <td className="muted nowrap">{w.sli === null ? <NoData /> : fmtDur(w.downtime)}</td>
                   <td>
                     <CoverageText coverage={w.coverage} />
                   </td>
@@ -492,7 +494,7 @@ function WebTable({ report }: { report: SliReport }) {
       ) : (
         <Empty>
           {report.profile === 'hcml-report'
-            ? 'Web checks are not part of the HCML report method — switch to Strict.'
+            ? 'Web checks are not part of the HCML report method. Switch to Strict.'
             : 'No web scenarios measured in this period.'}
         </Empty>
       )}
@@ -518,8 +520,7 @@ function NeverMeasured({ hosts }: { hosts: SliHost[] }) {
       <summary>
         <strong>
           {list.length} device{list.length === 1 ? '' : 's'} never measured
-        </strong>{' '}
-        — counted as 100 % by HCML’s report method
+        </strong>, counted as 100 % by HCML’s report method
       </summary>
       <p>
         These devices have never collected a single ping value, so there is nothing to measure. The
@@ -540,7 +541,7 @@ function NeverMeasured({ hosts }: { hosts: SliHost[] }) {
                 <td>
                   <Link to={`/graphs?hostid=${h.hostid}`}>{h.name}</Link>
                 </td>
-                <td className="muted">{h.site ? `${h.site.code} · ${h.site.name}` : '—'}</td>
+                <td className="muted">{h.site ? `${h.site.code} · ${h.site.name}` : <NoData />}</td>
                 <td className="muted">{unmeasuredReason(h)}</td>
               </tr>
             ))}
@@ -579,13 +580,13 @@ function DerivedKpis({
     <div className="grid kpis sli-kpis">
       <KpiCard
         label="Overall availability (strict)"
-        value={fmtPct(o.sli)}
+        value={fmtPct(o.sli, PERCENT_DP.availability, target)}
         sub={o.sli === null ? 'no data' : `target ${target}% · ${o.meeting ? 'met' : 'missed'}`}
         accent={o.sli === null ? 'var(--muted)' : o.meeting ? 'var(--good)' : 'var(--danger)'}
       />
       <KpiCard
         label="HCML report method"
-        value={hcml ? fmtPct(hcmlSli) : '…'}
+        value={hcml ? fmtPct(hcmlSli, PERCENT_DP.availability, target) : '…'}
         sub={
           hcml
             ? `ping loss only · ${hcml.overall.meeting ? 'met' : 'missed'} ${target}%`
@@ -616,7 +617,7 @@ function DerivedKpis({
         value={used === null ? '—' : budgetUsed(used)}
         sub={
           used !== null && used > 100
-            ? `the budget — the ${allowanceText} (strict)`
+            ? `the budget, the ${allowanceText} (strict)`
             : `of the ${allowanceText} (strict)`
         }
         accent={used === null ? 'var(--muted)' : used > 100 ? 'var(--danger)' : 'var(--good)'}
@@ -625,10 +626,24 @@ function DerivedKpis({
   );
 }
 
+/**
+ * The HCML figure comes from its own report, cached on its own, so it can be the
+ * old copy while the strict one is live. The notice above the cards speaks
+ * for the strict report; this adds one only when HCML's would say something else.
+ */
+function HcmlStaleNote({ strict, hcml }: { strict: SliReport; hcml: SliReport | null }) {
+  const copy = staleCopyOf(hcml);
+  if (!copy) return null;
+  const above = staleCopyOf(strict);
+  if (above && staleWhen(above.asOf) === staleWhen(copy.asOf)) return null;
+  return <StaleCopy asOf={copy.asOf} what="the HCML report method figure" />;
+}
+
 const PROFILES: SliProfile[] = ['availability', 'hcml-report'];
 
 function DerivedSla() {
-  const months = useMemo(() => recentMonths(12), []);
+  const zone = useReportTimeZone();
+  const months = useMemo(() => recentMonths(12, zone), [zone]);
   // Month and method live in the URL, so Back from a device graph returns to the same report.
   const [month, setMonth] = useUrlState<string>('month', lastClosedMonth(), { options: months });
   const [method, setMethod] = useUrlState<SliProfile>('method', 'availability', { options: PROFILES });
@@ -659,15 +674,14 @@ function DerivedSla() {
     <>
       <div className="notice sli-banner">
         <strong>{DERIVED_BANNER}.</strong> Computed in the portal from each device’s ICMP triggers,
-        monthly in Asia/Jakarta time; nothing is written to Zabbix.
+        monthly in {zone} time; nothing is written to Zabbix.
       </div>
 
       <div className="controls">
         <MonthSelect value={month} onChange={setMonth} />
         <MethodToggle value={method} onChange={setMethod} label="Tables use" />
         {aiEnabled && (
-          <div className="field">
-            <label>&nbsp;</label>
+          <FieldSpacer>
             <button
               className="btn ghost sm"
               onClick={() => explain('overall', 'HCML estate')}
@@ -675,8 +689,9 @@ function DerivedSla() {
             >
               Explain overall
             </button>
-          </div>
+          </FieldSpacer>
         )}
+        <ReportDownload month={month} disabled={!shown} />
       </div>
 
       <Async
@@ -688,10 +703,11 @@ function DerivedSla() {
       >
         {(s) => (
           <>
+            <HcmlStaleNote strict={s} hcml={hcml} />
             <DerivedKpis strict={s} hcml={hcml} shown={shown ?? s} />
             <p className="sli-method-note">
               <strong>Why two figures?</strong> {METHOD_NOTE}
-              {!s.closed && <em> This month is still running — figures so far.</em>}
+              {!s.closed && <em> This month is still running: figures so far.</em>}
             </p>
             <GapsNote gaps={s.gaps} profile={method} />
             <NeverMeasured hosts={s.hosts} />
@@ -742,6 +758,8 @@ function DerivedSla() {
 
 
 const TABS = ['', 'derived', 'zabbix'] as const;
+/** The two tabs, left to right: the order the arrow keys walk. */
+const SOURCES = ['derived', 'zabbix'] as const;
 
 export default function SlaPage() {
   // Whether Zabbix's own SLAs have data doesn't change while the page is open: ask once.
@@ -751,26 +769,49 @@ export default function SlaPage() {
   const real = source.data?.real ?? false;
   const current = tab || (real ? 'zabbix' : 'derived');
 
+  // The ARIA tabs pattern: one tab stop for the list, arrow keys between tabs, a panel they control.
+  const tabsId = useId();
+  const tabButtons = useRef<Record<string, HTMLButtonElement | null>>({});
+  const tabId = (source: string) => `${tabsId}-tab-${source}`;
+  const panelId = `${tabsId}-panel`;
+  const onTabKeys = (e: React.KeyboardEvent) => {
+    const at = SOURCES.indexOf(current === 'zabbix' ? 'zabbix' : 'derived');
+    const to =
+      e.key === 'ArrowRight' ? (at + 1) % SOURCES.length
+      : e.key === 'ArrowLeft' ? (at - 1 + SOURCES.length) % SOURCES.length
+      : e.key === 'Home' ? 0
+      : e.key === 'End' ? SOURCES.length - 1
+      : null;
+    if (to === null) return;
+    e.preventDefault();
+    setTab(SOURCES[to]);
+    tabButtons.current[SOURCES[to]]?.focus();
+  };
+  const content = current === 'zabbix' && real ? <ZabbixSlas /> : <DerivedSla />;
+
   return (
     <>
       {real ? (
-        <div className="seg sli-tabs" role="tablist" aria-label="SLA source">
-          <button
-            role="tab"
-            aria-selected={current === 'derived'}
-            className={current === 'derived' ? 'on' : ''}
-            onClick={() => setTab('derived')}
-          >
-            Derived monthly SLA
-          </button>
-          <button
-            role="tab"
-            aria-selected={current === 'zabbix'}
-            className={current === 'zabbix' ? 'on' : ''}
-            onClick={() => setTab('zabbix')}
-          >
-            Zabbix SLAs
-          </button>
+        // eslint-disable-next-line jsx-a11y/interactive-supports-focus -- the tabs inside hold the focus; the list only hears the arrow keys
+        <div className="seg sli-tabs" role="tablist" aria-label="SLA source" onKeyDown={onTabKeys}>
+          {SOURCES.map((source) => (
+            <button
+              key={source}
+              ref={(el) => {
+                tabButtons.current[source] = el;
+              }}
+              id={tabId(source)}
+              role="tab"
+              type="button"
+              aria-selected={current === source}
+              aria-controls={panelId}
+              tabIndex={current === source ? 0 : -1}
+              className={current === source ? 'on' : ''}
+              onClick={() => setTab(source)}
+            >
+              {source === 'derived' ? 'Derived monthly SLA' : 'Zabbix SLAs'}
+            </button>
+          ))}
         </div>
       ) : (
         source.data && (
@@ -782,7 +823,14 @@ export default function SlaPage() {
         )
       )}
 
-      {current === 'zabbix' && real ? <ZabbixSlas /> : <DerivedSla />}
+      {/* One wrapper either way: swapping it in when the source answers would remount the panel and fetch its report twice. */}
+      <div
+        {...(real
+          ? { role: 'tabpanel', id: panelId, 'aria-labelledby': tabId(current === 'zabbix' ? 'zabbix' : 'derived') }
+          : {})}
+      >
+        {content}
+      </div>
 
       {current === 'derived' && !source.data && source.error && (
         <div className="muted sli-source-note">Couldn’t check Zabbix’s own SLAs: {source.error}</div>

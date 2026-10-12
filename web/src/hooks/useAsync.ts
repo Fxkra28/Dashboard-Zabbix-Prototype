@@ -22,22 +22,22 @@ const sameDeps = (a: unknown[], b: unknown[]) =>
   a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
 
 /**
- * Fetch helper with loading/error state and optional polling.
- * `deps` re-runs the fetch; `intervalMs` re-polls on a timer.
+ * Fetch helper with loading/error state and optional polling. `deps` re-runs the fetch;
+ * `intervalMs` re-polls on a timer.
  *
- * Only the most recent run may write state. Without that guard a slow response
- * for an old selection overwrote a fast one for the new selection, pick host A,
- * then host B, and host A's items could land last and stay on screen.
+ * Only the most recent run may write state: otherwise a slow response for an old selection could
+ * overwrite a fast one for the new selection (pick host A, then host B, and host A's items land
+ * last and stay on screen).
  *
- * - A run that is replaced (new `deps`, `reload`) or whose component unmounts
- *   is aborted; `fn` may take the signal, and every `api.*` call it makes
- *   synchronously gets it anyway (see `withSignal` in api.ts).
- * - Polls are sequential: the next is scheduled only once the last has settled,
- *   so a slow BFF is never asked twice at once. They pause while the tab is
- *   hidden and catch up on return when one came due.
+ * - A run that is replaced (new `deps`, `reload`) or whose component unmounts is aborted; `fn` may
+ *   take the signal, and every `api.*` call it makes synchronously gets it anyway (see `withSignal`
+ *   in api.ts).
+ * - Polls are sequential: the next is scheduled only once the last has settled, so a slow BFF is
+ *   never asked twice at once. They pause while the tab is hidden and catch up on return when one
+ *   came due.
  * - Changing `intervalMs` only moves the timer; it never fetches by itself.
- * - While new `deps` load, the previous data stays with `stale: true`, so a
- *   page can dim it rather than blank it.
+ * - While new `deps` load, the previous data stays with `stale: true`, so a page can dim it rather
+ *   than blank it.
  */
 export function useAsync<T>(
   fn: (signal: AbortSignal) => Promise<T>,

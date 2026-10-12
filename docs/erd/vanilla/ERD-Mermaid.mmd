@@ -1,5 +1,5 @@
 ---
-title: HCML Monitoring Portal — ERD by domain
+title: "HCML Monitoring Portal: ERD by domain"
 config:
   layout: elk
   elk:
@@ -9,11 +9,10 @@ config:
 erDiagram
     direction TB
 
-    %% ==================================================================
-    %%  READ THIS FIRST — the portal owns NO database.
+    %%  Read this first: the portal owns no database.
     %%  There is no pg/prisma/knex dependency, no SQL, no .sql file. Every
     %%  ZBX_* entity lives in Zabbix's MySQL database (Zabbix 7.0.30) and is
-    %%  read over JSON-RPC (12 read methods, 1 write). Everything else is
+    %%  read over JSON-RPC (13 read methods, 1 write). Everything else is
     %%  computed per request and never stored; the only persistence is an
     %%  in-memory TTL cache.
 
@@ -23,17 +22,16 @@ erDiagram
     %%  Split, readable version: ERD-Domains.md
     %%  Render: https://mermaid.live  or  npx @mermaid-js/mermaid-cli
 
-    %%  Entities grouped into nine domains. Colour marks the LAYER:
+    %%  Entities grouped into nine domains. Colour marks the layer:
     %%    blue   ZBX_*  read from Zabbix over JSON-RPC, table after the dot
-    %%    green         derived by the portal — Zabbix has no equivalent
+    %%    green         derived by the portal, Zabbix has no equivalent
     %%    amber         local to the portal, neither read nor derived
 
-    %%  Relationships WITHIN a domain sit inside its subgraph; the ones
+    %%  Relationships within a domain sit inside its subgraph; the ones
     %%  that cross domains are collected at the end, which is where the
     %%  interesting derivation edges live.
 
     %%  Narrative, enums and gotchas: see erd.md
-    %% ==================================================================
 
     subgraph HOSTS["Hosts &amp; Inventory"]
         ZBX_HOST["ZBX_HOST · hosts"] {
@@ -117,7 +115,7 @@ erDiagram
             number problems
         }
         LINK {
-            string id PK "hostid:target — a synthetic composite key"
+            string id PK "hostid:target, a synthetic composite key"
             string host
             string target "ping destination, parsed from the item key"
             string label "taken from the icmppingloss item name"
@@ -221,7 +219,7 @@ erDiagram
             string host
             string severity
             number count
-            number medianDuration "MEDIAN, not mean — one outlier must not hide many"
+            number medianDuration "MEDIAN, not mean: one outlier must not hide many"
             number shortLived
             number ackRate "0 to 1"
             number totalDuration
@@ -283,7 +281,7 @@ erDiagram
             string name
             number status "-1 OK, else severity"
             number worst "max status anywhere in the subtree"
-            number descendants "DISTINCT ids below — the DAG can share children"
+            number descendants "DISTINCT ids below: the DAG can share children"
         }
         SERVICE_SLA {
             string slaid PK
@@ -294,7 +292,7 @@ erDiagram
             boolean meeting "sli >= slo"
         }
 
-        ZBX_SERVICE          ||--o{ ZBX_SERVICE          : "selectChildren — a DAG, not a tree"
+        ZBX_SERVICE          ||--o{ ZBX_SERVICE          : "selectChildren: a DAG, not a tree"
         ZBX_SERVICE          ||--o{ ZBX_SERVICE_TAG      : "selectTags"
         ZBX_SLA              ||--o{ ZBX_SLI              : "sla.getsli, one row per service"
         ZBX_SLI              }o--|| ZBX_SERVICE          : "POSITIONAL index, not a key"
@@ -349,7 +347,7 @@ erDiagram
             number unacknowledged
             number slas
             number degradedServices
-            boolean truncated "a cap fired — the model sees a PARTIAL estate"
+            boolean truncated "a cap fired: the model sees a PARTIAL estate"
             string text "plain text, ~4 chars per token, capped at 5500"
         }
         CHAT_TURN {
@@ -400,7 +398,7 @@ erDiagram
     subgraph SYSTEM["Admin &amp; system"]
         PORTAL_USER {
             string name PK "parsed from PORTAL_USERS, name:password:role"
-            string pass "plain text in the environment"
+            string pass "plain text or scrypt hash"
             string role "viewer, operator or admin"
         }
         STATS {
@@ -414,12 +412,10 @@ erDiagram
         }
     end
 
-    %% ------------------------------------------------------------------
     %%  Cross-domain relationships
-    %% ------------------------------------------------------------------
 
     ZBX_HOST             ||--o{ ZBX_ITEM             : "hostids"
-    ZBX_TRIGGER          }o--|| ZBX_HOST             : "selectHosts — FIRST HOST ONLY"
+    ZBX_TRIGGER          }o--|| ZBX_HOST             : "selectHosts: FIRST HOST ONLY"
     ZBX_SERVICE          ||--o{ ZBX_EVENT            : "selectProblemEvents, the root causes"
     ZBX_HOST             ||--|| SITE_HOST            : "derives: resolveSite() tag, name, inventory, group"
     ZBX_ITEM             }|--|| LINK                 : "derives: 1..3 icmpping items, keyed hostid:target"
@@ -434,23 +430,19 @@ erDiagram
     ZBX_HOST             |o--o{ ZBX_MAP_SELEMENT     : "elements[0].hostid, host elements only"
     ZBX_EVENT            }o--o{ MAP_ELEMENT          : "derives: open problems and worst severity per host"
 
-    %% ------------------------------------------------------------------
     %%  Layer colouring
-    %% ------------------------------------------------------------------
 
     classDef zbx     fill:#dbeafe,stroke:#2563eb,color:#14213d
     classDef derived fill:#dcfce7,stroke:#16a34a,color:#052e16
     classDef local   fill:#fef3c7,stroke:#d97706,color:#451a03
 
-    %% ------------------------------------------------------------------
-    %%  Subgraph frames MUST stay unfilled.
-    %%  Mermaid paints cluster rects AFTER the relationship lines, and the
+    %%  Subgraph frames must stay unfilled.
+    %%  Mermaid paints cluster rects after the relationship lines, and the
     %%  default theme fills them opaque (#ffffde). With a fill, every edge
-    %%  lying inside a domain box is hidden behind it — 33 of 46 edges
+    %%  lying inside a domain box is hidden behind it: 33 of 46 edges
     %%  vanished, leaving their labels floating unattached. The edges were
     %%  in the source and in the SVG the whole time; they were painted over.
     %%  fill:none emits fill:none !important and overrides the theme.
-    %% ------------------------------------------------------------------
 
     style HOSTS fill:none,stroke:#94a3b8
     style SITES fill:none,stroke:#94a3b8

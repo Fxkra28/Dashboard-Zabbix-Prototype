@@ -1,15 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useUrlState } from '../hooks/useUrlState';
 import type { NoiseFlag, NoiseReport, NoisyTrigger } from '../types';
 import { SEVERITIES } from '../theme';
 import { SeverityBadge } from '../components/StatusBadge';
 import { Async, Empty } from '../components/states';
+import { Field } from '../components/Field';
 import KpiCard from '../components/KpiCard';
 import { dur } from '../lib/units';
+import { downloadCsv } from '../lib/csv';
+import { NoData } from '../components/NoData';
 
 /**
- * Alert noise (plan_1.2 Goal 4): *"the main issue is not the number of
+ * Alert noise (HCML Goal 4): *"the main issue is not the number of
  * alarms, but the quality of information needed to act."*
  *
  * Top 100 triggers answers *how often*. This answers *was it worth knowing*:
@@ -25,16 +29,21 @@ const FLAG_LABEL: Record<NoiseFlag, string> = {
 };
 
 const FLAG_WHY: Record<NoiseFlag, string> = {
-  flapping: 'Fires often and clears itself before anyone could act — a threshold worth retuning.',
-  unactioned: 'Fires often and has never been acknowledged — the team has learned to ignore it.',
-  chronic: 'Still open after more than a day — not noise, but nobody has cleared it.',
+  flapping: 'Fires often and clears itself before anyone could act: a threshold worth retuning.',
+  unactioned: 'Fires often and has never been acknowledged: the team has learned to ignore it.',
+  chronic: 'Still open after more than a day: not noise, but nobody has cleared it.',
 };
 
 /** Rows the BFF returns, most alerts first; `total` says how many there were in all. */
 const TOPS = [100, 250, 500];
+const PERIODS = [1, 7, 30, 90];
+const SEVERITY_LEVELS = SEVERITIES.map((s) => s.level);
 
-function csv(rows: NoisyTrigger[]): string {
-  const out = [
+type Show = NoiseFlag | 'all' | 'flagged';
+const SHOWS: Show[] = ['all', 'flagged', 'flapping', 'unactioned', 'chronic'];
+
+function csvRows(rows: NoisyTrigger[]): unknown[][] {
+  return [
     ['trigger', 'host', 'severity', 'fired', 'median_seconds', 'short_lived', 'ack_rate', 'flags'],
     ...rows.map((t) => [
       t.name,
@@ -47,14 +56,15 @@ function csv(rows: NoisyTrigger[]): string {
       t.flags.join(' | '),
     ]),
   ];
-  return out.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
 }
 
 export default function AlertNoise() {
-  const [days, setDays] = useState(7);
-  const [severity, setSeverity] = useState(0);
-  const [flag, setFlag] = useState<NoiseFlag | 'all' | 'flagged'>('all');
-  const [top, setTop] = useState(TOPS[0]);
+  const fieldId = useId();
+  // All four filters live in the URL, so Back and a shared link keep them. A value not in its list reads as the default.
+  const [days, setDays] = useUrlState<number>('days', 7, { options: PERIODS });
+  const [severity, setSeverity] = useUrlState<number>('severity', 0, { options: SEVERITY_LEVELS });
+  const [flag, setFlag] = useUrlState<Show>('show', 'all', { options: SHOWS });
+  const [top, setTop] = useUrlState<number>('top', TOPS[0], { options: TOPS });
   const q = useAsync<NoiseReport>(() => api.noise(days, severity, top), [days, severity, top]);
 
   const rows = useMemo(() => {
@@ -64,43 +74,38 @@ export default function AlertNoise() {
     return list.filter((t) => t.flags.includes(flag));
   }, [q.data, flag]);
 
-  const download = (data: NoiseReport) => {
-    const blob = new Blob([csv(data.triggers)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `hcml-alert-noise-${days}d-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // The rows on screen, so a filtered file says so in its name and is not mistaken for the full list.
+  const download = () => {
+    const shown = flag === 'all' ? '' : `-${flag}`;
+    const day = new Date().toISOString().slice(0, 10);
+    downloadCsv(`hcml-alert-noise-${days}d${shown}-${day}.csv`, csvRows(rows));
   };
 
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label>Period</label>
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+        <Field label="Period" htmlFor={`${fieldId}-period`}>
+          <select id={`${fieldId}-period`} value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={1}>Last 24 hours</option>
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>
           </select>
-        </div>
-        <div className="field">
-          <label>Counts problems of at least</label>
-          <select value={severity} onChange={(e) => setSeverity(Number(e.target.value))}>
+        </Field>
+        <Field label="Counts problems of at least" htmlFor={`${fieldId}-severity`}>
+          <select id={`${fieldId}-severity`} value={severity} onChange={(e) => setSeverity(Number(e.target.value))}>
             {SEVERITIES.map((s) => (
               <option key={s.level} value={s.level}>
                 {s.name}
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>Show</label>
+        </Field>
+        <Field label="Show" htmlFor={`${fieldId}-show`}>
           <select
+            id={`${fieldId}-show`}
             value={flag}
-            onChange={(e) => setFlag(e.target.value as NoiseFlag | 'all' | 'flagged')}
+            onChange={(e) => setFlag(e.target.value as Show)}
           >
             <option value="all">All triggers</option>
             <option value="flagged">Flagged only</option>
@@ -108,9 +113,8 @@ export default function AlertNoise() {
             <option value="unactioned">Never acknowledged</option>
             <option value="chronic">Chronic</option>
           </select>
-        </div>
-        <div className="field">
-          <label htmlFor="noise-top">Rows</label>
+        </Field>
+        <Field label="Rows" htmlFor="noise-top">
           <select id="noise-top" value={top} onChange={(e) => setTop(Number(e.target.value))}>
             {TOPS.map((n) => (
               <option key={n} value={n}>
@@ -118,7 +122,7 @@ export default function AlertNoise() {
               </option>
             ))}
           </select>
-        </div>
+        </Field>
       </div>
 
       <Async
@@ -165,7 +169,7 @@ export default function AlertNoise() {
                 />
               </div>
 
-              {/* The Pareto line — HCML's own sentence, quantified. */}
+              {/* The Pareto line: HCML's own sentence, quantified. */}
               <div className="notice">
                 <strong>
                   {data.concentration.topN} trigger
@@ -194,7 +198,7 @@ export default function AlertNoise() {
                       </span>
                     )}
                   </h2>
-                  <button className="btn ghost sm" onClick={() => download(data)}>
+                  <button className="btn ghost sm" onClick={download} disabled={!rows.length}>
                     Download CSV
                   </button>
                 </div>
@@ -221,7 +225,7 @@ export default function AlertNoise() {
                               <SeverityBadge level={t.severity} />
                             </td>
                             <td>{t.name}</td>
-                            <td className="muted">{t.host || '—'}</td>
+                            <td className="muted">{t.host || <NoData />}</td>
                             <td style={{ fontWeight: 600 }}>{t.count}</td>
                             <td className="muted">{dur(t.medianDuration)}</td>
                             <td className="muted">
@@ -240,7 +244,7 @@ export default function AlertNoise() {
                                   ))}
                                 </span>
                               ) : (
-                                <span className="muted">—</span>
+                                <span className="muted"><NoData /></span>
                               )}
                             </td>
                           </tr>

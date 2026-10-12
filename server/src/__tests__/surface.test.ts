@@ -38,6 +38,7 @@ async function registerAll() {
     import('../routes/actions.js').then((m) => m.actionRoutes),
     import('../routes/chat.js').then((m) => m.chatRoutes),
     import('../routes/sli.js').then((m) => m.sliRoutes),
+    import('../routes/sliExport.js').then((m) => m.sliExportRoutes),
   ]);
 
   const app = Fastify({ logger: false });
@@ -56,17 +57,18 @@ async function registerAll() {
 }
 
 describe('API surface', () => {
-  it('registers exactly the 38 route-module endpoints', async () => {
-    // Plus /api/health, POST /api/auth/login and GET /api/auth/me, which live
-    // in index.ts and auth.ts, 41 endpoints in total.
+  it('registers exactly the 35 route-module endpoints', async () => {
+    // Plus /api/health and /api/ready (health.ts), POST /api/auth/login, GET
+    // /api/auth/me, POST /api/auth/refresh and POST /api/auth/logout, which live in
+    // auth.ts, 41 endpoints in total.
     const { app, routes } = await registerAll();
     expect(routes.sort()).toMatchInlineSnapshot(`
       [
         "GET /api/chat/warm",
         "GET /api/explain/problem",
         "GET /api/explain/sla",
+        "GET /api/freshness",
         "GET /api/graph",
-        "GET /api/history",
         "GET /api/hostgroups",
         "GET /api/hosts",
         "GET /api/hosts/overview",
@@ -77,9 +79,6 @@ describe('API surface', () => {
         "GET /api/maps/detail",
         "GET /api/net/devices",
         "GET /api/net/interfaces",
-        "GET /api/net/map",
-        "GET /api/net/ports",
-        "GET /api/net/status",
         "GET /api/problems",
         "GET /api/reports/aging",
         "GET /api/reports/availability",
@@ -95,9 +94,9 @@ describe('API surface', () => {
         "GET /api/sla/sli",
         "GET /api/sla/source",
         "GET /api/sli",
+        "GET /api/sli/export",
         "GET /api/stats",
         "GET /api/stream",
-        "GET /api/trend",
         "POST /api/chat",
         "POST /api/problems/acknowledge",
       ]
@@ -133,9 +132,6 @@ describe('API surface', () => {
       '/api/links',
       '/api/net/devices',
       '/api/net/interfaces',
-      '/api/net/map',
-      '/api/net/ports',
-      '/api/net/status',
       '/api/problems/acknowledge',
     ]);
     await app.close();

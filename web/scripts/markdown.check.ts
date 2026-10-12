@@ -1,6 +1,6 @@
 /**
  * Checks for the assistant's markdown parser (src/lib/markdown.ts).
- * Run from the repo root: npx tsx web/scripts/markdown.check.ts
+ * Run from the repo root: ./server/node_modules/.bin/tsx web/scripts/markdown.check.ts
  */
 import assert from 'node:assert/strict';
 import { parseInline, parseMarkdown, type Block, type Inline } from '../src/lib/markdown.ts';

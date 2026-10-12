@@ -1,13 +1,19 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import rateLimit from '@fastify/rate-limit';
-import { config, assertConfig } from './config.js';
+import { config, assertConfig, trustProxyOption } from './config.js';
 import { registerErrorHandler } from './errors.js';
+import { genReqId, registerRequestId } from './requestId.js';
+import { AJV_OPTIONS } from './schemas.js';
 import { registerCompression } from './compress.js';
 import { setCacheLogger } from './cache.js';
+import { registerStaleHeaders } from './staleness.js';
 import { serializeRequest } from './logging.js';
-import { setupAuth } from './auth.js';
+import { assertUsers, setupAuth } from './auth.js';
+import { registerRateLimit } from './rateLimit.js';
+import { registerHealth } from './health.js';
+import { registerHostCheck } from './hostCheck.js';
+import { installShutdown } from './shutdown.js';
 import { hostRoutes } from './routes/hosts.js';
 import { problemRoutes } from './routes/problems.js';
 import { historyRoutes } from './routes/history.js';
@@ -26,12 +32,17 @@ import { actionRoutes } from './routes/actions.js';
 import { chatRoutes } from './routes/chat.js';
 import { warmModel } from './ai.js';
 import { sliRoutes } from './routes/sli.js';
+import { sliExportRoutes } from './routes/sliExport.js';
 
 const app = Fastify({
-  // Fastify's own request log line, except that the `?token=` the live stream
-  // authenticates with is redacted (logging.ts).
+  // Fastify's own request log line, except that a `?token=` an old page may
+  // still send to the live stream is redacted (logging.ts).
   logger: { level: 'info', serializers: { req: serializeRequest } },
-  trustProxy: config.trustProxy,
+  trustProxy: trustProxyOption(config.trustProxy),
+  // Body schemas (schemas.ts) must not coerce types: the handlers refuse "false" and 5.
+  ajv: AJV_OPTIONS,
+  // The id nginx gave the request, or a new one (requestId.ts).
+  genReqId,
 });
 
 // A slow report answered from an old copy because Zabbix failed is logged,
@@ -42,61 +53,42 @@ setCacheLogger(app.log);
 // clear refusal at boot than a portal that looks healthy and isn't.
 try {
   assertConfig((m) => app.log.warn(m));
+  assertUsers();
 } catch (err) {
   app.log.error(err instanceof Error ? err.message : err);
   process.exit(1);
 }
+
+// X-Request-Id on every reply and `requestId` in every error body. First, so the refusals below
+// carry it too (requestId.ts).
+registerRequestId(app);
+
+// With sign-in off, only a Host that names this machine is answered: a rebinding page cannot reach
+// the dev BFF. Before CORS and every route (hostCheck.ts).
+registerHostCheck(app);
 
 // Security headers. `contentSecurityPolicy` is off because this process serves
 // JSON only: nginx serves the app, and a CSP here would describe a document
 // that never exists while doing nothing for the API.
 await app.register(helmet, { contentSecurityPolicy: false });
 
+// One origin only. The session cookie's CSRF check (auth.ts) relies on this:
+// the answer names only WEB_ORIGIN, so another site's preflight for X-HCML-CSRF fails.
 await app.register(cors, { origin: config.webOrigin, credentials: true });
 
-/**
- * Rate limiting, registered before the auth guard so a flood is rejected
- * before the server spends work verifying JWTs on it. The target that matters
- * is POST /api/auth/login, which is otherwise an unthrottled password oracle.
- *
- * SSE and health are exempt: /api/stream holds one long-lived connection per
- * NOC screen rather than making repeated requests, and /api/health is polled
- * deliberately by every page and by container health checks.
- */
-await app.register(rateLimit, {
-  max: config.rateLimitPerMinute,
-  timeWindow: '1 minute',
-  allowList: (req) => {
-    const url = (req.raw.url ?? '').split('?')[0];
-    return url === '/api/stream' || url === '/api/health';
-  },
-  // The plugin throws what this returns, so it passes through the error
-  // handler: `statusCode` is what keeps it a 429 there rather than a 500.
-  errorResponseBuilder: (_req, ctx) => ({
-    statusCode: 429,
-    error: 'rate_limited',
-    message: `Too many requests — the limit is ${ctx.max} per minute. Retry in ${ctx.after}.`,
-  }),
-});
+// Before setupAuth, so a flood is counted before any JWT is verified (rateLimit.ts).
+await registerRateLimit(app);
 
 // Brotli/gzip for JSON bodies (compress.ts). Before every route: a hook only
 // reaches the routes registered after it.
 registerCompression(app);
 
-// `ai` and `writeBack` let the UI hide actions that aren't configured, instead
-// of offering a button that can only fail.
-app.get('/api/health', async () => ({
-  ok: true,
-  ts: Date.now(),
-  ai: config.ai.enabled,
-  writeBack: Boolean(config.zbxWriteToken),
-  // Server-owned defaults the UI should agree with rather than restate. The
-  // availability floor in particular is site-specific, HCML alarms at 2,
-  // and a hardcoded client default would silently disagree with the server.
-  defaults: {
-    availabilityMinSeverity: config.reports.availabilityMinSeverity,
-  },
-}));
+// X-Data-Stale / X-Data-Age-Seconds on an answer that is an old copy kept
+// because Zabbix failed (staleness.ts). Also before the routes.
+registerStaleHeaders(app);
+
+// Public: liveness, the build, and whether Zabbix answers (health.ts).
+const readiness = registerHealth(app);
 
 registerErrorHandler(app);
 
@@ -120,11 +112,14 @@ await app.register(analyticsRoutes);
 await app.register(actionRoutes);
 await app.register(chatRoutes);
 await app.register(sliRoutes);
+await app.register(sliExportRoutes);
 
 try {
   await app.listen({ port: config.port, host: config.host });
   app.log.info(`HCML BFF listening on ${config.host}:${config.port}`);
   void warmModel(app.log); // load the local model now, not on the first question
+  readiness.warm(); // so the first /api/health already has an answer
+  installShutdown(app);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

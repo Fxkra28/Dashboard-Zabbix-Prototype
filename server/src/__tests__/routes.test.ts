@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildTestApp, zHost, zProblem } from './helpers/app.js';
 
 /**
@@ -179,33 +179,6 @@ describe('problems / history / maps routes', () => {
     await app.close();
   });
 
-  it('GET /api/history and /api/trend answer 200', async () => {
-    zabbixReturns({ 'history.get': [], 'trend.get': [] });
-    const { historyRoutes } = await import('../routes/history.js');
-    const app = await buildTestApp(historyRoutes);
-
-    expect((await app.inject({ url: '/api/history?itemid=1&hours=1' })).statusCode).toBe(200);
-    expect((await app.inject({ url: '/api/trend?itemid=1' })).statusCode).toBe(200);
-    await app.close();
-  });
-
-  it('GET /api/history ends the window at the newest stored value, not at now', async () => {
-    // A restored backup: the newest value is a day old, so "the last hour from
-    // now" would be empty. The window must end where the data does.
-    const newest = Math.floor(Date.now() / 1000) - 86_400;
-    zabbixReturns({ 'history.get': [{ itemid: '1', clock: String(newest), value: '0' }] });
-    const { historyRoutes } = await import('../routes/history.js');
-    const app = await buildTestApp(historyRoutes);
-
-    const res = await app.inject({ url: '/api/history?itemid=1&hours=1&history=3' });
-    expect(res.statusCode).toBe(200);
-    const window = zbxMock.mock.calls
-      .map(([, params]) => params as { time_from?: number; time_till?: number })
-      .find((p) => p.time_till !== undefined);
-    expect(window).toMatchObject({ time_till: newest, time_from: newest - 3600 });
-    await app.close();
-  });
-
   it('GET /api/maps and /api/maps/detail answer 200', async () => {
     zabbixReturns({ 'map.get': [] });
     const { mapRoutes } = await import('../routes/maps.js');
@@ -278,16 +251,13 @@ describe('input validation and error shape', () => {
     const { netRoutes } = await import('../routes/net.js');
     const app = await buildTestApp(hostRoutes, historyRoutes, mapRoutes, netRoutes);
 
-    // Each of these used to reach Zabbix as `[undefined]` and come back as a 500.
+    // Each of these would reach Zabbix as `[undefined]` and come back as a 500.
     for (const url of [
       '/api/items',
       '/api/items?hostid=abc',
-      '/api/history',
-      '/api/trend',
+      '/api/graph',
       '/api/maps/detail',
-      '/api/net/ports',
-      '/api/net/status',
-      '/api/net/map',
+      '/api/net/interfaces',
     ]) {
       const res = await app.inject({ url });
       expect(res.statusCode, url).toBe(400);
@@ -301,13 +271,14 @@ describe('input validation and error shape', () => {
     // NaN survives Math.min/Math.max, and Zabbix reads a NaN time_from as "no
     // bound", ?hours=abc once returned an item's entire history.
     zabbixReturns({});
-    const { historyRoutes } = await import('../routes/history.js');
     const { analyticsRoutes } = await import('../routes/analytics.js');
-    const app = await buildTestApp(historyRoutes, analyticsRoutes);
+    const app = await buildTestApp(analyticsRoutes);
 
-    expect((await app.inject({ url: '/api/history?itemid=1&hours=abc' })).statusCode).toBe(200);
     const avail = (await app.inject({ url: '/api/reports/availability?days=abc&severity=abc' })).json();
     expect(avail.windowSeconds).toBe(7 * 86_400);
+    // The any-problem basis reads events straight from Zabbix, so its bounds are what could turn into NaN.
+    const legacy = (await app.inject({ url: '/api/reports/availability?basis=all-problems&days=abc&severity=abc' })).json();
+    expect(legacy.windowSeconds).toBe(7 * 86_400);
 
     const windows = zbxMock.mock.calls
       .map(([, params]) => params as { time_from?: unknown })
@@ -348,17 +319,12 @@ describe('input validation and error shape', () => {
 
 
 describe('net routes', () => {
-  it('answers 200 on all four network endpoints', async () => {
-    zabbixReturns({ 'host.get': [zHost()], 'item.get': [], 'map.get': [] });
+  it('answers 200 on both network endpoints (the other three were removed, ayoyo_1.1 BK-11)', async () => {
+    zabbixReturns({ 'host.get': [zHost()], 'item.get': [] });
     const { netRoutes } = await import('../routes/net.js');
     const app = await buildTestApp(netRoutes);
 
-    for (const url of [
-      '/api/net/devices',
-      '/api/net/ports?hostid=10689',
-      '/api/net/status?hostid=10689',
-      '/api/net/map?mapid=1',
-    ]) {
+    for (const url of ['/api/net/devices', '/api/net/interfaces?hostid=10689']) {
       expect((await app.inject({ url })).statusCode, url).toBe(200);
     }
     await app.close();
@@ -448,21 +414,28 @@ describe('analytics routes', () => {
     vi.setSystemTime(new Date('2026-09-17T03:00:00Z'));
     const now = Math.floor(Date.now() / 1000);
     zabbixReturns({ 'event.get': [] });
-    const { analyticsRoutes } = await import('../routes/analytics.js');
+    const { analyticsRoutes, OPEN_AT_START_LOOKBACK } = await import('../routes/analytics.js');
     const app = await buildTestApp(analyticsRoutes);
+    // Each report reads its window, just before it the look-back for problems already open, and the
+    // window's recovery events again, in that order.
+    const lookback = (from: number) => [from - OPEN_AT_START_LOOKBACK, from - 1];
 
-    // It used to ignore `month` and answer for the last 7 days.
+    // It must not ignore `month` and answer for the last 7 days.
     const aug = (await app.inject({ url: '/api/reports/availability?basis=all-problems&month=2026-08' })).json();
     expect(aug).toMatchObject({ basis: 'all-problems', month: '2026-08', from: AUG.from, to: AUG.to, windowSeconds: AUG.to - AUG.from });
     const windows = () =>
       zbxMock.mock.calls.filter(([m]) => m === 'event.get').map(([, p]) => [p.time_from, p.time_till]);
-    expect(windows()).toEqual([[AUG.from, AUG.to]]);
+    expect(windows()).toEqual([[AUG.from, AUG.to], lookback(AUG.from), [AUG.from, AUG.to]]);
 
     const sep = (await app.inject({ url: '/api/reports/availability?basis=all-problems&month=2026-09' })).json();
     expect(sep).toMatchObject({ month: '2026-09', from: AUG.to, to: now });
     await app.inject({ url: '/api/reports/availability?basis=all-problems&month=2026-08' });
     expect(windows()).toEqual([
       [AUG.from, AUG.to],
+      lookback(AUG.from),
+      [AUG.from, AUG.to],
+      [AUG.to, now],
+      lookback(AUG.to),
       [AUG.to, now],
     ]);
 
@@ -518,8 +491,11 @@ describe('analytics routes', () => {
     expect((await app.inject({ url: '/api/reports/noise' })).json().triggers).toHaveLength(3);
     expect((await app.inject({ url: '/api/reports/noise?top=0' })).json().triggers).toHaveLength(1);
     expect((await app.inject({ url: '/api/reports/noise?top=abc' })).json().triggers).toHaveLength(3);
-    // `top` only cuts what is sent: one event read behind all of these.
-    expect(zbxMock.mock.calls.filter(([m]) => m === 'event.get')).toHaveLength(1);
+    // `top` only cuts what is sent: one report behind all of these, which reads the window, the
+    // look-back before it and the window's recoveries. (This fake answers every event.get with the
+    // same rows, so the recoveries here are never taken for a problem's end and cause no lookups worth
+    // counting; those are tested in incidents-before-window.test.ts.)
+    expect(zbxMock.mock.calls.filter(([m, p]) => m === 'event.get' && p.time_from !== undefined)).toHaveLength(3);
     await app.close();
   });
 
@@ -694,6 +670,25 @@ describe('service-centric routes', () => {
 
 
 describe('acknowledge write-back', () => {
+  // The route refuses before anything else when no write token is configured; these tests set one,
+  // except the test that checks that refusal. Sign-in is on here whatever the environment says:
+  // with it off, write-back is refused unless a dev opt-in is set, and a developer's server/.env
+  // has sign-in off. write-gate.test.ts covers that.
+  let savedToken: string;
+  let savedAuth: boolean;
+  beforeEach(async () => {
+    const { config } = await import('../config.js');
+    savedToken = config.zbxWriteToken;
+    savedAuth = config.auth.enabled;
+    config.zbxWriteToken = 'test-only-not-a-real-token';
+    config.auth.enabled = true;
+  });
+  afterEach(async () => {
+    const { config } = await import('../config.js');
+    config.zbxWriteToken = savedToken;
+    config.auth.enabled = savedAuth;
+  });
+
   it('rejects a request with no eventids', async () => {
     const { actionRoutes } = await import('../routes/actions.js');
     const app = await buildTestApp(actionRoutes);
@@ -757,7 +752,8 @@ describe('acknowledge write-back', () => {
   it('maps a write attempted with no write token to 503, not 500', async () => {
     // Blank ZABBIX_WRITE_TOKEN means the portal is read-only by design. The UI
     // reads this code to hide the button rather than offering a failing one.
-    zbxWriteMock.mockRejectedValue(new ZabbixWriteDisabledError());
+    const { config } = await import('../config.js');
+    config.zbxWriteToken = '';
     const { actionRoutes } = await import('../routes/actions.js');
     const app = await buildTestApp(actionRoutes);
 
@@ -768,6 +764,7 @@ describe('acknowledge write-back', () => {
     });
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('zabbix_write_disabled');
+    expect(zbxWriteMock).not.toHaveBeenCalled();
     await app.close();
   });
 });
@@ -803,6 +800,58 @@ describe('upstream failure modes', () => {
     const app = await buildTestApp(hostRoutes);
 
     expect((await app.inject({ url: '/api/hosts' })).statusCode).toBe(500);
+    await app.close();
+  });
+});
+
+describe('problem counts', () => {
+  /**
+   * `problem.get` with `recent: true` also returns problems Zabbix resolved a
+   * moment ago. The list keeps them (marked Resolved); every count must not.
+   */
+  it('count only open problems outside maintenance, while /api/problems still lists the others', async () => {
+    const onHost = [{ hostid: '10689', name: '1.2.1 IDX02CORESWITCH' }];
+    zabbixReturns({
+      'host.get': [zHost()],
+      'hostgroup.get': [{ groupid: '1', name: 'Core', hosts: [{ hostid: '10689' }] }],
+      'problem.get': [
+        zProblem({ eventid: '201', objectid: '1', object: '0', severity: '4', r_eventid: '0' }),
+        zProblem({ eventid: '202', objectid: '2', object: '0', severity: '5', r_eventid: '203' }),
+        // Open, but inside a planned maintenance window.
+        zProblem({ eventid: '204', objectid: '1', object: '0', severity: '3', r_eventid: '0', suppressed: '1' }),
+      ],
+      'trigger.get': [
+        { triggerid: '1', hosts: onHost },
+        { triggerid: '2', hosts: onHost },
+      ],
+      'map.get': [
+        {
+          sysmapid: '2',
+          links: [],
+          selements: [{ selementid: '5', elementtype: '0', label: 'core', elements: [{ hostid: '10689' }] }],
+        },
+      ],
+    });
+    const { problemRoutes } = await import('../routes/problems.js');
+    const { reportRoutes } = await import('../routes/reports.js');
+    const { hostRoutes } = await import('../routes/hosts.js');
+    const { siteRoutes } = await import('../routes/sites.js');
+    const { mapRoutes } = await import('../routes/maps.js');
+    const { analyticsRoutes } = await import('../routes/analytics.js');
+    const app = await buildTestApp(problemRoutes, reportRoutes, hostRoutes, siteRoutes, mapRoutes, analyticsRoutes);
+    const get = async (url: string) => (await app.inject({ url })).json();
+
+    expect(await get('/api/problems')).toHaveLength(3);
+    expect(await get('/api/stats')).toMatchObject({ problems: 1, unacknowledged: 1, bySeverity: { '4': 1 } });
+    expect((await get('/api/stats')).bySeverity).not.toHaveProperty('5');
+    expect((await get('/api/stats')).bySeverity).not.toHaveProperty('3');
+    expect(await get('/api/reports/problems-by-group')).toEqual([
+      { groupid: '1', name: 'Core', total: 1, bySeverity: { '4': 1 } },
+    ]);
+    expect((await get('/api/hosts/overview'))[0].problems).toEqual({ total: 1, bySeverity: { '4': 1 } });
+    expect((await get('/api/sites')).sites[0]).toMatchObject({ problems: 1, unacknowledged: 1, worst: 4 });
+    expect((await get('/api/maps/detail?mapid=2'))[0].selements[0]).toMatchObject({ problems: 1, maxSeverity: 4 });
+    expect(await get('/api/reports/aging')).toMatchObject({ total: 1, unacknowledged: 1 });
     await app.close();
   });
 });

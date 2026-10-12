@@ -2,9 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { zbx } from '../zabbix.js';
 import { cached } from '../cache.js';
 import { BadRequestError, intParam, optionalId, requireId } from '../validate.js';
-import { getProblems } from '../queries.js';
+import { getProblems, openProblems } from '../queries.js';
 import { naturalCompare, siteFromHostName } from '../naming.js';
 import { getIcmpByHost, hostState } from '../reachability.js';
+import { hidesNetwork, isNetworkKey, withoutNetworkItems } from '../viewerPolicy.js';
 
 /** One page of Latest data (legacy, un-paged). Bounds the read and flags when it was hit. */
 const LATEST_LIMIT = 500;
@@ -27,6 +28,7 @@ const LATEST_OUTPUT = [
 
 interface ZItem {
   itemid: string;
+  key_?: string;
   value_type: string;
   status?: string;
   state?: string;
@@ -70,7 +72,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
           selectInterfaces: ['ip', 'type', 'available'],
           sortfield: 'name',
         }),
-        cached('problems', 5_000, getProblems),
+        cached('problems', 5_000, getProblems).then(openProblems),
         getIcmpByHost(),
       ]);
 
@@ -102,8 +104,8 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
   //   &search=           substring of key_
   //   &graphable=1       numeric (float/uint), enabled and supported only
   //   ?itemids=a,b       specific items (any host), resolves a deep link
-  // hostid is required unless itemids is given: without it Zabbix received
-  // `hostids: [undefined]` and the Graphs page logged a 500 on every load.
+  // hostid is required unless itemids is given: without it Zabbix would get `hostids: [undefined]`
+  // and answer with an opaque 500.
   app.get('/api/items', async (req) => {
     const q = req.query as { hostid?: string; search?: string; graphable?: string; itemids?: string };
     const graphable = q.graphable === '1' || q.graphable === 'true';
@@ -117,7 +119,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
     const hostid = itemids ? optionalId(q.hostid, 'hostid') : requireId(q.hostid, 'hostid');
     const { search } = q;
     const key = `items:${hostid ?? ''}:${search ?? ''}:${graphable ? 1 : 0}:${itemids?.join(',') ?? ''}`;
-    return cached(key, 30_000, async () => {
+    const found = await cached(key, 30_000, async () => {
       const items = await zbx<ZItem[]>('item.get', {
         ...(hostid ? { hostids: [hostid] } : {}),
         ...(itemids ? { itemids, selectHosts: ['hostid', 'name'] } : {}),
@@ -142,6 +144,8 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
       });
       return graphable ? items.filter(isGraphable) : items;
     });
+    // Interface items are operator data. Cut after the cache: it holds one list for every role.
+    return hidesNetwork(req) ? withoutNetworkItems(found) : found;
   });
 
   // Monitoring → Latest data: items with their latest value/time, filtered by
@@ -175,10 +179,12 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
       const page = intParam(q.page, 1, 1, 1_000_000);
       const pageSize = intParam(q.pageSize, 100, 25, 500);
       const needle = search?.trim() ?? '';
-      return cached(`latest:p:${hostid ?? ''}:${groupid ?? ''}:${needle}:${page}:${pageSize}`, 15_000, async () => {
-        const ids = await cached(`latest:ids:${hostid ?? ''}:${groupid ?? ''}:${needle}`, 15_000, async () => {
-          const rows = await zbx<{ itemid: string; name: string }[]>('item.get', {
-            output: ['itemid', 'name'],
+      // A viewer's pages are counted without the interface items, so they cache apart from an operator's.
+      const hide = hidesNetwork(req);
+      return cached(`latest:p:${hostid ?? ''}:${groupid ?? ''}:${needle}:${page}:${pageSize}:${hide ? 'v' : 'o'}`, 15_000, async () => {
+        const all = await cached(`latest:ids:${hostid ?? ''}:${groupid ?? ''}:${needle}`, 15_000, async () => {
+          const rows = await zbx<{ itemid: string; name: string; key_?: string }[]>('item.get', {
+            output: ['itemid', 'name', 'key_'],
             ...filter,
             ...(needle ? { search: { name: needle, key_: needle }, searchByAny: true } : {}),
             monitored: true,
@@ -187,8 +193,9 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
           });
           return rows
             .sort((a, b) => naturalCompare(a.name, b.name) || naturalCompare(a.itemid, b.itemid))
-            .map((r) => r.itemid);
+            .map((r) => ({ id: r.itemid, net: isNetworkKey(r.key_) }));
         });
+        const ids = (hide ? all.filter((r) => !r.net) : all).map((r) => r.id);
         const total = ids.length;
         const slice = ids.slice((page - 1) * pageSize, page * pageSize);
         let items: { itemid: string }[] = [];
@@ -202,13 +209,13 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
           const byId = new Map(details.map((d) => [d.itemid, d]));
           items = slice.map((id) => byId.get(id)).filter((d): d is { itemid: string } => !!d);
         }
-        return { items, truncated: total >= LATEST_ID_LIMIT, total, page, pageSize };
+        return { items, truncated: all.length >= LATEST_ID_LIMIT, total, page, pageSize };
       });
     }
 
     const key = `latest:${hostid ?? ''}:${groupid ?? ''}:${search ?? ''}`;
     return cached(key, 15_000, async () => {
-      const items = await zbx<unknown[]>('item.get', {
+      const items = await zbx<ZItem[]>('item.get', {
         output: LATEST_OUTPUT,
         selectHosts: ['hostid', 'name'],
         ...filter,
@@ -222,6 +229,6 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
       // rather than showing a short list that looks complete: the same
       // contract the report endpoints use.
       return { items, truncated: items.length >= LATEST_LIMIT };
-    });
+    }).then((r) => (hidesNetwork(req) ? { ...r, items: withoutNetworkItems(r.items) } : r)); // after the shared cache
   });
 }

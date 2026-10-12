@@ -3,19 +3,21 @@ openapi: 3.1.0
 # Written 22 September 2026 by reading server/src, not by transcribing setup.md §5: that table
 # drifted twice (DOC-14, DOC-15) precisely because nothing checked it against the code.
 #
-# `server/scripts/openapi.check.ts` now set-compares the `paths:` below against every app.get/app.post
-# registration in server/src and fails if either side gains or loses one. Run it after touching either.
+# `server/scripts/openapi.check.ts` compares every app.get/app.post registration in server/src with the
+# operations below: the path and the method, the path parameters, and the 401, 403 and 400 that each
+# guarded or body-taking operation must document. It fails on any difference. Run it after touching either.
 #
-# The two copies of this file differ in exactly one line: the `servers:` port, 8081 here and 8082 in
-# hcml-portal-ollama. Everything else must stay byte-identical.
+# The two copies of this file differ only in the `servers:` port, 8081 here and 8082 in
+# hcml-portal-ollama, and in this comment, which names both. Everything else must stay byte-identical.
 
 info:
   title: HCML Monitoring Portal (BFF)
   version: 1.0.0
   summary: A read-only backend-for-frontend over the Zabbix 7.0 JSON-RPC API.
   description: |
-    The portal owns **no database**. Every response below is either passed through from Zabbix or
-    derived in-process and cached in a 500-entry LRU that is lost on restart. Sites, links,
+    The portal owns no database. Every response below is either passed through from Zabbix or
+    derived in-process and cached in an LRU of at most 500 entries or about 64 MB, whichever is
+    reached first, that is lost on restart. Sites, links,
     incidents, host reachability and the monthly SLA have no table anywhere.
 
     **One write exists** in the whole surface: `POST /api/problems/acknowledge`. It uses a separate
@@ -23,19 +25,42 @@ info:
 
     ### Authentication
 
-    Two schemes, and both work on every guarded path:
+    One credential, a JWT carrying `{ sub, role, ep }` that lasts 12 hours unless `SESSION_HOURS` sets another
+    length (2 to 24), presented one of two ways.
+    Every guarded path takes either:
 
-    - `Authorization: Bearer <jwt>`, the normal one, from `POST /api/auth/login`. 12-hour expiry.
-    - `?token=<jwt>`: a query-string alternative. It exists because `EventSource` cannot set a
-      header, but `auth.ts:129-132` reads it on **every** `/api/*` request, not only the SSE ones.
-      `logging.ts` redacts it from the request log.
+    - `sessionCookie`, the browser's way. `POST /api/auth/login` and `POST /api/auth/refresh` set it
+      with `Set-Cookie`: `HttpOnly`, `SameSite=Strict`, `Path=/`, a `Max-Age` equal to the session length
+      (43200 at the default 12 hours), and `Secure` when
+      the request arrived over HTTPS. No script on the page can read it, and no response body carries
+      the token. An open portal renews it with `POST /api/auth/refresh` an hour before it runs out;
+      `POST /api/auth/logout` clears it.
+    - `bearerAuth`, `Authorization: Bearer <jwt>`, for scripts and tests. A script takes the token
+      from the login response's `Set-Cookie` header. When a request carries both, the header wins.
 
-    When `AUTH_ENABLED=false` no route is guarded at all and every caller is treated as `admin`.
+    No path takes a token in the query string, `/api/stream` included: `EventSource` sends the cookie
+    like any same-origin request, so a `?token=` gets 401. `logging.ts` and nginx still redact one
+    from their logs, for pages loaded before the cookie change.
+
+    **Forgery check.** A `POST`, `PUT`, `PATCH` or `DELETE` on `/api/*` that authenticates with the
+    cookie, and every call to `POST /api/auth/login` and `POST /api/auth/logout`, must carry the
+    header `X-HCML-CSRF: 1`. When the browser sends an `Origin`, it must name the request's own host
+    and port. Anything else gets `403 csrf` (`CsrfRefused`), before the guard runs and with auth on
+    or off. A request with a Bearer header is not checked, except on sign-in and sign-out, since a browser
+    never adds one by itself.
+    `csrfRefusal` in `auth.ts:117-127`; ADR-0010.
+
+    The guard judges the route the router matched, not the URL text, so a percent-encoded path such
+    as `/%61pi/hosts` is guarded like `/api/hosts`. Only `/api/health`, `/api/auth/login`,
+    `/api/auth/me` and `/api/auth/logout` are outside it, matched exactly.
+
+    When `AUTH_ENABLED=false` no route is guarded at all and every caller is treated as `admin`. The
+    forgery check still applies to sign-in and sign-out.
 
     ### Roles
 
     OpenAPI cannot express a role requirement per path, so each operation states its role in the
-    description. From `ROUTE_RULES` (`server/src/auth.ts:35-40`), first match wins, unmatched is
+    description. From `ROUTE_RULES` (`server/src/auth.ts:39-44`), first match wins, unmatched is
     `viewer`:
 
     | Role | Paths |
@@ -46,15 +71,33 @@ info:
 
     ### Errors
 
-    Every error, at every status, is exactly `{ "error": string, "message": string }`. There is no
-    `statusCode` in the body and no other field.
+    Every error, at every status, is `{ "error": string, "message": string, "requestId": string }`. There
+    is no `statusCode` in the body and no other field. `requestId` is the reply's `X-Request-Id` (see
+    Request ids below), so a person who reads it out lets an admin find the request in the logs.
+
+    ### Request ids
+
+    Every reply, at every status and on the live stream too, carries an `X-Request-Id` header. nginx makes
+    the id for each request (`$request_id`, 32 hex characters), replacing any value the client sent, and
+    the BFF uses it: it is `reqId` on every BFF log line of the request, the header on the reply, and
+    `requestId` in the body of an error. nginx writes it in its own access log as `rid=`. A request that
+    reaches the BFF some other way keeps a sent id only when it is 8 to 64 characters of letters, digits,
+    `.`, `_` and `-`, and gets a new one otherwise.
 
     Two pairs are easy to conflate and are deliberately different:
 
-    - A rejected **portal JWT** is `401 unauthorized`. A rejected **Zabbix API token** is
+    - A rejected portal JWT is `401 unauthorized`. A rejected Zabbix API token is
       `503 zabbix_auth`. Different tokens, different codes.
     - An unreachable or erroring Zabbix is `502 zabbix_error`; a Zabbix that does not answer within
       `ZABBIX_TIMEOUT_MS` is `503 zabbix_timeout`. **Nothing in this server ever returns 504.**
+
+    ### Sign-in off
+
+    With `AUTH_ENABLED=false` (local development only) every caller is admin, so the server answers
+    only to a `Host` header that names this machine: `localhost`, `127.0.0.1`, `::1` or the
+    `WEB_ORIGIN` host, on any port. Any other `Host` gets `421 misdirected_request`, which stops a
+    page on another site that points its own domain at 127.0.0.1 (DNS rebinding). With sign-in on
+    this does nothing, a token is checked instead.
 
     ### Compression
 
@@ -64,10 +107,19 @@ info:
 
     ### Stale answers
 
-    Four key families are served with `staleIfError`: `/api/reports/availability`,
-    `/api/reports/noise`, `/api/reports/capacity` and `/api/sli`. On an upstream failure these return
-    **200 with data of any age** rather than 502/503. A client cannot tell fresh from stale by status
-    code alone.
+    The slow reports are served with `staleIfError`: `/api/reports/availability`,
+    `/api/reports/noise`, `/api/reports/capacity`, and the derived monthly SLA behind `/api/sli`,
+    `/api/sli/export`, `/api/services/derived` and `/api/explain/sla` with `source=derived`. When
+    Zabbix fails they return **200 with an old copy, of any age**, rather than 502/503. The status code
+    does not say so, but two response headers do:
+
+    - `X-Data-Stale: true`
+    - `X-Data-Age-Seconds: <how old the copy is, in seconds>`
+
+    They appear only on an answer that read an old copy kept because Zabbix failed, never on a live
+    answer, a cache hit or an error, and the JSON body is not changed. When one request read several
+    cached reports, the age is that of the oldest. A cached answer that was itself built on a stale
+    report, `/api/services/derived` for its 30 s and `/api/explain/sla`, is not flagged again.
   contact:
     name: HCML Monitoring Portal
     url: https://github.com/Fxkra28/Dashboard-Zabbix-Prototype
@@ -80,13 +132,13 @@ servers:
 
 tags:
   - name: Meta
-    description: Health and authentication. Registered before the auth guard, so never guarded.
+    description: Health, readiness and authentication. Only `/api/ready` is guarded; the others are registered before the guard.
   - name: Hosts
     description: Hosts, groups, items and latest values. `server/src/routes/hosts.ts`
   - name: Problems
     description: Open problems and the live stream.
   - name: History
-    description: Raw history, hourly trends and the downsampled graph series.
+    description: The downsampled graph series, from raw history or hourly trends.
   - name: Network
     description: Devices, interfaces and ports. **operator.** `server/src/routes/net.ts`
   - name: Reports
@@ -103,19 +155,36 @@ tags:
     description: The plain-language layer. On demand only, never called on page load.
 
 security:
+  - sessionCookie: []
   - bearerAuth: []
-  - queryToken: []
 
 paths:
   /api/health:
     get:
-      summary: Liveness and feature flags
+      summary: Liveness, build and readiness
       description: |
-        The only unguarded, un-rate-limited endpoint. Registered at `index.ts:88`, *before* the auth
-        guard and in the rate limiter's allow-list, so it answers even when Zabbix is down: it makes
-        no upstream call at all.
+        Unguarded and not rate limited, like `POST /api/auth/logout`. Registered before the auth guard
+        (`index.ts:76`) and in the rate limiter's allow-list, so it answers even when Zabbix is down.
+        The status stays 200 then too: `ok` means the process answers, and `ready` says whether Zabbix
+        does.
+
+        `ready` comes from one `host.get` (`output: hostid`, `limit: 1`) with the read-only token, given
+        up after 2 s, one at a time, and kept for 15 s. A result 15 to 60 s old is returned at once while
+        a new check runs behind it; an older one makes the caller wait. For a local model the same check
+        reads `GET {AI_BASE_URL}/models` once, with the model key when one is set. The hosted Anthropic model
+        is not probed, and the model never changes `ready.ok`. `apiinfo.version` is not used: Zabbix refuses it
+        when called with a token, and the Zabbix version is not worth publishing here.
 
         `writeBack` tells the UI whether to render the acknowledge and close buttons.
+
+        The route is public, so anyone gets the liveness fields (`ok`, `ts`, `ai`, `aiProvider`,
+        `aiExternal`, `writeBack`, `defaults`) and none of them holds a URL, host name, token or error
+        text. A caller who is signed in, by cookie or Bearer header, also gets `version`, `startedAt`,
+        `build`, `ready` and `streams`: an anonymous caller must not learn the build, when the portal
+        restarted, how many screens are open, or that the Zabbix token was revoked. A bad or missing
+        token is never a 401 here, it just gets the short answer, and the readiness check is only
+        read for a signed-in caller. With sign-in off every caller counts as signed in. The container
+        healthcheck sends no sign-in and reads only the status.
       operationId: getHealth
       tags: [Meta]
       security: []
@@ -126,33 +195,115 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [ok, ts, ai, writeBack, defaults]
+                required: [ok, ts, ai, aiProvider, aiExternal, writeBack, defaults]
                 properties:
                   ok: { type: boolean, const: true }
                   ts: { type: integer, description: Server time, milliseconds since epoch. }
                   ai: { type: boolean, description: Whether the plain-language layer is configured. }
+                  aiProvider:
+                    type: [string, 'null']
+                    description: Which backend answers, `AI_PROVIDER`. The page uses it to name the service in the notice below.
+                  aiExternal:
+                    type: boolean
+                    description: |
+                      Whether a question leaves this machine: true only when the hosted Anthropic backend is configured. The
+                      Assistant and Explain then say so next to every answer; a local model shows nothing.
                   writeBack:
                     type: boolean
-                    description: Whether `ZABBIX_WRITE_TOKEN` is set. False means acknowledge returns 503.
+                    description: Whether write-back is on, which is `ZABBIX_WRITE_TOKEN` set and either sign-in on or `ALLOW_WRITE_WITHOUT_AUTH=true`. False means acknowledge returns 503.
                   defaults:
                     type: object
-                    required: [availabilityMinSeverity]
+                    required: [availabilityMinSeverity, timezone]
                     properties:
                       availabilityMinSeverity: { type: integer, minimum: 0, maximum: 5 }
+                      timezone:
+                        type: string
+                        description: The SLA time zone, `SLA_TIMEZONE`. The web app labels times and cuts its month lists in it.
+                  version: { type: string, description: Signed-in callers only. The server package version. }
+                  startedAt: { type: string, format: date-time, description: Signed-in callers only. When this process started. }
+                  build:
+                    type: object
+                    required: [commit, time]
+                    description: |
+                      Signed-in callers only. The image's `BUILD_COMMIT` and `BUILD_TIME` build arguments (compose's `build.args`).
+                      `unknown` when not given or empty, and cut to 64 characters.
+                    properties:
+                      commit: { type: string }
+                      time: { type: string }
+                  ready:
+                    type: object
+                    description: Signed-in callers only.
+                    required: [ok, zabbix, zabbixMs, model, checkedAt]
+                    properties:
+                      ok: { type: boolean, description: The portal can read Zabbix. The model never changes it. }
+                      zabbix: { type: string, enum: [ok, token_rejected, timeout, error] }
+                      zabbixMs:
+                        type: [integer, 'null']
+                        description: How long the Zabbix call took. Null when it did not answer.
+                      model:
+                        type: string
+                        enum: [ok, down, off, not_checked]
+                        description: '`off` is no model configured, `not_checked` is the hosted Anthropic model, which a probe would bill.'
+                      checkedAt: { type: integer, description: When these answers were read, milliseconds since epoch. }
+                  streams: { type: integer, minimum: 0, description: Signed-in callers only. Screens connected to `/api/stream` right now. }
+
+  /api/ready:
+    get:
+      summary: Whether the portal can read Zabbix, as a status code
+      description: |
+        For a monitor that holds a session cookie or a Bearer token, so it is guarded like any route and
+        needs `viewer`. `GET /api/health` always answers 200 and says inside `ready` whether Zabbix does;
+        this answers `503` while the portal cannot read Zabbix, so a status check is enough.
+
+        It reads the same cached check as `/api/health`: one `host.get` with the read-only token, given up
+        after 2 s, one at a time, kept for 15 s. Asking both, or asking often, costs Zabbix at most one call
+        in 15 s. The model never changes the status: the AI layer is optional, and `model` only reports it.
+
+        The body is the same at both statuses: the check's own fields, as `ready` carries them in
+        `/api/health`, and the version, start time, build and screens a signed-in `/api/health` carries.
+        It holds no address, token or error text. The status says whether to worry, `zabbix` says why.
+      operationId: getReady
+      tags: [Meta]
+      responses:
+        '200':
+          description: Zabbix answered the read-only token's call.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ready' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503':
+          description: The portal cannot read Zabbix. `zabbix` says why (`token_rejected`, `timeout` or `error`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ready' }
 
   /api/auth/login:
     post:
-      summary: Exchange credentials for a 12-hour JWT
+      summary: Exchange credentials for a session cookie
       description: |
-        Registered before the guard, so it is reachable unauthenticated. Rate-limited like everything
-        else, deliberately, since it is otherwise an unthrottled password oracle.
+        Registered before the guard, so it is reachable unauthenticated. Rate-limited twice,
+        deliberately, since it is otherwise an unthrottled password oracle: the global limit, and 10
+        attempts a minute per account and address of its own (`LOGIN_ATTEMPTS_PER_MINUTE` in `auth.ts`).
+        After 10 failures in a row for one account from one address, sign-in is locked for a minute,
+        doubling with each further failure up to 5 minutes; a success clears it. Both answer 429 with
+        `Retry-After`.
 
         Credentials come from `PORTAL_USERS` (comma-separated `name:password:role` triples) or from
-        `PORTAL_USER`/`PORTAL_PASS` as a single-admin shorthand. **Passwords are compared in plain
-        text** (open audit item BE-13).
+        `PORTAL_USER`/`PORTAL_PASS` as a single-admin shorthand. A password is plain text or an scrypt
+        hash (`scrypt.N.r.p.salt.hash`, made by `server/scripts/hash-password.ts`), and either is compared
+        in constant time. A plain one is still plain text in the environment (open audit item BE-16).
+
+        The token goes into the session cookie, never the body. Needs `X-HCML-CSRF: 1`, with or
+        without a cookie, and with auth off too: a refused sign-in gets 403 and sets no cookie.
+
+        The body must be a JSON object with a text `username` and a text `password`. One that is not,
+        for example a missing field or a number, is a 400 `bad_request`, not a 401, and does not count
+        as a failed sign-in. Empty text is still a wrong password: 401. Other fields are ignored.
       operationId: login
       tags: [Meta]
       security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -165,30 +316,36 @@ paths:
                 password: { type: string }
       responses:
         '200':
-          description: Signed in.
+          description: Signed in. The session cookie is set.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetSessionCookie' }
           content:
             application/json:
-              schema:
-                type: object
-                required: [token, user]
-                properties:
-                  token: { type: string, description: 'JWT, `{ sub, role }`, 12-hour expiry.' }
-                  user: { $ref: '#/components/schemas/User' }
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401':
-          description: '`invalid_credentials`, no matching user, or a non-string field.'
+          description: '`invalid_credentials`, no user has that name and password.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '403': { $ref: '#/components/responses/CsrfRefused' }
+        '413':
+          description: '`fst_err_ctp_body_too_large`: a sign-in body over 4 KB (`LOGIN_BODY_LIMIT` in `auth.ts`).'
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/Internal' }
 
   /api/auth/me:
     get:
-      summary: Who the current token says you are
+      summary: Who the current session says you are, and how long it has left
       description: |
-        Self-verifying: registered before the guard and calls `jwtVerify()` itself. Drives the
-        sidebar's role filter, which is cosmetic: the BFF enforces with a 403 regardless.
+        Self-verifying: registered before the guard and calls `jwtVerify()` itself, on the cookie or
+        a Bearer header. Drives the sidebar's role filter, which is cosmetic: the BFF enforces with a
+        403 regardless. `pages` gives the role each menu page needs, worked out from the guard's own
+        rules (`pageAccess.ts`), so the sidebar keeps no second copy of them. `expiresIn` is relative,
+        so the page times its renewal without trusting its own clock.
 
         When `AUTH_ENABLED=false` this returns `{ authEnabled: false, user: { name: "anonymous",
-        role: "admin" } }`. `user` is **never** null, despite `web/src/types.ts:194` allowing it.
+        role: "admin" }, expiresIn: null, pages }`. `user` is **never** null, despite `web/src/types.ts`
+        allowing it.
       operationId: getMe
       tags: [Meta]
       responses:
@@ -198,19 +355,106 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [authEnabled, user]
+                required: [authEnabled, user, expiresIn, pages]
                 properties:
                   authEnabled: { type: boolean }
                   user: { $ref: '#/components/schemas/User' }
+                  expiresIn:
+                    type: [integer, 'null']
+                    minimum: 0
+                    description: Seconds until the session ends. Null with auth off.
+                  pages:
+                    type: object
+                    description: The minimum role for each menu page, by path, such as `/network`.
+                    additionalProperties: { type: string, enum: [viewer, operator, admin] }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/auth/refresh:
+    post:
+      summary: Swap a valid session for a fresh one
+      description: |
+        Keeps an open portal signed in, for every user, for as long as the page stays open
+        (DESIGN.md section 9, "Wall sign-in"; ADR-0009). The web app calls it an hour before the
+        session ends, timed from the `expiresIn` of the last sign-in, renewal or `GET /api/auth/me`.
+        A closed tab renews nothing.
+
+        Behind the guard, so it takes the cookie or a Bearer header; a `?token=` is refused like on
+        every route. A cookie renewal is a cookie POST and needs `X-HCML-CSRF: 1`; a Bearer renewal
+        does not. The user is looked up again in the current user list: one removed from
+        `PORTAL_USERS`, or a name listed there twice, gets 401 and no cookie, and the new token carries
+        the role configured now, not the one in the old token. It takes no body: none, or a JSON
+        object that is ignored. Any other JSON body is a 400. Registered only when
+        `AUTH_ENABLED=true`; otherwise 404.
+      operationId: refreshToken
+      tags: [Meta]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: false
+        description: Ignored. Nothing, or a JSON object.
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: Renewed. The session cookie is set again with a fresh token.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetSessionCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CsrfRefused' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/auth/logout:
+    post:
+      summary: Sign out by clearing the session cookie
+      description: |
+        Public, so a missing or expired cookie can still be cleared: answers 200 with or without one,
+        and with auth off. The `Set-Cookie` header empties the cookie with the attributes it was set
+        with. It clears the cookie in this browser only: the BFF keeps no list to cancel tokens on, so a
+        copied token keeps working until it expires, up to `SESSION_HOURS` (12 by default). Taking the user
+        out of `PORTAL_USERS` and restarting the BFF ends their access at once; a new `JWT_SECRET`, or a
+        higher `SESSION_EPOCH` and a restart, ends every session at once (SC-14). A live stream opened before then is ended when its token expires, and the browser reconnects (SC-15). Needs `X-HCML-CSRF: 1` like any POST that touches the cookie. It takes no body: none, or a JSON object that is ignored. Any other JSON body is a 400.
+      operationId: logout
+      tags: [Meta]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: false
+        description: Ignored. Nothing, or a JSON object.
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: Signed out. The session cookie is cleared.
+          headers:
+            Set-Cookie:
+              description: |
+                The session cookie, emptied: `Max-Age=0` and an `Expires` in 1970, with the same
+                `Path`, `HttpOnly`, `SameSite` and `Secure` it was set with.
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, const: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/CsrfRefused' }
 
   /api/hosts:
     get:
       summary: Every monitored host, with its resolved site
       description: |
         Cached 30 s. `site` is derived by `naming.ts` from four ranked signals: tag, host name,
-        inventory, group, because **no HCML host carries a site tag**. It is null when none match.
+        inventory, group, because no HCML host carries a site tag. It is null when none match.
       operationId: getHosts
       tags: [Hosts]
       responses:
@@ -289,7 +533,7 @@ paths:
     get:
       summary: Items for a host, or by explicit ids
       description: |
-        Cached 30 s. `hostid` is required **unless** `itemids` is given.
+        Cached 30 s. `hostid` is required unless `itemids` is given.
 
         `search` is passed to Zabbix with `startSearch: true` deliberately: without it Zabbix runs
         `LIKE '%…%'` and scans all 51,845 items at about 105 ms per call.
@@ -302,7 +546,7 @@ paths:
           schema: { type: string, pattern: '^\d+$' }
         - name: itemids
           in: query
-          description: Comma-separated numeric ids, de-duplicated. **At most 50** or 400.
+          description: Comma-separated numeric ids, de-duplicated. At most 50 or 400.
           schema: { type: string }
         - name: search
           in: query
@@ -330,7 +574,7 @@ paths:
         Cached 15 s. **The presence of `page` switches mode**, and the two modes differ in more than
         pagination: paged mode searches `name` OR `key_`, un-paged searches `name` only.
 
-        With neither `hostid` nor `groupid` this returns an empty result with **200**, not 400.
+        With neither `hostid` nor `groupid` this returns an empty result with 200, not 400.
       operationId: getLatest
       tags: [Hosts]
       parameters:
@@ -375,8 +619,14 @@ paths:
     get:
       summary: Open problems
       description: |
-        Cached 5 s, and **never served stale**: an operator who has just acknowledged must not be
+        Cached 5 s, and never served stale: an operator who has just acknowledged must not be
         shown the previous list. About 664 problems at HCML, 459 kB compressing to 25 kB.
+
+        The list also carries problems Zabbix resolved moments ago (`r_eventid` other than `0`),
+        which the Problems page marks Resolved, and problems raised inside a planned maintenance
+        window (`suppressed` = `1`), marked In maintenance. The Dashboard and every server-side
+        count (`/api/stats`, sites, the hosts overview, maps, aging, the services tree, the
+        Assistant's snapshot) leave both out, as Zabbix's own dashboard does.
       operationId: getProblems
       tags: [Problems]
       responses:
@@ -393,110 +643,48 @@ paths:
     get:
       summary: Live problem stream (SSE)
       description: |
-        `text/event-stream`. **Exempt from the rate limit.** One shared 5 s ticker serves every
-        client; a frame is sent only when the fingerprint over
-        `eventid:severity:acknowledged:suppressed:r_eventid` changes, or after 30 s of quiet. A new
-        client receives the current frame immediately, and an acknowledge force-pushes one.
+        `text/event-stream`. **Exempt from the rate limit, but capped:** at most `STREAM_MAX_CLIENTS`
+        (default 100) screens in all and `STREAM_MAX_PER_USER` (default 5) for one signed-in user, or for
+        one client address with auth off. A screen past either limit gets `429 too_many_streams` with
+        `Retry-After: 30`, before any stream header. The browser's `EventSource` cannot read that body,
+        so it falls back to polling and retries.
+
+        One shared 5 s ticker serves every client. A frame is sent at once when the fingerprint over
+        `eventid:severity:acknowledged:suppressed:r_eventid` changes. A list identical to the last one
+        sent is never sent again, and one where only a name or host changed goes after at most 30 s. A change in tags alone is not in the frame. A
+        new client receives the current frame immediately, and an acknowledge force-pushes one.
 
         Three frame kinds:
 
         | Frame | Payload |
         |---|---|
-        | `event: problems` | the same array as `GET /api/problems` |
+        | `event: problems` | the problems of `GET /api/problems`, cut to the fields the Dashboard reads: `eventid`, `objectid`, `object`, `name`, `severity`, `clock`, `r_eventid`, `acknowledged`, `suppressed`, `host` and `hostid`. No tags, `opdata`, `r_clock`, `manualClose` or other field Zabbix returns (about half the size of the full list) |
         | `event: error` | `{ "message": string }` |
-        | `: keep-alive` | an SSE comment every 15 s, not an event |
+        | `event: ping` | after 15 s with nothing else sent, so a client can tell a quiet line from a dead one: `{ "ageMs": n }`, the age of the last good read of the list, when known, and `{}` otherwise |
+
+        The stream ends when the session token it was opened with expires, so the browser reconnects
+        with the renewed cookie or is sent to sign in, and when the BFF shuts down on `SIGTERM`.
 
         No `id:` field is emitted, so `Last-Event-ID` resumption is not supported. Browsers cannot
-        set headers on `EventSource`, so authenticate with `?token=`.
+        set headers on `EventSource`, but it sends the session cookie on a same-origin request like
+        any other, so the stream authenticates by cookie. A `?token=` is refused with 401 here as on
+        every route.
       operationId: streamProblems
       tags: [Problems]
       responses:
         '200':
-          description: The stream opens and stays open.
+          description: The stream opens and stays open until its token expires.
           content:
             text/event-stream:
               schema: { type: string }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /api/history:
-    get:
-      summary: Raw history rows for one item
-      description: |
-        Cached 15 s. The window ends at the item's newest stored clock, not at wall clock, so a stalled
-        item still returns its last real data rather than an empty range.
-
-        **No row limit is applied.** At `hours=168` on a 60 s item that is 10,080 rows.
-      operationId: getHistory
-      tags: [History]
-      parameters:
-        - name: itemid
-          in: query
-          required: true
-          schema: { type: string, pattern: '^\d+$' }
-        - name: hours
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 168, default: 1 }
-        - name: history
-          in: query
-          description: Zabbix `value_type`, 0 float, 1 char, 2 log, 3 unsigned, 4 text.
-          schema: { type: integer, minimum: 0, maximum: 4, default: 0 }
-      responses:
-        '200':
-          description: Rows as Zabbix returns them.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    itemid: { type: string }
-                    clock: { type: string }
-                    value: { type: string }
-                  additionalProperties: true
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '502': { $ref: '#/components/responses/ZabbixError' }
-        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
-
-  /api/trend:
-    get:
-      summary: Hourly trend rows for one item
-      description: |
-        Cached 60 s. Trends are Zabbix's hourly min/avg/max aggregate and reach back about 2.2 years
-        in this dataset, against 30–90 days for raw history.
-      operationId: getTrend
-      tags: [History]
-      parameters:
-        - name: itemid
-          in: query
-          required: true
-          schema: { type: string, pattern: '^\d+$' }
-        - name: hours
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 8760, default: 168 }
-      responses:
-        '200':
-          description: Hourly aggregates.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    itemid: { type: string }
-                    clock: { type: string }
-                    num: { type: string }
-                    value_min: { type: string }
-                    value_avg: { type: string }
-                    value_max: { type: string }
-                  additionalProperties: true
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '502': { $ref: '#/components/responses/ZabbixError' }
-        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+        '429':
+          description: '`too_many_streams`, the portal or this account is at its screen limit.'
+          headers:
+            Retry-After:
+              description: Always `30`.
+              schema: { type: string }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   /api/graph:
     get:
@@ -516,7 +704,7 @@ paths:
         - name: itemids
           in: query
           required: true
-          description: Comma-separated. **At most 4** or 400.
+          description: Comma-separated. At most 4 or 400.
           schema: { type: string }
         - name: month
           in: query
@@ -548,6 +736,9 @@ paths:
             Bad range, more than 4 items, unknown itemids, or a non-numeric item.
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: '`forbidden`, a viewer asked for a network interface item (key starting `net.if`). Operators and admins may read them.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
 
@@ -563,29 +754,6 @@ paths:
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/NetDevice' } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '502': { $ref: '#/components/responses/ZabbixError' }
-        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
-
-  /api/net/ports:
-    get:
-      summary: Port items for one device
-      description: '**operator.** Cached 15 s. About 1,100 rows on HCML''s core switch.'
-      operationId: getNetPorts
-      tags: [Network]
-      parameters:
-        - name: hostid
-          in: query
-          required: true
-          schema: { type: string, pattern: '^\d+$' }
-      responses:
-        '200':
-          description: Raw `item.get` rows.
-          content:
-            application/json:
-              schema: { type: array, items: { type: object, additionalProperties: true } }
-        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '502': { $ref: '#/components/responses/ZabbixError' }
@@ -650,52 +818,6 @@ paths:
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
 
-  /api/net/status:
-    get:
-      summary: Interface status items for one device
-      description: '**operator.** Cached 15 s. Not called by the web app today.'
-      operationId: getNetStatus
-      tags: [Network]
-      parameters:
-        - name: hostid
-          in: query
-          required: true
-          schema: { type: string, pattern: '^\d+$' }
-      responses:
-        '200':
-          description: Raw `item.get` rows.
-          content:
-            application/json:
-              schema: { type: array, items: { type: object, additionalProperties: true } }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '502': { $ref: '#/components/responses/ZabbixError' }
-        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
-
-  /api/net/map:
-    get:
-      summary: One Zabbix map, for the network view
-      description: '**operator. Not cached.** Not called by the web app today.'
-      operationId: getNetMap
-      tags: [Network]
-      parameters:
-        - name: mapid
-          in: query
-          required: true
-          schema: { type: string, pattern: '^\d+$' }
-      responses:
-        '200':
-          description: Raw `map.get` result.
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '502': { $ref: '#/components/responses/ZabbixError' }
-        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
-
   /api/reports/top-triggers:
     get:
       summary: The triggers that fired most often
@@ -737,7 +859,10 @@ paths:
   /api/stats:
     get:
       summary: Estate counts for the dashboard tiles
-      description: Cached 30 s. Four count-only Zabbix calls in parallel plus the shared problem list.
+      description: |
+        Cached 30 s. Four count-only Zabbix calls in parallel plus the shared problem list. `hosts`
+        counts enabled (monitored) hosts only, as the Dashboard's card says, and `items` counts
+        monitored items.
       operationId: getStats
       tags: [Reports]
       responses:
@@ -756,6 +881,40 @@ paths:
                   problems: { type: integer }
                   unacknowledged: { type: integer }
                   bySeverity: { type: object, additionalProperties: { type: integer } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/freshness:
+    get:
+      summary: When Zabbix last collected a value
+      description: |
+        Whether Zabbix is still collecting, for the Dashboard. A stopped `zabbix-server` leaves every
+        API call working and every value in place, so the newest `lastclock` of any supported ICMP item
+        is the only sign. It is rolled up from the same `item.get` the host states read, so asking for
+        both costs Zabbix one call.
+
+        The newest clock is cached 30 s; `ageSeconds` is worked out at each request. `stale` is true
+        once nothing has been collected for `staleAfterSeconds`, ten minutes (the floor `isFresh` allows
+        before it stops believing a ping), and is never true while the age is unknown, which happens
+        when no ICMP item exists. A Zabbix failure is an error, not an invented age.
+      operationId: getFreshness
+      tags: [Reports]
+      responses:
+        '200':
+          description: The data clock.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lastCollectedAt, ageSeconds, stale, staleAfterSeconds]
+                properties:
+                  lastCollectedAt:
+                    type: [integer, 'null']
+                    description: When Zabbix last collected a value, Unix seconds. Null when there is no ICMP item to tell.
+                  ageSeconds: { type: [integer, 'null'], minimum: 0 }
+                  stale: { type: boolean }
+                  staleAfterSeconds: { type: integer, const: 600 }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
@@ -789,7 +948,8 @@ paths:
     get:
       summary: Per-host availability over a window
       description: |
-        Cached 120 s **with `staleIfError`**: an upstream failure returns 200 with old data.
+        Cached 120 s with `staleIfError`: an upstream failure returns 200 with an old copy, marked
+        by `X-Data-Stale` and `X-Data-Age-Seconds` (see Stale answers above).
 
         **Two bases with materially different responses.** With `basis=availability` (the default)
         the derived SLI engine runs and `overall`, `categories`, `sites`, `target`, `profile` and
@@ -798,6 +958,13 @@ paths:
 
         `month` takes precedence over `days`. A month that has not started is 400, and so is one
         more than 400 days ago, Zabbix keeps events about a year.
+
+        `basis=all-problems` counts a problem that began before the window and was still open when it
+        started from the window's first second, as the SLA engine does. Problems still open now are found
+        at any age, and so is one that began more than 31 days before the window and ended inside it: it is
+        found from its recovery event (BK-04). One that began more than 31 days before the window and
+        ended after it is missed. At most 200 such older outages are looked up one by one; past that,
+        `truncated` is true and the figures are a floor.
       operationId: getAvailabilityReport
       tags: [Reports]
       parameters:
@@ -834,9 +1001,16 @@ paths:
     get:
       summary: Flapping, chronic and unactioned triggers
       description: |
-        Cached 120 s with `staleIfError`. Note `severity` defaults to **0** here, not 2 as on the
+        Cached 120 s with `staleIfError`. Note `severity` defaults to 0 here, not 2 as on the
         availability report. `top` cuts the returned list only: every aggregate above it covers all
         triggers, and `total` says how many there were.
+
+        A problem that began before the window and was still open when it started is counted from the
+        window's first second, with its real start kept for its age, so a problem open for weeks can be
+        flagged chronic. The lookback is the same as for the availability report: still-open problems at
+        any age, resolved ones within 31 days before the window, and older ones that ended inside the window,
+        found from their recovery event (BK-04). `truncated` is true when more than 200 of those older outages
+        needed a lookup: the rest are left out and the figures are a floor.
       operationId: getNoiseReport
       tags: [Reports]
       parameters:
@@ -882,7 +1056,8 @@ paths:
     get:
       summary: Average and peak utilisation per item
       description: |
-        Cached 300 s with `staleIfError`. **The heaviest endpoint in the portal.** At `days=365` it
+        Cached 300 s with `staleIfError`, marked by `X-Data-Stale` when an old copy is served. **The
+        heaviest endpoint in the portal.** At `days=365` it
         issues roughly 112 Zabbix calls, because `trend.get` is sliced to keep Zabbix's PHP within
         its memory limit, and each call costs about 20 SQL statements upstream, 10,771 in total,
         measured 22 Sep.
@@ -957,7 +1132,7 @@ paths:
     get:
       summary: Hosts grouped into sites
       description: |
-        Cached 15 s. **Zabbix has no site entity.** `naming.ts` resolves one from four ranked
+        Cached 15 s. Zabbix has no site entity. `naming.ts` resolves one from four ranked
         signals, tag, host name, inventory, group, and `coverage` reports how many hosts each
         signal accounted for, which is the metric for the standardisation goal.
       operationId: getSites
@@ -999,7 +1174,8 @@ paths:
       description: |
         Cached 30 s. Deliberately emits the same shape as `/api/services` plus extra fields, so one
         component renders either. Builds root → business services → sites → device class → hosts,
-        each node carrying the derived monthly SLA for its subtree.
+        each node carrying the derived monthly SLA for its subtree. The monthly report under it can be
+        an old copy when Zabbix fails, in which case the answer carries `X-Data-Stale`.
       operationId: getDerivedServices
       tags: [Services]
       parameters:
@@ -1066,25 +1242,26 @@ paths:
       description: |
         Cached 60 s.
 
-        **Inconsistency worth knowing:** neither parameter is validated here. Omitting `slaid`
-        returns `[]` with **200**, whereas `/api/explain/sla` rejects the same omission with 400.
-        This is the only id-taking route in the BFF without numeric validation.
+        Both ids are checked before the cache key is built, so a junk value is a 400 and never a Zabbix
+        error. **Inconsistency:** omitting `slaid` still returns `[]` with 200, whereas
+        `/api/explain/sla` rejects the same omission with 400.
       operationId: getSlaSli
       tags: [SLA]
       parameters:
         - name: slaid
           in: query
-          description: Not validated. Missing gives an empty array and 200.
-          schema: { type: string }
+          description: A numeric id. Missing gives an empty array and 200.
+          schema: { type: string, pattern: '^\d+$' }
         - name: serviceid
           in: query
-          schema: { type: string }
+          schema: { type: string, pattern: '^\d+$' }
       responses:
         '200':
           description: One entry per service.
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/SlaSli' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
@@ -1093,9 +1270,11 @@ paths:
     get:
       summary: The portal's derived monthly SLA
       description: |
-        Cached **24 h for a closed month, 5 min for the current one**, both with `staleIfError`. The
+        Cached 24 h for a closed month, 5 min for the current one, both with `staleIfError`: when
+        Zabbix fails the old report is served with `X-Data-Stale: true` and `X-Data-Age-Seconds`. The
         cache key carries the closed flag, so a figure computed mid-month is never kept as that
-        month's final answer.
+        month's final answer, and a closed month is pinned, so a flood of graph keys cannot push it out
+        of the cache.
 
         Two profiles. `hcml-report` reproduces HCML's own published Availability Report and is
         validated against it to the digit, 99.3796 % for June 2026, 99.7167 % July, 99.2313 %
@@ -1118,6 +1297,67 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SliReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/sli/export:
+    get:
+      summary: The monthly SLA report as a PDF or Excel download
+      description: |
+        **viewer.** The figures `/api/sli` shows for one month, both methods side by side, as one
+        file. `format=pdf` is the printable report; `format=xlsx` is the workbook, a Summary sheet and
+        one sheet per table. The file states when it was generated and, for the current month, that its
+        figures are not final.
+
+        It reads the same cached reports as `/api/sli`, so a month the page has already loaded costs
+        no further Zabbix call, and it inherits that route's `staleIfError`: while Zabbix is failing it
+        can answer 200 with a file built from older figures, not 502, and says so with
+        `X-Data-Stale` and `X-Data-Age-Seconds`. Nothing is kept for long: a
+        built file is reused for ten seconds, then built again from the cached figures.
+
+        `format` is checked before Zabbix is asked, so a bad request costs nothing. `month` and
+        `format` are the only parameters: any other is a 400, so a misspelt `month` is never read as
+        the current month. `month` is
+        validated as on `/api/sli`, and a month that has not started, or is more than about 400 days
+        back, is a 400. The file name is made from the validated month alone, `HCML_SLA_Report_<month>.<format>`,
+        never from other request text.
+
+        The body is not JSON, so it is never compressed whatever `Accept-Encoding` says, and
+        `Cache-Control: private, no-store` keeps a shared cache from holding on to it.
+      operationId: exportSli
+      tags: [SLA]
+      parameters:
+        - name: month
+          in: query
+          description: Defaults to the current month in `Asia/Jakarta`. An empty value means the default.
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+        - name: format
+          in: query
+          required: true
+          description: Exactly `pdf` or `xlsx`, in lower case. Missing, anything else, or given twice is a 400.
+          schema: { type: string, enum: [pdf, xlsx] }
+      responses:
+        '200':
+          description: The report, as an attachment.
+          headers:
+            Content-Disposition:
+              description: |
+                `attachment; filename="HCML_SLA_Report_2026-08.pdf"; filename*=UTF-8''HCML_SLA_Report_2026-08.pdf`.
+                Only letters, digits, underscore, hyphen and the dot of the extension can appear in it.
+              schema: { type: string }
+            Content-Length:
+              description: The size of the file in bytes.
+              schema: { type: integer }
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
@@ -1181,7 +1421,7 @@ paths:
     get:
       summary: Plain-language explanation of one problem
       description: |
-        Cached **1 h**, keyed by the event id together with its acknowledged and resolved state, so
+        Cached 1 h, keyed by the event id together with its acknowledged and resolved state, so
         an explanation is not reused after the problem changes.
 
         Buffered JSON, not streamed. This path sends the host name, trigger name, opdata, severity,
@@ -1202,6 +1442,11 @@ paths:
               schema: { $ref: '#/components/schemas/ProblemExplanation' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429':
+          description: |
+            `rate_limited`, more calls than the per-user limit a minute (`AI_CHAT_PER_MINUTE` and `AI_EXPLAIN_PER_MINUTE`, 10 each by default), or `ai_budget`, the daily token budget is used
+            up (hosted model only; `AI_DAILY_TOKENS_PER_USER` and `AI_DAILY_TOKENS_TOTAL`). `Retry-After` says how long to wait.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '404':
           description: '`not_found`, no open problem with that event id.'
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
@@ -1218,7 +1463,7 @@ paths:
         `profile` and `scope`, where scope is `overall`, `site:<code>` or `category:<NAME>`; an
         unmatched scope is 404. Otherwise it explains a Zabbix-native SLA and requires `slaid`.
 
-        `noData: true` marks an answer produced **without calling the model** because there was
+        `noData: true` marks an answer produced without calling the model because there was
         nothing to measure.
       operationId: explainSla
       tags: [AI]
@@ -1251,6 +1496,11 @@ paths:
               schema: { $ref: '#/components/schemas/SlaAnswer' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429':
+          description: |
+            `rate_limited`, more calls than the per-user limit a minute (`AI_CHAT_PER_MINUTE` and `AI_EXPLAIN_PER_MINUTE`, 10 each by default), or `ai_budget`, the daily token budget is used
+            up (hosted model only; `AI_DAILY_TOKENS_PER_USER` and `AI_DAILY_TOKENS_TOTAL`). `Retry-After` says how long to wait.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '404':
           description: '`not_found`, unknown scope, or unknown `slaid`.'
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
@@ -1261,7 +1511,7 @@ paths:
     get:
       summary: Ask the model backend to load
       description: |
-        Fire and forget. Returns **202** immediately and does the work detached: the only 202 in
+        Fire and forget. Returns 202 immediately and does the work detached: the only 202 in
         the API.
 
         On the hosted provider this is a no-op, so the warm-up costs nothing; on a local model it
@@ -1288,7 +1538,7 @@ paths:
     post:
       summary: Ask the assistant (SSE)
       description: |
-        `text/event-stream`, streamed token by token, **never cached**.
+        `text/event-stream`, streamed token by token, never cached.
 
         The request body is normalised rather than strictly validated: blank turns are dropped, each
         turn is silently truncated at 2,000 characters, and the oldest turns are dropped until the
@@ -1302,13 +1552,20 @@ paths:
         |---|---|
         | `context` | the estate snapshot's metadata, counts and a `truncated` flag |
         | `token` | `{ "t": string }`, concatenate in order |
-        | `done` | `{ ms, text, firstTokenMs }`, `text` is the cleaned answer and **replaces** the concatenated tokens |
+        | `done` | `{ ms, text, firstTokenMs }`, `text` is the cleaned answer and replaces the concatenated tokens |
         | `error` | `{ "message": string }` |
 
         Once the response is hijacked the HTTP status can no longer change, so failures after that
-        point arrive as an `error` frame on a 200.
+        point arrive as an `error` frame on a 200. Its message is fixed wording, as on `AiError`.
+
+        The snapshot and the focused-site block are sent between `~~~ BEGIN` and `~~~ END` lines and
+        the system prompt says they are data. Host, site, problem and service names in them are cut to
+        one line, with control characters removed, and capped at 80 characters (hosts and sites) or 200
+        (problems, services and SLAs), so text typed into a device cannot pose as an instruction.
       operationId: chat
       tags: [AI]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -1334,8 +1591,13 @@ paths:
               schema: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CsrfRefused' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
-        '429': { $ref: '#/components/responses/RateLimited' }
+        '429':
+          description: |
+            `rate_limited`, more calls than the per-user limit a minute (`AI_CHAT_PER_MINUTE` and `AI_EXPLAIN_PER_MINUTE`, 10 each by default), or `ai_budget`, the daily token budget is used
+            up (hosted model only; `AI_DAILY_TOKENS_PER_USER` and `AI_DAILY_TOKENS_TOTAL`). `Retry-After` says how long to wait.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '503':
           description: '`ai_disabled`.'
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
@@ -1346,8 +1608,9 @@ paths:
       description: |
         **operator. The only write in the entire portal.**
 
-        Three independent gates: a separate `ZABBIX_WRITE_TOKEN` (the read token can never write),
-        the operator role, and a 503 when the write token is unset. `GET /api/health` exposes
+        Four independent gates: a separate `ZABBIX_WRITE_TOKEN` (the read token can never write),
+        the operator role, a 503 when the write token is unset, and a 503 when sign-in is off, unless
+        the dev opt-in `ALLOW_WRITE_WITHOUT_AUTH=true` is set (with sign-in off every caller is admin). `GET /api/health` exposes
         `writeBack` so the UI can hide the buttons rather than offer a call that will fail.
 
         Closing additionally requires the trigger to permit manual close; `GET /api/problems` carries
@@ -1356,9 +1619,18 @@ paths:
         After a successful write nine cache prefixes are invalidated with a 15 s hold, and the change
         is pushed immediately to every open SSE client.
 
-        `message` is silently truncated at 2,048 characters. `acknowledge` defaults to **true**.
+        Zabbix files every write under the write token's owner, so the portal user is put into the text:
+        the message Zabbix gets always starts with `[portal:<user>]`, also when the caller sent none.
+        Every attempt, refusal and failure is logged with the user, the address, the event ids and the
+        action. One request may name at most 50 event ids.
+
+        `message` is silently truncated at 2,048 characters, tag included. `acknowledge` defaults to true. Types
+        are checked, not coerced: a body that is not a JSON object, a `message` that is not text, or an
+        `acknowledge` or `close` that is not a boolean, such as the text `"false"`, is a 400.
       operationId: acknowledgeProblems
       tags: [Problems]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -1372,6 +1644,7 @@ paths:
                   oneOf:
                     - type: string
                     - type: array
+                      maxItems: 50
                       items: { type: string, pattern: '^\d+$' }
                 message: { type: string, maxLength: 2048 }
                 close: { type: boolean, default: false }
@@ -1390,35 +1663,68 @@ paths:
                   action: { type: integer }
         '400':
           description: |
-            No usable event ids, a non-numeric id, or nothing to do: `acknowledge: false` with no
-            `close` and no `message`.
+            No usable event ids, more than 50 of them, a non-numeric id, a body or field of the wrong type, or nothing to do:
+            `acknowledge: false` with no `close` and no `message`.
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: |
+            `forbidden`, the role is below operator, or `csrf`, a cookie request without
+            `X-HCML-CSRF: 1` or from another site (`CsrfRefused`).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503':
-          description: '`zabbix_write_disabled`, `ZABBIX_WRITE_TOKEN` is not set.'
+          description: '`zabbix_write_disabled`, `ZABBIX_WRITE_TOKEN` is not set, or sign-in is off and `ALLOW_WRITE_WITHOUT_AUTH` is not true.'
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
 components:
   securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: hcml_session
+      description: |
+        The browser's scheme. The JWT in an httpOnly, SameSite=Strict cookie, set by
+        `POST /api/auth/login` and `POST /api/auth/refresh` and cleared by `POST /api/auth/logout`.
+        Expires after `SESSION_HOURS` (12 hours by default), renewable while valid, carries
+        `{ sub, role, ep }`. The name is `SESSION_COOKIE`,
+        default `hcml_session`. Cookies ignore ports, so the Docker stack of hcml-portal-ollama
+        (port 8082) names it `hcml_session_ollama`, or signing in to one portal would replace the
+        other's session. Unsafe methods sent with this cookie need `X-HCML-CSRF: 1` (`CsrfHeader`).
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: The normal scheme. 12-hour expiry, carries `{ sub, role }`.
-    queryToken:
-      type: apiKey
-      in: query
-      name: token
       description: |
-        The same JWT in the query string. Required for `EventSource`, which cannot set headers, but
-        accepted on **every** guarded path. Kept out of the request log by `logging.ts`.
+        The same JWT in an `Authorization` header, for scripts and tests: take it from the login
+        response's `Set-Cookie` header. Wins when a request carries the cookie too. Needs no
+        `X-HCML-CSRF` header, except on sign-in and sign-out, which always need it.
+
+  parameters:
+    CsrfHeader:
+      name: X-HCML-CSRF
+      in: header
+      required: false
+      description: |
+        Must be `1` on sign-in, sign-out and every `POST`, `PUT`, `PATCH` or `DELETE` that
+        authenticates with the session cookie. A page on another site cannot add a custom header
+        without a CORS preflight, which the BFF answers only for `WEB_ORIGIN`. Not needed with a
+        Bearer header, except on sign-in and sign-out.
+      schema: { type: string, const: '1' }
+
+  headers:
+    SetSessionCookie:
+      description: |
+        The session cookie, `hcml_session=<jwt>` with a `Max-Age` of the session length (43200 at the default
+        12 hours), `Path=/`, `HttpOnly` and
+        `SameSite=Strict`, plus `Secure` when the request arrived over HTTPS (`X-Forwarded-Proto: https`
+        behind a proxy trusted by `TRUST_PROXY`). The name follows `SESSION_COOKIE`.
+      schema: { type: string }
 
   responses:
     BadRequest:
-      description: '`bad_request`, a parameter failed validation.'
+      description: '`bad_request`, a query parameter or the request body failed validation.'
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Unauthorized:
       description: '`unauthorized`, missing or expired portal JWT. Not the same as `zabbix_auth`.'
@@ -1426,11 +1732,20 @@ components:
     Forbidden:
       description: '`forbidden`, authenticated, but the role is below what this path requires.'
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    CsrfRefused:
+      description: |
+        `csrf`, a possible cross-site forgery: an unsafe request sent with the session cookie, or a
+        sign-in or sign-out, without `X-HCML-CSRF: 1`, or with an `Origin` naming another site or
+        `null`. Answered before the guard, so it comes before any 401.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     PayloadTooLarge:
-      description: Body over Fastify's 1 MiB default.
+      description: Body over Fastify's 1 MiB default, or over 4 KB on `POST /api/auth/login`.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     RateLimited:
-      description: 300 requests per minute per client. `/api/health` and `/api/stream` are exempt.
+      description: |
+        300 requests per minute per client, counted before the guard, so refused requests count too.
+        `/api/health`, `/api/stream` and `POST /api/auth/logout` are exempt. The stream has its own cap
+        instead, `429 too_many_streams`, described under `/api/stream`.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Internal:
       description: '`internal`. The message is fixed; the detail is in the BFF log only.'
@@ -1445,7 +1760,10 @@ components:
         why they are 503 and not 504.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     AiError:
-      description: '`ai_error`, the model answered, but not usably.'
+      description: |
+        `ai_error`, the model could not be reached, took too long, returned an error or answered
+        unusably. The message is one fixed sentence for the cause. The model's address and what it sent
+        back go to the BFF log only.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     AiUnavailable:
       description: |
@@ -1461,6 +1779,34 @@ components:
       properties:
         error: { type: string, description: A stable machine-readable code. }
         message: { type: string, description: Safe to show a user. Never contains the Zabbix URL. }
+        requestId:
+          type: string
+          description: The reply's `X-Request-Id`. Quote it to an admin, who finds the request in the BFF log (`reqId`) and in nginx's (`rid=`).
+
+    Ready:
+      type: object
+      required: [ok, zabbix, zabbixMs, model, checkedAt, version, startedAt, build, streams]
+      properties:
+        ok: { type: boolean, description: The portal can read Zabbix. The model never changes it. }
+        zabbix: { type: string, enum: [ok, token_rejected, timeout, error] }
+        zabbixMs:
+          type: [integer, 'null']
+          description: How long the Zabbix call took. Null when it did not answer.
+        model:
+          type: string
+          enum: [ok, down, off, not_checked]
+          description: '`off` is no model configured, `not_checked` is the hosted Anthropic model, which a probe would bill.'
+        checkedAt: { type: integer, description: When these answers were read, milliseconds since epoch. }
+        version: { type: string, description: The server package version. }
+        startedAt: { type: string, format: date-time, description: When this process started. }
+        build:
+          type: object
+          required: [commit, time]
+          description: The image's `BUILD_COMMIT` and `BUILD_TIME` build arguments. `unknown` when not given or empty, and cut to 64 characters.
+          properties:
+            commit: { type: string }
+            time: { type: string }
+        streams: { type: integer, minimum: 0, description: Screens connected to `/api/stream` right now. }
 
     User:
       type: object
@@ -1468,6 +1814,14 @@ components:
       properties:
         name: { type: string }
         role: { type: string, enum: [viewer, operator, admin] }
+
+    Session:
+      type: object
+      required: [user, expiresIn]
+      description: What sign-in and renewal return. The token is in the `Set-Cookie` header, never here.
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        expiresIn: { type: integer, minimum: 7200, maximum: 86400, example: 43200, description: 'Seconds the new session lasts: SESSION_HOURS times 3600, so 43200 (12 hours) by default.' }
 
     SiteRef:
       type: object
@@ -1853,12 +2207,18 @@ components:
         target: { type: number }
         basis:
           type: object
-          required: [triggers, gapPolicy, noDataPolicy]
-          description: What the figure counts, so two profiles can be compared honestly.
+          required: [triggers, gapPolicy, noDataPolicy, maintenancePolicy]
+          description: What the figure counts, so two profiles can be compared like for like.
           properties:
             triggers: { type: array, items: { type: string } }
             gapPolicy: { type: string, enum: [counted-as-up, excluded] }
             noDataPolicy: { type: string, enum: [counted-as-100, excluded] }
+            maintenancePolicy:
+              type: string
+              enum: [excluded]
+              description: |
+                Time inside a planned Zabbix maintenance window counts neither as down nor in the
+                total, in both profiles. Read from the periods as Zabbix defines them now.
         overall: { $ref: '#/components/schemas/SliGroup' }
         categories: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
         sites: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
@@ -1906,6 +2266,7 @@ components:
         longest: { type: number }
         measured: { type: boolean, description: Always present. `web/src/types.ts` wrongly marks it optional. }
         coverage: { oneOf: [{ type: number }, { type: 'null' }] }
+        maintenance: { type: number, description: Seconds of the window inside planned maintenance, left out of the figure. }
         dataStatus: { type: string }
         category: { type: string }
         site: { type: string }
@@ -1916,7 +2277,9 @@ components:
       required: [from, to, windowSeconds, minSeverity, hosts, truncated, basis]
       description: |
         `overall`, `categories`, `sites`, `target`, `profile` and `gaps` are present only when
-        `basis=availability`. `truncated` is always false: events are sliced, never silently cut.
+        `basis=availability`. `truncated` is always false with `basis=availability`. With `basis=all-problems`
+        it is true only when more than 200 outages from before the look-back needed a one-by-one lookup
+        and the rest were left out, so the figures are a floor. Events are sliced, never silently cut.
       properties:
         from: { type: integer }
         to: { type: integer }

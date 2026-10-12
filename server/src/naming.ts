@@ -1,14 +1,14 @@
 /**
- * What a host's NAME says about it, following HCML's own convention (read off
- * their 2026-06/07/08 Availability Reports. See setup.md §16):
+ * What a host's name says about it, following HCML's own convention (read off their 2026-06/07/08
+ * Availability Reports, see setup.md §16):
  *
  *   devices    <site>.<class>[.<seq>] NAME     1.2.1 IDX02CORESWITCH
  *   services   <TYPE> : NAME                   INET : SAMPANG WAN 1
  *
- * No HCML host carries a `site` tag, so the name is the most reliable site
- * signal the estate has. HCML applies the convention inconsistently, site 9
- * numbers its switch 9.1.1, site 12 has both 12.1 and 12.1.1, so the class is
- * taken from the monitoring template first and the name only as a fallback.
+ * No HCML host carries a `site` tag, so the name is the most reliable site signal the estate has.
+ * HCML applies the convention inconsistently (site 9 numbers its switch 9.1.1, site 12 has both
+ * 12.1 and 12.1.1), so the class is taken from the monitoring template first and the name only as a
+ * fallback.
  */
 
 export interface SiteRef {
@@ -16,7 +16,7 @@ export interface SiteRef {
   name: string;
 }
 
-/** Sites 1–14, with the words that name them in `INET :` / `SERVER :` hosts. */
+/** Sites 1 to 14, with the words that name them in `INET :` / `SERVER :` hosts. */
 export const SITES: (SiteRef & { aliases: string[] })[] = [
   { code: 1, name: 'Jakarta', aliases: ['JAKARTA', 'JKT', 'IDX'] },
   { code: 2, name: 'Surabaya', aliases: ['SURABAYA', 'SBY'] },

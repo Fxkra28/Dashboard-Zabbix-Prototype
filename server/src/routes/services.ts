@@ -7,14 +7,12 @@ import { currentMonth, parseMonth } from '../sli/time.js';
 import { parseProfile } from './sli.js';
 
 /**
- * Services tree (plan_1.2 Phase 2, HCML Goal 2). This is the portal's answer to
- * HCML's stated core problem: *"monitoring is still device-centric and
- * reactive; the target is service-centric and proactive."*
+ * Services tree (HCML Goal 2). This is the portal's answer to HCML's stated core problem:
+ * *"monitoring is still device-centric and reactive; the target is service-centric and proactive."*
  *
- * Zabbix already computes service status and attributes the problems that
- * caused it. What it doesn't do is present that as a hierarchy a
- * non-engineer can read, with the SLA the service is measured against sitting
- * next to it. That's what this assembles.
+ * Zabbix already computes service status and attributes the problems that caused it. What it
+ * doesn't do is present that as a hierarchy a non-engineer can read, with the SLA the service is
+ * measured against sitting next to it. That's what this assembles.
  *
  * Read-only, as always.
  */
@@ -78,8 +76,8 @@ async function slaByService(): Promise<Record<string, ServiceSla>> {
     output: ['slaid', 'name', 'slo'],
   });
 
-  // One sla.getsli per SLA, fetched together instead of one after another (the
-  // loop used to await each in turn, so N SLAs cost N round-trips in series).
+  // One sla.getsli per SLA, fetched together instead of one after another (awaiting
+  // each in turn would cost N round-trips in series for N SLAs).
   // Results are still walked in sla.get order, so "first SLA wins" holds.
   const slis = await Promise.all(
     slas.map((sla) =>
@@ -128,7 +126,7 @@ export async function getServiceTree(): Promise<ServicesResponse> {
   const byId = new Map(services.map((s) => [s.serviceid, s]));
 
   /**
-   * Returns the node plus the set of DISTINCT service ids beneath it. Services
+   * Returns the node plus the set of distinct service ids beneath it. Services
    * form a DAG (a shared dependency legitimately appears under two parents)
    * so counting tree positions would report it twice.
    */

@@ -3,12 +3,11 @@ import { zbx, ZabbixApiError } from '../zabbix.js';
 /**
  * Event history without silent truncation.
  *
- * The reports used to ask for the newest 10,000 events and carry on with
- * whatever came back. At HCML's volume a 30-day window overflowed that, the
- * OLDEST events were the ones dropped, and the availability report produced
- * impossible results (59.6% at severity ≥ 3 but 2.8% at severity ≥ 4). Here a
- * full page is never accepted: the window is halved until every slice fits, and
- * a slice that cannot be made to fit is an error, not a partial answer.
+ * A single request for the newest 10,000 events overflows at HCML's volume (a 30-day window): the
+ * oldest events are the ones dropped, and the availability report then produces impossible results
+ * (59.6% at severity ≥ 3 but 2.8% at severity ≥ 4). So a full page is never accepted here: the
+ * window is halved until every slice fits, and a slice that cannot be made to fit is an error, not
+ * a partial answer.
  */
 
 const PAGE_LIMIT = 5_000;
@@ -45,7 +44,7 @@ export async function fetchEventsSliced<T extends { eventid: string }>(
 
   if (to - from < minSlice) {
     throw new ZabbixApiError(
-      `event.get: more than ${pageLimit} events within ${to - from + 1} s — too dense to report on exactly.`,
+      `event.get: more than ${pageLimit} events within ${to - from + 1} s, too dense to report on exactly.`,
     );
   }
   // Halves that do not overlap: an event exactly on `mid` belongs to the first.

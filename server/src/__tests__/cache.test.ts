@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_TTL_MS, MAX_ENTRIES, cached, invalidate, setCacheLogger } from '../cache.js';
+import {
+  HOLD_TTL_MS,
+  MAX_BYTES,
+  MAX_ENTRIES,
+  MAX_PINNED_BYTES,
+  approxBytes,
+  cached,
+  invalidate,
+  setCacheLogger,
+} from '../cache.js';
 
 // The cache is module-level state shared by every test in this file.
 beforeEach(() => {
@@ -278,6 +287,163 @@ describe('LRU bound', () => {
     // Key 1 was evicted, so it refetches (which in turn evicts key 2).
     expect(await cached('graph:1', 60_000, async () => -1)).toBe(-1);
     expect(invalidate('graph:')).toBe(MAX_ENTRIES);
+  });
+});
+
+describe('approxBytes', () => {
+  it('counts strings by length, numbers as 8, and walks objects, arrays, Maps and Sets', () => {
+    expect(approxBytes('x'.repeat(1000))).toBe(16 + 1000);
+    expect(approxBytes(42)).toBe(8);
+    expect(approxBytes(null)).toBe(0);
+    expect(approxBytes([1, 2, 3])).toBe(16 + 8 * 3 + 3 * 8);
+    expect(approxBytes({ a: 'abcd', b: 1 })).toBe(24 + 8 * 2 + (16 + 4) + 8);
+    expect(approxBytes(new Map([['k', 1]]))).toBeGreaterThan(approxBytes('k') + approxBytes(1));
+    expect(approxBytes(new Set(['a', 'b']))).toBeGreaterThan(2 * approxBytes('a'));
+  });
+
+  it('counts what a Map and a Set hold, not only their slots', () => {
+    const extra = (more: unknown, less: unknown) => approxBytes(more) - approxBytes(less);
+    expect(extra(new Map([['k', 'x'.repeat(1000)]]), new Map([['k', 'x']]))).toBe(999);
+    expect(extra(new Map([['k'.repeat(500), 1]]), new Map([['k', 1]]))).toBe(499);
+    expect(extra(new Set(['x'.repeat(1000)]), new Set(['x']))).toBe(999);
+  });
+
+  it('counts a typed array by its byte length and a shared object once, and survives a cycle', () => {
+    expect(approxBytes(new Uint8Array(4096))).toBe(4096);
+    const shared = { text: 'x'.repeat(500) };
+    // Two more slots in the array, and nothing for the two repeats.
+    expect(approxBytes([shared, shared, shared])).toBe(approxBytes([shared]) + 2 * 8);
+    const loop: Record<string, unknown> = { name: 'loop' };
+    loop.self = loop;
+    expect(approxBytes(loop)).toBeGreaterThan(0);
+  });
+
+  it('stops at its budget instead of walking a huge value to the end', () => {
+    const big = Array.from({ length: 5_000 }, (_, i) => ({ i }));
+    expect(approxBytes(big, 100)).toBeLessThan(approxBytes(big));
+  });
+});
+
+describe('byte bound', () => {
+  // One string shared by every entry: the estimate counts its length each time, the heap holds it once.
+  const eightMb = 'x'.repeat(8 * 1024 * 1024);
+  const ENTRY = approxBytes(eightMb);
+  const FITS = Math.floor(MAX_BYTES / ENTRY);
+
+  it('holds about its budget and evicts the least recently used first', async () => {
+    for (let i = 0; i < FITS; i++) await cached(`report:${i}`, 60_000, async () => eightMb);
+    // Reading report:0 makes it recent, so report:1 is the oldest.
+    expect(await cached('report:0', 60_000, async () => 'refetched')).toBe(eightMb);
+    await cached('report:new', 60_000, async () => eightMb);
+
+    expect(await cached('report:0', 60_000, async () => 'refetched')).toBe(eightMb);
+    expect(await cached('report:new', 60_000, async () => 'refetched')).toBe(eightMb);
+    expect(await cached('report:1', 60_000, async () => 'refetched')).toBe('refetched');
+  });
+
+  it('counts size, not only keys: a few large entries push out older small ones', async () => {
+    for (let i = 0; i < 20; i++) await cached(`small:${i}`, 60_000, async () => i);
+    for (let i = 0; i < FITS + 2; i++) await cached(`big:${i}`, 60_000, async () => eightMb);
+    expect(await cached('small:0', 60_000, async () => -1)).toBe(-1);
+    expect(await cached(`big:${FITS + 1}`, 60_000, async () => -1)).toBe(eightMb);
+  });
+
+  it('answers a value bigger than the whole budget but does not keep it, and warns', async () => {
+    const warn = vi.fn();
+    setCacheLogger({ warn });
+    try {
+      await cached('small', 60_000, async () => 1);
+      const huge = 'x'.repeat(MAX_BYTES + 1);
+      const fn = vi.fn(async () => huge);
+      expect(await cached('huge', 60_000, fn)).toBe(huge);
+      expect(await cached('huge', 60_000, fn)).toBe(huge);
+      expect(fn).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith(expect.objectContaining({ key: 'huge' }), expect.any(String));
+      // Nothing else was pushed out to make room for it.
+      expect(await cached('small', 60_000, async () => 2)).toBe(1);
+    } finally {
+      setCacheLogger(undefined);
+    }
+  });
+
+  it('forgets the old value when its replacement is too big to keep, so it is never served later as the last copy', async () => {
+    const advance = useClock();
+    const huge = 'x'.repeat(MAX_BYTES + 1);
+    await cached('report', 1_000, async () => 'small', { staleIfError: true });
+    advance(2_000);
+    expect(await cached('report', 1_000, async () => huge, { staleIfError: true })).toBe(huge);
+    const down = async () => {
+      throw new Error('zabbix down');
+    };
+    await expect(cached('report', 1_000, down, { staleIfError: true })).rejects.toThrow('zabbix down');
+  });
+
+  it('gives the bytes back when keys are invalidated', async () => {
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < FITS; i++) await cached(`r${round}:${i}`, 60_000, async () => eightMb);
+      invalidate(`r${round}:`);
+    }
+    // Had the dropped entries stayed on the books, each of these would already be evicting the last.
+    for (let i = 0; i < FITS; i++) await cached(`final:${i}`, 60_000, async () => eightMb);
+    expect(await cached('final:0', 60_000, async () => 'refetched')).toBe(eightMb);
+  });
+
+  it('gives the bytes back when a key is replaced', async () => {
+    const advance = useClock();
+    for (let i = 0; i < 10; i++) {
+      await cached('same', 1_000, async () => eightMb);
+      advance(2_000);
+    }
+    for (let i = 0; i < FITS - 1; i++) await cached(`other:${i}`, 60_000, async () => eightMb);
+    expect(await cached('other:0', 60_000, async () => 'refetched')).toBe(eightMb);
+  });
+});
+
+describe('pin', () => {
+  const eightMb = 'x'.repeat(8 * 1024 * 1024);
+  const ENTRY = approxBytes(eightMb);
+
+  it('keeps a pinned entry through a flood of unpinned keys, by count and by size', async () => {
+    await cached('derived-sli:closed', 60_000, async () => 'month report', { pin: true });
+    for (let i = 0; i < MAX_ENTRIES + 20; i++) await cached(`graph:${i}`, 60_000, async () => i);
+    expect(await cached('derived-sli:closed', 60_000, async () => 'rebuilt', { pin: true })).toBe('month report');
+
+    for (let i = 0; i < 12; i++) await cached(`big:${i}`, 60_000, async () => eightMb);
+    expect(await cached('derived-sli:closed', 60_000, async () => 'rebuilt', { pin: true })).toBe('month report');
+    // The flood itself was bounded: the oldest of it is gone.
+    expect(await cached('big:0', 60_000, async () => 'refetched')).toBe('refetched');
+  });
+
+  it('without the pin the same flood does push the entry out', async () => {
+    await cached('derived-sli:plain', 60_000, async () => 'month report');
+    for (let i = 0; i < MAX_ENTRIES + 20; i++) await cached(`graph:${i}`, 60_000, async () => i);
+    expect(await cached('derived-sli:plain', 60_000, async () => 'rebuilt')).toBe('rebuilt');
+  });
+
+  it('lets pins go, least recently used first, once they alone pass their share', async () => {
+    const room = Math.floor(MAX_PINNED_BYTES / ENTRY);
+    for (let i = 0; i <= room; i++) await cached(`pin:${i}`, 60_000, async () => eightMb, { pin: true });
+    expect(await cached('pin:0', 60_000, async () => 'rebuilt', { pin: true })).toBe('rebuilt');
+    expect(await cached(`pin:${room}`, 60_000, async () => 'rebuilt', { pin: true })).toBe(eightMb);
+  });
+
+  it('does not let pins fill the budget: past their share the oldest goes, with room to spare overall', async () => {
+    // Pins worth more than half the budget and less than all of it: only the pins' own limit can push the first out.
+    const pins = Math.floor(MAX_BYTES / ENTRY) - 1;
+    for (let i = 0; i < pins; i++) await cached(`pin:${i}`, 60_000, async () => eightMb, { pin: true });
+    expect(await cached(`pin:${pins - 1}`, 60_000, async () => 'rebuilt', { pin: true })).toBe(eightMb);
+    expect(await cached('pin:0', 60_000, async () => 'rebuilt', { pin: true })).toBe('rebuilt');
+  });
+
+  it('pins the value a background refresh stores too', async () => {
+    const advance = useClock();
+    const opts = { staleMs: 10_000, pin: true };
+    await cached('derived-sli:open', 1_000, async () => 'v1', opts);
+    advance(1_500);
+    expect(await cached('derived-sli:open', 1_000, async () => 'v2', opts)).toBe('v1');
+    await flush();
+    for (let i = 0; i < MAX_ENTRIES + 20; i++) await cached(`graph:${i}`, 60_000, async () => i);
+    expect(await cached('derived-sli:open', 1_000, async () => 'v3', opts)).toBe('v2');
   });
 });
 

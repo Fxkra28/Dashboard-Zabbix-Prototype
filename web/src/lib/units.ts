@@ -4,13 +4,37 @@
  *
  *   bps, b/s          ×1000   Kbps Mbps Gbps
  *   B, Bps, B/s       ×1024   KB MB GB (KB/s …)
- *   %                 2 dp
+ *   %                 2 dp, no space before the sign (see PERCENT_DP)
  *   s                 ms below 1 s, then s / min / h
  *   uptime            3d 4h
- *   unixtime          local date-time
+ *   unixtime          date-time in the report zone, with its label (lib/time.ts)
  */
 
+import { formatDateTime } from './time';
+
 const DECIMAL = ['', 'K', 'M', 'G', 'T', 'P'];
+
+/**
+ * One rule for a percentage on every page: the sign sits against the number, and each
+ * measure has one number of decimals, so the same figure reads the same wherever it appears.
+ * `availability` is two to match the downloaded SLA report; the guarded Met/Missed text in
+ * lib/percent.ts starts from it and adds digits only to stay on the right side of the target.
+ */
+export const PERCENT_DP = {
+  /** A Zabbix item whose unit is %, as formatValue prints it. */
+  item: 2,
+  loss: 2,
+  availability: 2,
+  /** A port's share of its speed. */
+  utilisation: 1,
+} as const;
+
+export type PercentMeasure = keyof typeof PERCENT_DP;
+
+export function formatPercent(v: number | null | undefined, measure: PercentMeasure): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  return `${v.toFixed(PERCENT_DP[measure])}%`;
+}
 
 function trim(n: number, dp: number): string {
   const fixed = n.toFixed(dp);
@@ -86,7 +110,7 @@ export function formatValue(v: number | null | undefined, units?: string): strin
     case 'B/s':
       return scaled(v, 1024, 'B/s');
     case '%':
-      return `${v.toFixed(2)} %`;
+      return formatPercent(v, 'item');
     case 's':
       return seconds(v);
     case 'ms':
@@ -94,7 +118,7 @@ export function formatValue(v: number | null | undefined, units?: string): strin
     case 'uptime':
       return formatDuration(v);
     case 'unixtime':
-      return v > 0 ? new Date(v * 1000).toLocaleString() : '—';
+      return v > 0 ? formatDateTime(v * 1000) : '—';
     case '':
       return plain(v);
     default:

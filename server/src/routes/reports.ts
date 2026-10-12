@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { zbx } from '../zabbix.js';
 import { cached } from '../cache.js';
 import { intParam } from '../validate.js';
-import { getProblems } from '../queries.js';
+import { getProblems, openProblems } from '../queries.js';
+import { collectingStatus, getLastCollected } from '../reachability.js';
 
 /** One page of event history. Bounds the read and flags when it was hit. */
 const EVENT_LIMIT = 10_000;
@@ -10,7 +11,7 @@ const EVENT_LIMIT = 10_000;
 export async function reportRoutes(app: FastifyInstance): Promise<void> {
   // Reports → Top 100 triggers: count problem events per trigger over a window.
   // The window is clamped and the fetch bounded, against real event history a
-  // 20k unbounded read is slow and grows without limit (plan_1.2 defect #4).
+  // 20k unbounded read is slow and grows without limit.
   app.get('/api/reports/top-triggers', (req) => {
     const days = intParam((req.query as { days?: string }).days, 7, 1, 365);
     const from = Math.floor(Date.now() / 1000) - days * 86400;
@@ -62,13 +63,14 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/stats', () =>
     cached('stats', 30_000, async () => {
       const [hosts, items, triggers, groups, problems] = await Promise.all([
-        zbx<string>('host.get', { countOutput: true }),
+        // Enabled hosts only: the Dashboard card is labelled "monitored" so disabled ones are not counted.
+        zbx<string>('host.get', { countOutput: true, monitored_hosts: true }),
         zbx<string>('item.get', { countOutput: true, monitored: true }),
         zbx<string>('trigger.get', { countOutput: true }),
         // `with_hosts`: its older name was deprecated in Zabbix 6.2.
         zbx<string>('hostgroup.get', { countOutput: true, with_hosts: true }),
         // The entry /api/problems and the stream already share, not another read.
-        cached('problems', 5_000, getProblems),
+        cached('problems', 5_000, getProblems).then(openProblems),
       ]);
 
       const bySeverity: Record<string, number> = {};
@@ -86,6 +88,9 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     }),
   );
 
+  // When Zabbix last collected a value, so the Dashboard can say it has stopped (reachability.ts).
+  app.get('/api/freshness', async () => collectingStatus(await getLastCollected(), Math.floor(Date.now() / 1000)));
+
   // Dashboard widget: problem severity breakdown per host group.
   app.get('/api/reports/problems-by-group', () =>
     cached('probsByGroup', 15_000, async () => {
@@ -96,7 +101,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
           with_hosts: true,
           sortfield: 'name',
         }),
-        cached('problems', 5_000, getProblems),
+        cached('problems', 5_000, getProblems).then(openProblems),
       ]);
 
       const sevByHost: Record<string, string[]> = {};

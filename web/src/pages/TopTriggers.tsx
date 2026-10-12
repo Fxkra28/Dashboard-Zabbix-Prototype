@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useId } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useUrlState } from '../hooks/useUrlState';
 import type { TopTriggersReport } from '../types';
 import { SeverityBadge } from '../components/StatusBadge';
 import { Async } from '../components/states';
+import { Field } from '../components/Field';
+import { NoData } from '../components/NoData';
 
 const RANGES = [
   { days: 1, label: 'Last day' },
@@ -11,25 +14,27 @@ const RANGES = [
   { days: 30, label: 'Last 30 days' },
   { days: 90, label: 'Last 90 days' },
 ];
+const DAYS = RANGES.map((r) => r.days);
 
 // Reports → Top 100 triggers: which triggers fired most in the window.
 export default function TopTriggers() {
-  const [days, setDays] = useState(7);
+  const rangeId = useId();
+  // The time range lives in the URL, so a shared link opens the same window. A value not in the list reads as 7 days.
+  const [days, setDays] = useUrlState<number>('days', 7, { options: DAYS });
   const q = useAsync<TopTriggersReport>(() => api.topTriggers(days), [days]);
 
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label>Time range</label>
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+        <Field label="Time range" htmlFor={rangeId}>
+          <select id={rangeId} value={days} onChange={(e) => setDays(Number(e.target.value))}>
             {RANGES.map((r) => (
               <option key={r.days} value={r.days}>
                 {r.label}
               </option>
             ))}
           </select>
-        </div>
+        </Field>
       </div>
 
       <div className="panel">
@@ -69,7 +74,7 @@ export default function TopTriggers() {
                         <td>
                           <SeverityBadge level={t.severity} />
                         </td>
-                        <td className="muted">{t.host || '—'}</td>
+                        <td className="muted">{t.host || <NoData />}</td>
                         <td>{t.name}</td>
                         <td style={{ textAlign: 'right', fontWeight: 600 }}>{t.count}</td>
                       </tr>

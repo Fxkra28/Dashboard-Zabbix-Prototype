@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import {
@@ -8,12 +8,21 @@ import {
   TooltipComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
-import ReactEChartsCore from 'echarts-for-react/lib/core';
+// ECharts 6 restyled its defaults; this registers the 5.x look as the theme
+// 'v5', so the parts this chart does not colour itself stay as they were.
+import 'echarts/theme/v5.js';
+// The ESM build: Vite 8 hands a default import of the CommonJS lib/ build the
+// whole exports object in a "type": "module" package, not the component.
+import ReactEChartsCore from 'echarts-for-react/esm/core';
 import type { GraphRange, GraphResponse, GraphSeries } from '../types';
 import { theme } from '../theme';
 import { formatAxis, formatValue } from '../lib/units';
+import { fmtTime } from '../lib/severity';
+import { formatDateTime } from '../lib/time';
+import { orNoData } from './NoData';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useThemeChange } from '../hooks/useThemeChange';
 import StaleNote from './StaleNote';
 import { Async, Loading } from './states';
 import { isLiveRange, rangeKey } from './RangePicker';
@@ -37,14 +46,13 @@ echarts.use([
 const SERIES_TOKENS = ['--series-1', '--series-2', '--series-3', '--series-4'];
 
 /**
- * The four series colours, read out of the stylesheet rather than written here,
- * because ECharts paints to a canvas and a canvas cannot resolve `var()`.
- * Reading them at render means the dark theme gets its own set.
+ * The four series colours, read out of the stylesheet rather than written here, because ECharts
+ * paints to a canvas and a canvas cannot resolve `var()`; reading them at render gives the dark
+ * theme its own set.
  *
- * A chart is the one place the palette allows a second hue: four shades of the
- * brand blue on one line chart cannot be told apart, which is the whole point
- * of plotting them separately. None of the four sits in severity's warm range,
- * so a plotted line is never mistaken for an alarm.
+ * A chart is the one place the palette allows a second hue: four shades of the brand blue on one
+ * line chart cannot be told apart. None of the four sits in severity's warm range, so a plotted
+ * line is never mistaken for an alarm.
  */
 export function seriesColors(): string[] {
   if (typeof window === 'undefined') return [theme.primary];
@@ -74,13 +82,13 @@ function chartInk(): { muted: string; border: string; surface: string; text: str
 type Meta = { kind: 'line' | 'low' | 'high'; s: GraphSeries; color: string };
 
 /**
- * Line chart for 1–4 /api/graph series.
+ * Line chart for 1 to 4 /api/graph series.
  *
  * - The x-axis is pinned to the requested window, so a sparse item doesn't
  *   stretch its few points across the whole width.
  * - Straight segments (no smoothing), step lines for 0/1 states, and a break
  *   wherever the BFF marked a collection gap (null), never a line across it.
- * - A single series from trends gets a shaded min–max band.
+ * - A single series from trends gets a shaded min to max band.
  * - No `notMerge`: a refresh merges new data and keeps the user's zoom. The
  *   parent remounts the chart (React `key`) when the selection or range changes.
  */
@@ -95,6 +103,8 @@ export default function TimeSeriesChart({
   to: number;
   height?: number;
 }) {
+  const summaryId = useId();
+  const chartName = `Line chart of ${series.map((s) => seriesLabel(s, series)).join('; ')}, ${fmtTime(from)} to ${fmtTime(to)}`;
   // Up to two unit families get their own axis (e.g. bps left, % right).
   const unitAxes: string[] = [];
   for (const s of series) if (!unitAxes.includes(s.units) && unitAxes.length < 2) unitAxes.push(s.units);
@@ -105,6 +115,8 @@ export default function TimeSeriesChart({
     !series[0].step &&
     series[0].points.some((p) => p[2] !== null && p[3] !== null);
 
+  // The colours are read at render, so a theme switch must cause one even when no new data arrives.
+  useThemeChange();
   const palette = seriesColors();
   const ink = chartInk();
   const metas: Meta[] = [];
@@ -160,7 +172,14 @@ export default function TimeSeriesChart({
 
   const option = {
     animation: false,
-    grid: { left: 64, right: unitAxes.length > 1 ? 64 : 20, top: series.length > 1 ? 34 : 16, bottom: 64 },
+    grid: {
+      left: 64,
+      right: unitAxes.length > 1 ? 64 : 20,
+      top: series.length > 1 ? 34 : 16,
+      bottom: 64,
+      // ECharts 6 shrinks the grid to fit a long axis label; 5.x kept it where set.
+      outerBoundsMode: 'none',
+    },
     legend:
       series.length > 1
         ? {
@@ -194,7 +213,7 @@ export default function TimeSeriesChart({
             }</b>${range}</div>`;
           });
         return `<div style="font-size:12px"><div style="margin-bottom:4px;color:${ink.muted}">${esc(
-          new Date(t).toLocaleString(),
+          formatDateTime(t),
         )}</div>${rows.join('')}</div>`;
       },
     },
@@ -231,27 +250,31 @@ export default function TimeSeriesChart({
 
   return (
     <div className="tsc">
-      <ReactEChartsCore echarts={echarts} option={option} style={{ height }} lazyUpdate />
-      <div className="chart-summary">
+      {/* A canvas says nothing to a screen reader: name it, and point at the figures under it.
+          The summary stays outside the img, since an img's children are not read (UX-17). */}
+      <div role="img" aria-label={chartName} aria-describedby={summaryId}>
+        <ReactEChartsCore echarts={echarts} theme="v5" option={option} style={{ height }} lazyUpdate />
+      </div>
+      <div className="chart-summary" id={summaryId}>
         {series.map((s, i) => (
           <div key={s.itemid} className="chart-summary-row">
             <span className="dot" style={{ background: palette[i % palette.length] }} />
-            <span className="chart-summary-name" title={`${s.host} — ${s.name}`}>
+            <span className="chart-summary-name" title={`${s.host}: ${s.name}`}>
               {seriesLabel(s, series)}
             </span>
             {s.stats ? (
               <span className="chart-summary-stats">
                 <span>
-                  <em>min</em> {formatValue(s.stats.min, s.units)}
+                  <em>min</em> {orNoData(formatValue(s.stats.min, s.units))}
                 </span>
                 <span>
-                  <em>avg</em> {formatValue(s.stats.avg, s.units)}
+                  <em>avg</em> {orNoData(formatValue(s.stats.avg, s.units))}
                 </span>
                 <span>
-                  <em>max</em> {formatValue(s.stats.max, s.units)}
+                  <em>max</em> {orNoData(formatValue(s.stats.max, s.units))}
                 </span>
                 <span>
-                  <em>last</em> {formatValue(s.stats.last, s.units)}
+                  <em>last</em> {orNoData(formatValue(s.stats.last, s.units))}
                 </span>
               </span>
             ) : (
@@ -286,7 +309,7 @@ const SOURCE_LABEL: Record<GraphResponse['source'], string> = {
 
 /**
  * Fetch + stale note + chart for a set of items over a range. Refreshes only
- * for windows ending now, at the items' own update interval (30 s – 5 min).
+ * for windows ending now, at the items' own update interval (30 s to 5 min).
  * The chart is keyed on selection + range, so a refresh keeps the zoom.
  */
 export function GraphView({

@@ -7,29 +7,30 @@ import {
 } from './zabbix.js';
 import { AiBusyError, AiDisabledError, AiUpstreamError } from './ai.js';
 import { BadRequestError } from './validate.js';
+import { validationProblem } from './schemas.js';
 
 /**
  * Map the BFF's typed failures onto HTTP, in one response shape.
  *
- * Every error body is `{ error, message }`: `error` a stable code a client can
- * branch on, `message` a sentence for whoever is reading the screen. Before
- * this, four shapes were in use, Fastify's `{ statusCode, error, message }`
- * for unknown routes and crashes, a bare sentence in `error` for 400s,
- * `{ error }` alone for 401s, and `{ error, message }` everywhere else.
+ * Every error body is `{ error, message }`: `error` a stable code a client can branch on, `message`
+ * a sentence for whoever is reading the screen.
  *
- * The distinction that matters: a rejected token, an unreachable Zabbix and a
- * missing write token are all *configuration* states, not server faults. Each
- * gets a 503 with a message naming what to fix, because "the portal is broken"
- * and "ZABBIX_WRITE_TOKEN is unset" need very different responses.
+ * The distinction that matters: a rejected token, an unreachable Zabbix and a missing write token
+ * are all *configuration* states, not server faults. Each gets a 503 with a message naming what to
+ * fix, because "the portal is broken" and "ZABBIX_WRITE_TOKEN is unset" need very different
+ * responses.
  *
- * Lives in its own module so the tests can exercise it against a bare Fastify
- * instance: index.ts starts a listening server on import.
+ * Lives in its own module so the tests can exercise it against a bare Fastify instance: index.ts
+ * starts a listening server on import.
  */
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof BadRequestError) {
       return reply.code(400).send({ error: 'bad_request', message: err.message });
     }
+    // A body schema (schemas.ts) refused the request: the same 400 as the handlers' own checks.
+    const invalid = validationProblem(err);
+    if (invalid) return reply.code(400).send({ error: 'bad_request', message: invalid });
     if (err instanceof ZabbixAuthError) {
       app.log.error(err.message);
       return reply.code(503).send({ error: 'zabbix_auth', message: err.message });
@@ -57,7 +58,8 @@ export function registerErrorHandler(app: FastifyInstance): void {
       return reply.code(503).header('retry-after', '10').send({ error: 'ai_busy', message: err.message });
     }
     if (err instanceof AiUpstreamError) {
-      app.log.error(err.message);
+      // `detail` names the model address and what it sent back: the log gets it, the response never does.
+      app.log.error({ detail: err.detail }, err.message);
       return reply.code(502).send({ error: 'ai_error', message: err.message });
     }
 
@@ -65,13 +67,14 @@ export function registerErrorHandler(app: FastifyInstance): void {
     // large) and the rate limiter's 429 carry a 4xx status and a message worth
     // showing. Anything else is a bug: log it in full, and do not hand its
     // internal wording to the browser.
-    const status = Number((err as { statusCode?: unknown }).statusCode);
+    // Fastify 5 types `err` as unknown (anything can be thrown), so read each field defensively.
+    const e = (err ?? {}) as { statusCode?: unknown; error?: unknown; code?: unknown; message?: unknown };
+    const status = Number(e.statusCode);
     if (status >= 400 && status < 500) {
-      const code = (err as { error?: unknown }).error;
       return reply.code(status).send({
         error:
-          typeof code === 'string' ? code : typeof err.code === 'string' ? err.code.toLowerCase() : 'bad_request',
-        message: err.message,
+          typeof e.error === 'string' ? e.error : typeof e.code === 'string' ? e.code.toLowerCase() : 'bad_request',
+        message: e.message,
       });
     }
     app.log.error(err);

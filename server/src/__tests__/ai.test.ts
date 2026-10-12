@@ -1,16 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The OpenAI-compatible backend (`AI_PROVIDER=openai-compatible`), which runs
- * the plain-language layer against a model on this host instead of a hosted API.
+ * The OpenAI-compatible backend (`AI_PROVIDER=openai-compatible`), which runs the plain-language
+ * layer against a model on this host instead of a hosted API.
  *
- * Two things make this worth covering where the Anthropic path never was. It is
- * hand-rolled `fetch` rather than a vendored SDK, so the request shape is our
- * responsibility, in particular the schema, which is the only reason the
- * caller can `JSON.parse` without a validation dependency. And `config` is a
- * module-level singleton read at import, so the provider switch exists *only*
- * at import time: a test that forgets `vi.resetModules()` silently exercises
- * whichever backend `server/.env` happens to select on this machine.
+ * Two things make it worth covering. It is hand-rolled `fetch` rather than a vendored SDK, so the
+ * request shape is our responsibility, in particular the schema, which is the only reason the
+ * caller can `JSON.parse` without a validation dependency. And `config` is a module-level singleton
+ * read at import, so the provider switch exists only at import time: a test that forgets
+ * `vi.resetModules()` silently exercises whichever backend `server/.env` happens to select on this
+ * machine.
  */
 
 const LOCAL_ENV = {
@@ -119,7 +118,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('humanize — openai-compatible backend', () => {
+describe('humanize: openai-compatible backend', () => {
   it('posts the schema the caller will parse against', async () => {
     const fetchMock = stubFetch(completion(OK_PROBLEM));
     const { humanize } = await loadAi(LOCAL_ENV);
@@ -189,8 +188,11 @@ describe('humanize — openai-compatible backend', () => {
     // would look like a portal bug, so it fails as an upstream error instead.
     stubFetch(completion({ ...OK_PROBLEM, summary: '   ' }));
     const { humanize, AiUpstreamError } = await loadAi(LOCAL_ENV);
-    await expect(humanize('problem', {})).rejects.toThrow(/empty summary/);
-    await expect(humanize('problem', {})).rejects.toBeInstanceOf(AiUpstreamError);
+    // The viewer gets the fixed sentence; what was empty is for the log (`detail`).
+    const failure = (await humanize('problem', {}).catch((e: unknown) => e)) as InstanceType<typeof AiUpstreamError>;
+    expect(failure).toBeInstanceOf(AiUpstreamError);
+    expect(failure.message).not.toMatch(/summary|qwen/);
+    expect(failure.detail).toMatch(/empty summary/);
   });
 
   it('rejects non-JSON, which is what an unconstrained model returns', async () => {
@@ -200,7 +202,7 @@ describe('humanize — openai-compatible backend', () => {
   });
 });
 
-describe('humanize — configuration', () => {
+describe('humanize: configuration', () => {
   it('is disabled with no AI_BASE_URL, so the UI hides the button instead of offering a 502', async () => {
     const { humanize, AiDisabledError } = await loadAi({
       AI_PROVIDER: 'openai-compatible',
@@ -210,7 +212,7 @@ describe('humanize — configuration', () => {
     await expect(humanize('problem', {})).rejects.toBeInstanceOf(AiDisabledError);
   });
 
-  it('is enabled by a base URL alone — a local model has no key to check', async () => {
+  it('is enabled by a base URL alone: a local model has no key to check', async () => {
     vi.resetModules();
     vi.stubEnv('AI_PROVIDER', 'openai-compatible');
     vi.stubEnv('AI_BASE_URL', 'http://localhost:11434/v1');
@@ -231,7 +233,7 @@ describe('warmModel', () => {
     expect(bodyOf(fetchMock)).toEqual({ model: 'qwen3:8b', prompt: '', keep_alive: '30m' });
   });
 
-  it('never throws — a failed warm-up only means a slower first answer', async () => {
+  it('never throws: a failed warm-up only means a slower first answer', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
     const { warmModel } = await loadAi(LOCAL_ENV);
     const debug = vi.fn();
@@ -247,7 +249,7 @@ describe('warmModel', () => {
   });
 });
 
-describe('usesOllamaNative — AI_OLLAMA_NATIVE=auto', () => {
+describe('usesOllamaNative: AI_OLLAMA_NATIVE=auto', () => {
   it('asks {root}/api/version once and speaks Ollama when it answers with a string version', async () => {
     const { mock } = stubOllama();
     const { usesOllamaNative } = await loadAi(NATIVE_ENV);

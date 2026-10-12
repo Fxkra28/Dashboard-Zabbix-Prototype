@@ -1,34 +1,47 @@
-import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
 import type { ServerResponse } from 'node:http';
 import { getProblems, type ZbxProblem } from '../queries.js';
 import { cached } from '../cache.js';
+import { config } from '../config.js';
 import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../zabbix.js';
 
 /**
- * Live problems via SSE (setup.md §7). Upgrade to WebSocket / Redis fan-out later.
+ * Live problems via SSE (setup.md §7).
  *
- * One ticker serves every connected screen. Every 5 s it reads the same cache
- * entry as GET /api/problems and sends a frame only when something a screen
- * shows has changed: a problem opened, resolved, acknowledged, suppressed or
- * re-graded, or when 30 s have gone by, so the live `opdata` values do not
- * go stale. Keep-alive comments fill the gaps.
+ * One ticker serves every connected screen. Every 5 s it reads the same cache entry as GET
+ * /api/problems and sends a frame only when something a screen shows has changed: a problem opened,
+ * resolved, acknowledged, suppressed or re-graded. A change in only a name or host goes out at most
+ * every 30 s. A list that is identical to the last one sent is never sent again: the keep-alive
+ * says the line and the data are still current. A frame carries only the fields the Dashboard reads
+ * (frameJson), so no tags and no `opdata`.
  *
- * Before, every connection ran its own timer and serialised and sent the whole
- * list every 5 s whether or not anything had changed: ~450 KB per screen per
- * tick against HCML's Zabbix.
+ * A timer per connection would serialise and send the whole list every 5 s whether or not anything
+ * had changed: ~450 KB per screen per tick against HCML's Zabbix.
+ *
+ * Screens are counted: STREAM_MAX_CLIENTS in all and STREAM_MAX_PER_USER for one signed-in user
+ * (one client address with auth off). A screen over either limit gets a 429, and a signed-in screen
+ * is ended when its token expires, so the browser reconnects with the renewed cookie.
  */
 
 export const TICK_MS = 5_000;
-/** Resend an unchanged list after this long, so `opdata` keeps up. */
+/** A name-only change waits until the sent list is this old. */
 export const MAX_QUIET_MS = 30_000;
 const KEEPALIVE_MS = 15_000;
+/** Data is required: an event with none is never delivered. */
+export function pingFrame(ageMs?: number): string {
+  return `event: ping\ndata: ${ageMs === undefined ? '{}' : JSON.stringify({ ageMs })}\n\n`;
+}
+/** The keep-alive with nothing to say about the list. */
+export const PING = pingFrame();
+/** setTimeout's longest delay; a token lasts 12 h, far less. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 // Pure parts (unit-tested)
 
 /**
- * What a screen shows of the list, as one comparable string. `opdata`, tags
- * and host names are left out on purpose: the 30 s resend covers them. Sorted,
- * so the same problems returned in another order are not a change.
+ * What a screen shows of the list, as one comparable string. Problem and host
+ * names are left out on purpose: the slower update covers them. Sorted, so the
+ * same problems returned in another order are not a change.
  */
 export function fingerprint(problems: readonly ZbxProblem[]): string {
   return problems
@@ -37,19 +50,50 @@ export function fingerprint(problems: readonly ZbxProblem[]): string {
     .join('|');
 }
 
-/** The last list sent to the screens: its fingerprint, and when. */
+/**
+ * What the Dashboard reads of a problem, and nothing else. `problem.get` with `output: 'extend'`
+ * also returns fields no screen shows (`ns`, `correlationid`, `userid`, `urls`, `r_clock`, ...),
+ * and the tags: an allowlist keeps a field Zabbix adds later out of every frame. `objectid` and
+ * `object` stay because the page's `Problem` type requires them.
+ */
+function liveProblem(p: ZbxProblem) {
+  return {
+    eventid: p.eventid,
+    objectid: p.objectid,
+    object: p.object,
+    name: p.name,
+    severity: p.severity,
+    clock: p.clock,
+    r_eventid: p.r_eventid,
+    acknowledged: p.acknowledged,
+    suppressed: p.suppressed,
+    host: p.host,
+    hostid: p.hostid,
+  };
+}
+
+/** The list as the screens get it: the fields above. A change in tags or `opdata` alone is not a change. */
+export function frameJson(problems: readonly ZbxProblem[]): string {
+  return JSON.stringify(problems.map(liveProblem));
+}
+
+/** The last list sent to the screens: its fingerprint, its JSON, and when. */
 export interface Sent {
   fingerprint: string;
+  json: string;
   at: number;
 }
 
 /**
- * Whether a fresh read is worth a frame. An unchanged list goes out once the
- * next tick would be past MAX_QUIET_MS, checked only every TICK_MS, a plain
- * `>= MAX_QUIET_MS` let it wait up to 35 s.
+ * Whether a fresh read is worth a frame. A change a screen shows goes at once.
+ * A list identical to the last one sent never goes again. One where only a
+ * name or tag moved goes once the next tick would be past MAX_QUIET_MS,
+ * checked only every TICK_MS: a plain `>= MAX_QUIET_MS` let it wait up to 35 s.
  */
-export function shouldSend(last: Sent | null, current: string, now: number): boolean {
-  return last === null || last.fingerprint !== current || now + TICK_MS - last.at > MAX_QUIET_MS;
+export function shouldSend(last: Sent | null, next: { fingerprint: string; json: string }, now: number): boolean {
+  if (last === null || last.fingerprint !== next.fingerprint) return true;
+  if (last.json === next.json) return false;
+  return now + TICK_MS - last.at > MAX_QUIET_MS;
 }
 
 // The shared ticker
@@ -61,6 +105,8 @@ interface Frame {
 
 interface Client {
   res: ServerResponse;
+  /** Who it counts against: the signed-in user, or the client address with auth off. */
+  owner: string;
   /** `write()` returned false: data frames are skipped until 'drain'. */
   blocked: boolean;
   /** The frame this client last had written to it. */
@@ -72,6 +118,8 @@ const clients = new Set<Client>();
 /** The latest frame: what a new connection gets first, and what a drained one catches up to. */
 let latest: Frame | null = null;
 let lastSent: Sent | null = null;
+/** When a tick last got the list without a failure: what a keep-alive tells the page about its age. */
+let lastReadAt: number | null = null;
 let frameIds = 0;
 let ticker: NodeJS.Timeout | null = null;
 let ticking = false;
@@ -144,14 +192,16 @@ async function refresh(force: boolean): Promise<void> {
       // Sent every tick, as before, and the next good read goes out whatever
       // its fingerprint, so screens drop the error as soon as Zabbix is back.
       lastSent = null;
+      lastReadAt = null;
       broadcast(`event: error\ndata: ${JSON.stringify({ message: publicMessage(failure) })}\n\n`, now);
       return;
     }
     lastError = null;
-    const current = fingerprint(problems);
-    if (!force && !shouldSend(lastSent, current, now)) return;
-    lastSent = { fingerprint: current, at: now };
-    broadcast(`event: problems\ndata: ${JSON.stringify(problems)}\n\n`, now);
+    lastReadAt = now;
+    const next = { fingerprint: fingerprint(problems), json: frameJson(problems) };
+    if (!force && !shouldSend(lastSent, next, now)) return;
+    lastSent = { ...next, at: now };
+    broadcast(`event: problems\ndata: ${next.json}\n\n`, now);
   } catch (err) {
     log?.error(err);
   }
@@ -159,8 +209,13 @@ async function refresh(force: boolean): Promise<void> {
 
 function tick(): void {
   const now = Date.now();
+  // Carries the list's age, since an unchanged list is not resent: the page
+  // keeps its "data as of" moving from this (useSSE).
+  const ping = pingFrame(lastReadAt === null ? undefined : Math.max(0, now - lastReadAt));
   for (const client of clients) {
-    if (!client.blocked && now - client.lastWrite >= KEEPALIVE_MS) write(client, ': keep-alive\n\n', now);
+    // A named event, not an SSE comment: the browser never reports comments, so
+    // the page could not tell a quiet line from a dead one (useSSE's watchdog).
+    if (!client.blocked && now - client.lastWrite >= KEEPALIVE_MS) write(client, ping, now);
   }
   // Zabbix slower than the tick: let the read in flight finish rather than queue more.
   if (ticking) return;
@@ -170,13 +225,45 @@ function tick(): void {
   });
 }
 
+/** The most screens one connection may add, overall and for one owner. */
+export interface StreamLimits {
+  maxClients: number;
+  maxPerUser: number;
+}
+
+/**
+ * Why a new screen from `owner` is refused, or null when it may join. The text
+ * goes in the 429 body: the browser's EventSource cannot read it, but curl and
+ * the BFF log can.
+ */
+export function refusalFor(owner: string, limits: StreamLimits = config.stream): string | null {
+  if (clients.size >= limits.maxClients) {
+    return `The portal is already streaming to ${limits.maxClients} screens. Close one, or ask an admin to raise STREAM_MAX_CLIENTS.`;
+  }
+  let mine = 0;
+  for (const c of clients) if (c.owner === owner) mine++;
+  if (mine >= limits.maxPerUser) {
+    return `This account already has ${limits.maxPerUser} live screens open. Close one and try again.`;
+  }
+  return null;
+}
+
+function remove(client: Client): void {
+  if (!clients.delete(client) || clients.size || !ticker) return;
+  clearInterval(ticker);
+  ticker = null;
+  latest = null;
+  lastSent = null;
+  lastReadAt = null;
+}
+
 /**
  * Add one screen. It gets the latest frame at once, or, for the first screen,
  * as soon as the first read lands, and the ticker runs while anyone listens.
  * Returns the function that removes it again.
  */
-export function subscribe(res: ServerResponse): () => void {
-  const client: Client = { res, blocked: false, frameId: 0, lastWrite: Date.now() };
+export function subscribe(res: ServerResponse, owner = ''): () => void {
+  const client: Client = { res, owner, blocked: false, frameId: 0, lastWrite: Date.now() };
   clients.add(client);
   if (!ticker) {
     ticker = setInterval(tick, TICK_MS);
@@ -190,18 +277,22 @@ export function subscribe(res: ServerResponse): () => void {
     });
   }
 
-  return () => {
-    if (!clients.delete(client) || clients.size || !ticker) return;
-    clearInterval(ticker);
-    ticker = null;
-    latest = null;
-    lastSent = null;
-  };
+  return () => remove(client);
 }
 
 /** Screens connected right now. */
 export function connectedClients(): number {
   return clients.size;
+}
+
+/** End every live stream: close() would wait on an open one until Docker's kill. Browsers reconnect by themselves. */
+export function endStreams(): number {
+  const ended = [...clients];
+  for (const client of ended) {
+    remove(client);
+    if (!client.res.writableEnded) client.res.end();
+  }
+  return ended.length;
 }
 
 /**
@@ -213,17 +304,51 @@ export async function notifyProblemsChanged(): Promise<void> {
   if (clients.size) await refresh(true);
 }
 
+/** The signed-in user, or with auth off the client address. */
+function ownerOf(req: FastifyRequest): string {
+  const sub = (req.user as { sub?: unknown } | undefined)?.sub;
+  return typeof sub === 'string' && sub ? `user:${sub}` : `ip:${req.ip}`;
+}
+
+/** Milliseconds until the token this request came in with expires, or null with auth off. */
+function msUntilExpiry(req: FastifyRequest): number | null {
+  const exp = (req.user as { exp?: unknown } | undefined)?.exp;
+  return typeof exp === 'number' ? Math.min(Math.max(exp * 1000 - Date.now(), 0), MAX_TIMER_MS) : null;
+}
+
 export async function streamRoutes(app: FastifyInstance): Promise<void> {
   log = app.log;
+  // close() waits for open connections, and a stream never ends by itself.
+  app.addHook('preClose', async () => {
+    endStreams();
+  });
+
   app.get('/api/stream', (req, reply) => {
+    const refusal = refusalFor(ownerOf(req));
+    if (refusal) {
+      req.log.warn('live stream refused: connection limit reached');
+      return reply.code(429).header('retry-after', '30').send({ error: 'too_many_streams', message: refusal });
+    }
+
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no', // let nginx pass SSE straight through
+      'X-Request-Id': req.id, // writeHead bypasses the reply headers requestId.ts sets
     });
 
-    const unsubscribe = subscribe(reply.raw);
-    req.raw.on('close', unsubscribe);
+    const unsubscribe = subscribe(reply.raw, ownerOf(req));
+    // A token is checked when the stream opens only. Ending the stream when it
+    // expires makes the browser reconnect with the renewed cookie, or be sent to sign in.
+    const left = msUntilExpiry(req);
+    const expiry = left === null ? null : setTimeout(() => reply.raw.end(), left);
+    expiry?.unref?.();
+    const gone = () => {
+      if (expiry) clearTimeout(expiry);
+      unsubscribe();
+    };
+    req.raw.on('close', gone);
+    reply.raw.on('close', gone);
   });
 }

@@ -4,7 +4,7 @@ import { buildTestApp } from './helpers/app.js';
 /**
  * The endpoints behind the derived SLA, the derived service tree, and the
  * report fixes that came with them. Zabbix is mocked per method, as in
- * routes.test.ts; the AI layer is mocked so a test can prove it was NOT asked.
+ * routes.test.ts; the AI layer is mocked so a test can prove it was not asked.
  */
 
 const { zbxMock, humanizeMock } = vi.hoisted(() => ({ zbxMock: vi.fn(), humanizeMock: vi.fn() }));
@@ -157,8 +157,8 @@ describe('GET /api/services/derived and /api/sla/source', () => {
 });
 
 describe('GET /api/explain/sla', () => {
-  it('answers "no data" for an SLA with no services — without asking the model', async () => {
-    // The model used to announce "met its availability target" from an empty list.
+  it('answers "no data" for an SLA with no services, without asking the model', async () => {
+    // Asked about an empty list, the model would announce "met its availability target".
     estate({
       'sla.get': () => [{ slaid: '2', name: 'SLA:1', slo: '99', period: '1', status: '1' }],
       'sla.getsli': () => ({ periods: [], serviceids: [], sli: [] }),
@@ -264,7 +264,7 @@ describe('GET /api/links', () => {
   });
 
   it('treats a value hours old as unknown, not as the link\'s current state', async () => {
-    // A supported item whose poller stopped: lastvalue "0" from 3 h ago used to read as DOWN.
+    // A supported item whose poller stopped: lastvalue "0" from 3 h ago would read as down.
     zbxMock.mockImplementation(async (method: string) =>
       method === 'item.get'
         ? [{ itemid: '3', name: 'ICMP ping', key_: 'icmpping', lastvalue: '0', lastclock: String(NOW - 3 * 3600), state: '0', delay: '1m', hosts: [{ hostid: '104', name: 'INET : SAMPANG WAN 3' }] }]

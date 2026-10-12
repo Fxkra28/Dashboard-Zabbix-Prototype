@@ -5,28 +5,7 @@ import { config } from '../config.js';
 import { BadRequestError, intParam, requireId } from '../validate.js';
 import { monthBounds, parseMonth } from '../sli/time.js';
 import { fetchTrendsSliced } from '../sli/events.js';
-
-/**
- * The newest stored clock for an item, or undefined when it has no history.
- *
- * Graph windows end here rather than at the wall clock. On a live instance the
- * two are seconds apart and nothing changes; on a restored backup, or an item
- * that has stopped reporting, "the last hour from now" is empty even though the
- * item holds days of data. Not `item.get`'s lastclock: Zabbix only fills that
- * within the frontend's history display period (24h by default), so it
- * disappears exactly when it is needed.
- */
-async function newestClock(itemid: string, history: number): Promise<number | undefined> {
-  const [last] = await zbx<{ clock: string }[]>('history.get', {
-    itemids: [itemid],
-    history,
-    output: ['clock'],
-    sortfield: 'clock',
-    sortorder: 'DESC',
-    limit: 1,
-  });
-  return last ? Number(last.clock) : undefined;
-}
+import { networkItemsDenied } from '../viewerPolicy.js';
 
 // /api/graph, shaping
 
@@ -252,51 +231,8 @@ function parseRange(q: Record<string, string | undefined>, now: number): { from:
 }
 
 export async function historyRoutes(app: FastifyInstance): Promise<void> {
-  // Raw history for one item.  ?itemid=&hours=1&history=<value_type>
-  // history value type: 0=float, 1=char, 2=log, 3=uint, 4=text, must match the item.
-  // The window is the `hours` leading up to the item's newest value, never past now.
-  app.get('/api/history', async (req) => {
-    const q = req.query as { itemid?: string; hours?: string; history?: string };
-    const itemid = requireId(q.itemid, 'itemid');
-    // 168h is the longest range the Graphs page offers; longer ranges belong to
-    // /api/trend. Unbounded, `hours=abc` used to return the item's whole history.
-    const hours = intParam(q.hours, 1, 1, 168);
-    const history = intParam(q.history, 0, 0, 4);
-    return cached(`hist:${itemid}:${hours}:${history}`, 15_000, async () => {
-      const now = Math.floor(Date.now() / 1000);
-      const newest = await newestClock(itemid, history);
-      const till = Math.min(now, newest ?? now);
-      return zbx('history.get', {
-        itemids: [itemid],
-        history,
-        time_from: till - hours * 3600,
-        time_till: till,
-        output: ['itemid', 'clock', 'value'],
-        sortfield: 'clock',
-        sortorder: 'ASC',
-      });
-    });
-  });
-
-  // Long ranges → trends (hourly aggregates), not history (setup.md §18).  ?itemid=&hours=168
-  app.get('/api/trend', async (req) => {
-    const q = req.query as { itemid?: string; hours?: string };
-    const itemid = requireId(q.itemid, 'itemid');
-    const hours = intParam(q.hours, 168, 1, 8760);
-    const now = Math.floor(Date.now() / 1000);
-    const from = now - hours * 3600;
-    return cached(`trend:${itemid}:${hours}`, 60_000, () =>
-      zbx('trend.get', {
-        itemids: [itemid],
-        time_from: from,
-        time_till: now,
-        output: ['itemid', 'clock', 'num', 'value_min', 'value_avg', 'value_max'],
-      }),
-    );
-  });
-
   /**
-   * Chart-ready series for 1–4 numeric items over a pinned window.
+   * Chart-ready series for 1 to 4 numeric items over a pinned window.
    *   ?itemids=a,b&hours=24 | &from=&to= | &month=YYYY-MM   [&points=1500]
    *
    * Up to a day reads raw history; longer reads hourly trends, topped up from
@@ -304,9 +240,11 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
    * 2026-09-15 while history carried on). Everything is bucketed down to at
    * most `points` per series so a 30-day graph is a few tens of KB, not 500.
    */
-  app.get('/api/graph', async (req) => {
+  app.get('/api/graph', async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;
     const ids = parseItemIds(q.itemids);
+    const denied = await networkItemsDenied(req, ids);
+    if (denied) return reply.code(403).send({ error: 'forbidden', message: denied });
     const now = Math.floor(Date.now() / 1000);
     const { from, to } = parseRange(q, now);
     const points = intParam(q.points, 1500, 200, 3000);

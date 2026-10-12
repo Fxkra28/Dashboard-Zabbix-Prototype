@@ -4,11 +4,14 @@ import { useAsync } from '../hooks/useAsync';
 import { useUrlState } from '../hooks/useUrlState';
 import type { Link, LinkState, LinksResponse } from '../types';
 import { Async, Empty } from '../components/states';
+import { Field, FieldGroup, FieldSpacer } from '../components/Field';
 import KpiCard from '../components/KpiCard';
+import { NoData, orNoData } from '../components/NoData';
 import { fmtTime } from '../lib/severity';
+import { formatPercent } from '../lib/units';
 
 /**
- * Link & WAN health (plan_1.2 Phase 5, HCML Goal 3).
+ * Link & WAN health (HCML Goal 3).
  *
  * HCML runs 12 main + 10 redundant SD-WAN links, 10 P2P radio links, 18
  * internet accesses and Starlink offshore. Their own topology slide flags
@@ -29,6 +32,13 @@ const STATE_COLOR: Record<LinkState, string> = {
   down: 'var(--danger)',
   unknown: 'var(--muted)',
 };
+/** The same states as text: the fills above are for the dot, and fall below 4.5:1 as words. */
+const STATE_TEXT: Record<LinkState, string> = {
+  up: 'var(--good-text)',
+  degraded: 'var(--warn-text)',
+  down: 'var(--danger-text)',
+  unknown: 'var(--muted)',
+};
 
 /** Table and path order: trouble first, healthy next, "no data" last (neutral, not an alarm). */
 const ORDER: Record<LinkState, number> = { down: 0, degraded: 1, up: 2, unknown: 3 };
@@ -38,7 +48,10 @@ const legName = (l: Link) => (/^\s*INET\s*:/i.test(l.host) ? l.role ?? l.host.re
 
 function StatePill({ state }: { state: LinkState }) {
   return (
-    <span className="link-state" style={{ ['--s' as string]: STATE_COLOR[state] }}>
+    <span
+      className="link-state"
+      style={{ ['--s' as string]: STATE_COLOR[state], ['--s-text' as string]: STATE_TEXT[state] }}
+    >
       <span className="dot" /> {STATE_LABEL[state]}
     </span>
   );
@@ -56,19 +69,19 @@ function LinkRow({ link, thresholds }: { link: Link; thresholds: LinksResponse['
       </td>
       <td style={{ fontWeight: 500 }}>{link.label}</td>
       <td className="muted">{link.host}</td>
-      <td className="muted mono">{link.target || '—'}</td>
-      <td className={lossBad ? 'link-bad' : 'muted'}>{n(link.loss, 1, '%')}</td>
-      <td className="muted">{n(link.latency, 2, ' ms')}</td>
-      <td className="muted">{n(link.jitter, 2, ' ms')}</td>
+      <td className="muted mono">{link.target || <NoData />}</td>
+      <td className={lossBad ? 'link-bad' : 'muted'}>{orNoData(formatPercent(link.loss, 'loss'))}</td>
+      <td className="muted">{orNoData(n(link.latency, 2, ' ms'))}</td>
+      <td className="muted">{orNoData(n(link.jitter, 2, ' ms'))}</td>
       <td>
         {link.role ? (
           <span className={`tag ${link.role === 'main' ? 'main' : ''}`}>{link.role}</span>
         ) : (
-          <span className="muted">—</span>
+          <span className="muted"><NoData /></span>
         )}
       </td>
       <td className="muted" style={{ whiteSpace: 'nowrap' }}>
-        {fmtTime(link.lastclock)}
+        {orNoData(fmtTime(link.lastclock))}
       </td>
     </tr>
   );
@@ -144,7 +157,7 @@ export default function Links() {
               <div className="panel" style={{ marginBottom: 18 }}>
                 <h2>Redundant paths</h2>
                 <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
-                  A paired path is only truly down when <strong>every</strong> leg is — that
+                  A paired path is only truly down when <strong>every</strong> leg is. That
                   distinction is the whole point of paying for redundancy. Pairing comes from the
                   item tag <code>link_group</code>, or from the WAN host names
                   (<code>INET : SITE WAN 1</code>, <code>WAN 2</code>…). Grey means no data is being
@@ -160,14 +173,15 @@ export default function Links() {
                         </div>
                         {p.links.map((l) => (
                           <div key={l.id} className="path-leg">
-                            <span className="dot" style={{ background: STATE_COLOR[l.state] }} />
+                            {/* The state in words as well as colour (UX-05). */}
+                            <StatePill state={l.state} />
                             {legName(l) === l.label && <span className="muted">{l.role ?? 'leg'}</span>}
                             <span className="path-leg-name" title={l.host}>
                               {legName(l)}
                             </span>
-                            <span className="muted nowrap">
-                              {l.state === 'unknown' ? 'No data' : n(l.loss, 1, '% loss')}
-                            </span>
+                            {l.state !== 'unknown' && (
+                              <span className="muted nowrap">{orNoData(l.loss === undefined ? '—' : `${formatPercent(l.loss, 'loss')} loss`)}</span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -176,7 +190,7 @@ export default function Links() {
                 )}
                 {silentPaths.length > 0 && (
                   <div className="nodata-paths">
-                    <StatePill state="unknown" /> on every leg — {silentPaths.length} path
+                    <StatePill state="unknown" /> on every leg, {silentPaths.length} path
                     {silentPaths.length === 1 ? '' : 's'}:{' '}
                     {silentPaths.map((p, i) => (
                       <span key={p.name} title={p.links.map(legName).join(' · ')}>
@@ -190,8 +204,7 @@ export default function Links() {
             )}
 
             <div className="controls">
-              <div className="field">
-                <label htmlFor="links-search">Search link</label>
+              <Field label="Search link" htmlFor="links-search">
                 <input
                   id="links-search"
                   type="text"
@@ -199,9 +212,8 @@ export default function Links() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
-              </div>
-              <div className="field">
-                <label>Filter</label>
+              </Field>
+              <FieldGroup label="Filter">
                 <label
                   style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, cursor: 'pointer' }}
                 >
@@ -213,13 +225,12 @@ export default function Links() {
                   />
                   Not healthy only
                 </label>
-              </div>
-              <div className="field">
-                <label>&nbsp;</label>
+              </FieldGroup>
+              <FieldSpacer>
                 <span className="pill">
                   loss warn ≥ {data.thresholds.lossWarn}% · down ≥ {data.thresholds.lossCrit}%
                 </span>
-              </div>
+              </FieldSpacer>
             </div>
 
             <div className="panel">

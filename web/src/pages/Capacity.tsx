@@ -4,9 +4,10 @@ import { useAsync } from '../hooks/useAsync';
 import { useUrlState } from '../hooks/useUrlState';
 import type { CapacityReport, CapacityRow } from '../types';
 import { Async, Empty } from '../components/states';
+import { Field } from '../components/Field';
 
 /**
- * Capacity trends (plan_1.2 Phase 6, HCML Goal 6). HCML's deck already shows a
+ * Capacity trends (HCML Goal 6). HCML's deck already shows a
  * "Top Host by CPU / Memory" panel: this is that, over a period rather than a
  * moment, so a creeping trend is visible before it becomes an incident.
  *
@@ -40,7 +41,7 @@ function MetricPanel({
       <div className="panel-head">
         <h2>{PANEL_TITLE[metric] ?? label}</h2>
         {rows[0]?.source === 'history' && (
-          <span className="pill" title="No hourly trends yet — averaged from raw history">
+          <span className="pill" title="No hourly trends yet: averaged from raw history">
             from history
           </span>
         )}
@@ -60,7 +61,7 @@ function MetricPanel({
                 <th>{iface ? 'Port' : 'Item'}</th>
                 <th style={{ width: 150 }}>Average ({days}d)</th>
                 <th>Peak</th>
-                <th />
+                <th><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -118,15 +119,14 @@ export default function Capacity() {
   return (
     <>
       <div className="controls">
-        <div className="field">
-          <label htmlFor="capacity-days">Period</label>
+        <Field label="Period" htmlFor="capacity-days">
           <select id="capacity-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={1}>Last 24 hours</option>
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>
           </select>
-        </div>
+        </Field>
       </div>
 
       <Async
@@ -160,7 +160,7 @@ export default function Capacity() {
             <>
               {noData && (
                 <div className="notice">
-                  Some items have no stored values for this period — the host may not have been
+                  Some items have no stored values for this period: the host may not have been
                   reporting. Zeros below mean “no data”, not “idle”.
                 </div>
               )}

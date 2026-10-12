@@ -191,6 +191,10 @@ export type Role = 'viewer' | 'operator' | 'admin';
 export interface Me {
   authEnabled: boolean;
   user: { name: string; role: Role } | null;
+  /** Seconds until the session ends; null with auth off. */
+  expiresIn?: number | null;
+  /** The role each menu page needs, from the server's own route rules. Absent from a BFF that predates it. */
+  pages?: Record<string, Role>;
 }
 
 // Inventory scorecard (Goal 1)
@@ -308,6 +312,8 @@ export interface SliHost {
   downtime: number;
   window: number;
   covered: number;
+  /** Seconds inside planned maintenance, left out of the figure. */
+  maintenance: number;
   coverage: number;
   incidents: number;
   longest: number;
@@ -364,6 +370,7 @@ export interface SliReport {
     triggers: string[];
     gapPolicy: 'counted-as-up' | 'excluded';
     noDataPolicy: 'counted-as-100' | 'excluded';
+    maintenancePolicy: 'excluded';
   };
   overall: SliGroup;
   categories: SliGroup[];
@@ -458,6 +465,15 @@ export interface Stats {
   problems: number;
   unacknowledged: number;
   bySeverity: Record<string, number>;
+}
+
+/** GET /api/freshness: when Zabbix last collected a value. Times in Unix seconds. */
+export interface Freshness {
+  lastCollectedAt: number | null;
+  ageSeconds: number | null;
+  /** Nothing collected for longer than `staleAfterSeconds`. */
+  stale: boolean;
+  staleAfterSeconds: number;
 }
 
 export interface GroupProblems {
@@ -633,7 +649,7 @@ export interface SlaSli {
   period_to: number;
 }
 
-// Plain-language layer (plan_1.1)
+// Plain-language layer
 
 export interface ProblemExplanation {
   summary: string;

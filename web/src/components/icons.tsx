@@ -4,6 +4,9 @@ const base = (size = 18) => ({
   width: size,
   height: size,
   viewBox: '0 0 24 24',
+  // Decorative: the label beside each icon names the control.
+  'aria-hidden': true as const,
+  focusable: false as const,
   fill: 'none',
   stroke: 'currentColor',
   strokeWidth: 1.8,

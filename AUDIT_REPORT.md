@@ -143,7 +143,8 @@ screen. `request()` and `post()` in `web/src/api.ts` show `message`, fall back t
 cope, because it already read `message ?? error`, but nothing guaranteed it.
 
 **Three BFF routes are never called from this app:** `/api/trend`, `/api/net/status` and `/api/net/map`.
-They are listed as dead code in the BFF report.
+They are listed as dead code in the BFF report. All three were removed on 2026-10-12, with `/api/history`
+and `/api/net/ports`; the table above lists the endpoints as they were on the audit's dates.
 
 ## 4. Issues found
 

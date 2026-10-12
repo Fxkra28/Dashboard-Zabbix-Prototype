@@ -1,15 +1,18 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
+import { useAuth, roleAllows } from '../hooks/useAuth';
 import { useDebounced } from '../hooks/useDebounced';
 import { useUrlState } from '../hooks/useUrlState';
 import type { IcmpState, NetDevice, NetInterface, NetInterfacesResponse } from '../types';
 import RangePicker, { useUrlRange } from '../components/RangePicker';
 import { UpDown } from '../components/StatusBadge';
 import { Async, Loading } from '../components/states';
-import { fmtValue } from '../lib/severity';
-import { formatValue } from '../lib/units';
+import { Pager } from '../components/Pager';
+import { Field, FieldGroup } from '../components/Field';
+import { formatPercent, formatValue } from '../lib/units';
 import { groupBySite } from '../lib/sites';
+import { NoData, orNoData } from '../components/NoData';
 
 // The chart module carries ECharts (~550 kB). Load it when a port is opened,
 // not with the device grid most visits never get past.
@@ -51,6 +54,7 @@ const activates = (e: React.KeyboardEvent) => e.key === 'Enter' || e.key === ' '
 
 export default function Network() {
   const devicesQ = useAsync<NetDevice[]>(() => api.netDevices(), [], 30_000);
+  const isAdmin = roleAllows(useAuth().role, 'admin');
   // Device, filters and page live in the URL, so Back from a graph lands on the same view.
   const [hostid, setHostid] = useUrlState<string>('hostid', '');
   const [search, setSearch] = useUrlState<string>('q', '', { debounceMs: 300 });
@@ -77,7 +81,7 @@ export default function Network() {
     requestAnimationFrame(() => portsPanel.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
-  const devices = devicesQ.data ?? [];
+  const devices = useMemo(() => devicesQ.data ?? [], [devicesQ.data]);
   const siteGroups = useMemo(() => groupBySite(devices, (d) => d.name, (d) => d.site), [devices]);
   const counts = useMemo(() => {
     const c = { up: 0, down: 0, unknown: 0, disabled: 0 };
@@ -169,9 +173,9 @@ export default function Network() {
                             <UpDown up={state === 'up'} />
                           )}
                           <div className="meta">
-                            {d.icmp?.loss !== undefined && <span>loss {fmtValue(d.icmp.loss, '%')}</span>}
+                            {d.icmp?.loss !== undefined && <span>loss {orNoData(formatPercent(d.icmp.loss, 'loss'))}</span>}
                             {state === 'up' && d.icmp?.latency !== undefined && (
-                              <span>rtt {formatValue(d.icmp.latency, 's')}</span>
+                              <span>rtt {orNoData(formatValue(d.icmp.latency, 's'))}</span>
                             )}
                           </div>
                         </div>
@@ -184,8 +188,15 @@ export default function Network() {
               <div className="state">
                 No network devices found.
                 <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                  Set <span className="mono">NET_GROUP_IDS</span> on the BFF, and onboard devices in
-                  Zabbix (setup.md §10). Views populate automatically once they report.
+                  {/* The setting's name is for the portal admin (UX-20). */}
+                  {isAdmin ? (
+                    <>
+                      Set <span className="mono">NET_GROUP_IDS</span> on the BFF, and onboard devices in
+                      Zabbix (setup.md §10). Views populate automatically once they report.
+                    </>
+                  ) : (
+                    <>Ask the portal admin which device groups this page covers. Devices appear here once they report.</>
+                  )}
                 </div>
               </div>
             )
@@ -196,10 +207,9 @@ export default function Network() {
       {selectedDevice && (
         <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)', gap: 18 }}>
           <div className="panel" ref={portsPanel}>
-            <h2>{selectedDevice.name} — interfaces</h2>
+            <h2>{selectedDevice.name}: interfaces</h2>
             <div className="controls" style={{ marginBottom: 12 }}>
-              <div className="field">
-                <label htmlFor="port-search">Search</label>
+              <Field label="Search" htmlFor="port-search">
                 <input
                   id="port-search"
                   type="text"
@@ -207,9 +217,8 @@ export default function Network() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
-              </div>
-              <div className="field">
-                <label>Status</label>
+              </Field>
+              <FieldGroup label="Status">
                 <div className="seg" role="group" aria-label="Status filter">
                   {(
                     [
@@ -237,7 +246,7 @@ export default function Network() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </FieldGroup>
             </div>
             <Async
               loading={portsQ.loading}
@@ -288,17 +297,17 @@ export default function Network() {
                                 <td>
                                   <OperPill status={r.operStatus} />
                                 </td>
-                                <td className="nowrap">{formatValue(r.speed, 'bps')}</td>
-                                <td className="nowrap">{formatValue(r.inBps, 'bps')}</td>
-                                <td className="nowrap">{formatValue(r.outBps, 'bps')}</td>
+                                <td className="nowrap">{orNoData(formatValue(r.speed, 'bps'))}</td>
+                                <td className="nowrap">{orNoData(formatValue(r.inBps, 'bps'))}</td>
+                                <td className="nowrap">{orNoData(formatValue(r.outBps, 'bps'))}</td>
                                 <td className="nowrap">
-                                  {r.utilisation === null ? '—' : `${r.utilisation.toFixed(1)} %`}
+                                  {r.utilisation === null ? <NoData /> : formatPercent(r.utilisation, 'utilisation')}
                                 </td>
                                 <td className={`nowrap${(r.inErrors ?? 0) + (r.outErrors ?? 0) > 0 ? ' port-bad' : ''}`}>
-                                  {formatValue(r.inErrors)} / {formatValue(r.outErrors)}
+                                  {orNoData(formatValue(r.inErrors))} / {orNoData(formatValue(r.outErrors))}
                                 </td>
                                 <td className="nowrap">
-                                  {formatValue(r.inDiscards)} / {formatValue(r.outDiscards)}
+                                  {orNoData(formatValue(r.inDiscards))} / {orNoData(formatValue(r.outDiscards))}
                                 </td>
                               </tr>
                             );
@@ -306,27 +315,9 @@ export default function Network() {
                         </tbody>
                       </table>
                     </div>
-                    <div className="pager">
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        disabled={page <= 1}
-                        onClick={() => setPage(page - 1)}
-                      >
-                        ‹ Prev
-                      </button>
-                      <span className="muted">
-                        {(page - 1) * res.pageSize + 1}–{Math.min(res.total, page * res.pageSize)} of {res.total}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        disabled={page >= pages}
-                        onClick={() => setPage(page + 1)}
-                      >
-                        Next ›
-                      </button>
-                    </div>
+                    <Pager page={page} pages={pages} onPage={setPage}>
+                      {(page - 1) * res.pageSize + 1}–{Math.min(res.total, page * res.pageSize)} of {res.total}
+                    </Pager>
                   </>
                 ) : (
                   <div className="state">
@@ -341,7 +332,7 @@ export default function Network() {
             <div className="panel">
               <div className="panel-head">
                 <h2>
-                  Traffic — {port.name}
+                  Traffic: {port.name}
                   {port.alias && <span className="muted"> ({port.alias})</span>}
                 </h2>
                 <RangePicker value={range} onChange={setRange} />

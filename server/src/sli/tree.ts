@@ -1,7 +1,7 @@
 import { cached } from '../cache.js';
 import type { SliProfile } from '../config.js';
 import { DEVICE_CLASS_LABELS, naturalCompare, type DeviceClass } from '../naming.js';
-import { getProblems, type ZbxProblem } from '../queries.js';
+import { getProblems, openProblems, type ZbxProblem } from '../queries.js';
 import type { ServiceNode, ServiceSla, ServicesResponse } from '../routes/services.js';
 import { getMonthlySli } from '../routes/sli.js';
 import { aggregate, type DataStatus, type SliGroup, type SliHost, type SliReport } from './engine.js';
@@ -190,14 +190,20 @@ export function buildDerivedTree(
   for (const h of report.hosts) {
     if (isBusiness(h)) continue;
     if (!h.site) unassigned.push(h);
-    else bySite.set(h.site.code, [...(bySite.get(h.site.code) ?? []), h]);
+    else {
+      const inSite = bySite.get(h.site.code);
+      if (inSite) inSite.push(h);
+      else bySite.set(h.site.code, [h]);
+    }
   }
   for (const [code, hosts] of [...bySite.entries()].sort((a, b) => a[0] - b[0])) {
     const site = hosts[0].site!;
     const classes = new Map<DeviceClass, SliHost[]>();
     for (const h of hosts) {
       const cls = h.deviceClass as DeviceClass;
-      classes.set(cls, [...(classes.get(cls) ?? []), h]);
+      const inClass = classes.get(cls);
+      if (inClass) inClass.push(h);
+      else classes.set(cls, [h]);
     }
     const classNodes = [...classes.entries()]
       .sort((a, b) => (a[0] === 'wan-link' ? -1 : b[0] === 'wan-link' ? 1 : naturalCompare(a[0], b[0])))
@@ -261,7 +267,7 @@ export async function getDerivedServices(month: string, profile: SliProfile): Pr
   return cached(`services:derived:${profile}:${month}`, 30_000, async () => {
     const [report, problems] = await Promise.all([
       getMonthlySli(month, profile),
-      cached('problems', 5_000, getProblems),
+      cached('problems', 5_000, getProblems).then(openProblems),
     ]);
     return buildDerivedTree(report, problems, month);
   });

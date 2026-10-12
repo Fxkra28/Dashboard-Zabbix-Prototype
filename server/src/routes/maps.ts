@@ -2,13 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { zbx } from '../zabbix.js';
 import { cached } from '../cache.js';
 import { requireId } from '../validate.js';
-import { getProblems } from '../queries.js';
+import { getProblems, openProblems } from '../queries.js';
+import { config } from '../config.js';
+import { hidesNetwork } from '../viewerPolicy.js';
 
 interface ZSelement {
   selementid: string;
   elementtype: string; // '0' host, '1' map, '2' trigger, '3' host group, '4' image
   label?: string;
-  elements?: { hostid?: string }[];
+  elements?: { hostid?: string; groupid?: string }[];
   [key: string]: unknown;
 }
 
@@ -27,10 +29,9 @@ export interface ZMapHost {
 /**
  * Expand the host macros Zabbix map labels are written in.
  *
- * HCML labels every host element `{HOSTNAME} ({HOST.IP})`. Zabbix fills those
- * in when it draws the map; the API returns them raw. Stripping them, what the
- * page used to do, left every box labelled "()". Unknown macros are still
- * dropped, and a pair of brackets left empty by a missing value goes with them.
+ * HCML labels every host element `{HOSTNAME} ({HOST.IP})`. Zabbix fills those in when it draws the
+ * map; the API returns them raw, and stripping them would leave every box labelled "()". Unknown
+ * macros are still dropped, and a pair of brackets left empty by a missing value goes with them.
  */
 export function resolveLabel(label: string, host?: ZMapHost): string {
   const iface = host?.interfaces?.find((i) => i.main === '1') ?? host?.interfaces?.[0];
@@ -52,6 +53,43 @@ export function resolveLabel(label: string, host?: ZMapHost): string {
     .join('\n');
 }
 
+/**
+ * A viewer's copy of a map: without the elements that are network hosts or network host groups,
+ * and without the links that end at one. A new object when something is cut, the
+ * same one otherwise, so the cached map is never changed.
+ */
+export function withoutNetworkElements<M extends { selements?: ZSelement[]; links?: unknown }>(
+  maps: M[],
+  hostIds: readonly string[],
+  groupIds: readonly string[],
+): M[] {
+  if (!hostIds.length && !groupIds.length) return maps;
+  const hosts = new Set(hostIds);
+  const groups = new Set(groupIds);
+  const isNetwork = (s: ZSelement) => {
+    const hostid = typeof s.hostid === 'string' ? s.hostid : s.elements?.[0]?.hostid;
+    return (hostid !== undefined && hosts.has(hostid)) || (s.elements ?? []).some((e) => e.groupid !== undefined && groups.has(e.groupid));
+  };
+  return maps.map((m) => {
+    const cut = new Set((m.selements ?? []).filter(isNetwork).map((s) => s.selementid));
+    if (!cut.size) return m;
+    const links = Array.isArray(m.links) ? (m.links as { selementid1?: string; selementid2?: string }[]) : undefined;
+    return {
+      ...m,
+      selements: (m.selements ?? []).filter((s) => !cut.has(s.selementid)),
+      ...(links ? { links: links.filter((l) => !cut.has(String(l.selementid1)) && !cut.has(String(l.selementid2))) } : {}),
+    };
+  });
+}
+
+/** The ids of the hosts in the network host groups (NET_GROUP_IDS); none when no group is named. */
+function networkHostIds(): Promise<string[]> {
+  if (!config.netGroupIds.length) return Promise.resolve([]);
+  return cached('net:hostids', 60_000, async () =>
+    (await zbx<{ hostid: string }[]>('host.get', { output: ['hostid'], groupids: config.netGroupIds })).map((h) => h.hostid),
+  );
+}
+
 export async function mapRoutes(app: FastifyInstance): Promise<void> {
   // Monitoring → Maps: list available network maps.
   app.get('/api/maps', () =>
@@ -65,7 +103,7 @@ export async function mapRoutes(app: FastifyInstance): Promise<void> {
   // problem count and worst severity, so the page can colour them.
   app.get('/api/maps/detail', async (req) => {
     const mapid = requireId((req.query as { mapid?: string }).mapid, 'mapid');
-    return cached(`map:${mapid}`, 30_000, async () => {
+    const detail = await cached(`map:${mapid}`, 30_000, async () => {
       const maps = await zbx<ZMapDetail[]>('map.get', {
         sysmapids: [mapid],
         selectSelements: 'extend',
@@ -93,7 +131,7 @@ export async function mapRoutes(app: FastifyInstance): Promise<void> {
               output: ['hostid', 'host', 'name'],
               selectInterfaces: ['ip', 'dns', 'useip', 'main'],
             }),
-            cached('problems', 5_000, getProblems),
+            cached('problems', 5_000, getProblems).then(openProblems),
           ])
         : [[], []];
 
@@ -122,5 +160,7 @@ export async function mapRoutes(app: FastifyInstance): Promise<void> {
         }),
       }));
     });
+    // Network hosts are operator data. Cut after the cache: it holds one map for every role.
+    return hidesNetwork(req) ? withoutNetworkElements(detail, await networkHostIds(), config.netGroupIds) : detail;
   });
 }
