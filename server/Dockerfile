@@ -2,7 +2,7 @@
 # moves to different bytes unannounced. Docker builds from the digest; the tag is for the
 # reader. Dependabot (.github/dependabot.yml) proposes the new pair when a release comes. Raise
 # it on purpose, in both FROM lines and in web/Dockerfile.
-FROM node:24.11-alpine@sha256:682368d8253e0c3364b803956085c456a612d738bd635926d73fa24db3ce53d7 AS build
+FROM node:26.11-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS build
 WORKDIR /app
 # `npm ci` against the committed lockfile, so the image is reproducible: plain
 # `npm install` re-resolves versions and two builds of one commit can differ.
@@ -12,7 +12,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:24.11-alpine@sha256:682368d8253e0c3364b803956085c456a612d738bd635926d73fa24db3ce53d7
+FROM node:26.11-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
