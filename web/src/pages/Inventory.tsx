@@ -163,12 +163,12 @@ export default function Inventory() {
           <div className="panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
               <h2>Gap list: {gaps.length} hosts</h2>
-              <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>
                 <select
                   aria-label="Show gaps of type"
                   value={filter}
                   onChange={(e) => setFilter(e.target.value as DimensionKey | 'all')}
-                  style={{ minWidth: 150 }}
+                  style={{ minWidth: 150, maxWidth: '100%' }}
                 >
                   <option value="all">All gaps</option>
                   {data.dimensions

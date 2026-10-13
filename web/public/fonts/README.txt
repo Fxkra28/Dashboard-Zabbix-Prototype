@@ -1,4 +1,4 @@
-The portal's two typefaces, served from this site (ayoyo_1.1 IN-22). Before this, every page load fetched
+The portal's two typefaces, served from this site (tracker IN-22). Before this, every page load fetched
 them from fonts.googleapis.com and fonts.gstatic.com, a third party on each visit to a confidential portal.
 
 Inter                 variable, one file per subset, covers weights 400 to 700

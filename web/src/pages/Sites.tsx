@@ -81,6 +81,7 @@ function SiteCard({
           {(site.degraded ?? 0) > 0 && (
             <span className="degraded" title="Answer ping, but SNMP polling or the Zabbix agent is silent">
               {site.degraded} degraded
+              <span className="sr-only">: they answer ping, but SNMP polling or the Zabbix agent is silent</span>
             </span>
           )}
           {noData > 0 && (

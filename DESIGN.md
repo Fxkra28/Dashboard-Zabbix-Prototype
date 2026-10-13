@@ -315,7 +315,7 @@ trademark, so it is not done without a decision. A vector original would make th
 
 ## 9. Batch 4 decisions, 25 September 2026
 
-The owner's answers to the design questions left open by the inspection (`ayoyo_1.1.md`, UX items). They are
+The owner's answers to the design questions left open by the inspection (`tracker.md`, UX items). They are
 direction, recorded as given; how each is built is checked against sections 1 to 8.
 
 | Item | Decision |

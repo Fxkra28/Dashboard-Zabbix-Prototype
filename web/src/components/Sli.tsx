@@ -62,7 +62,14 @@ export function SliPill({
       className={`pill nowrap ${met ? 'up' : 'down'}`}
       title={dataStatus === 'partial' ? 'Measured on partial data' : undefined}
     >
-      {percentText(sli, target, digits)}{dataStatus === 'partial' && <span className="sli-partial">*</span>} {met ? 'Met' : 'Missed'}
+      {percentText(sli, target, digits)}
+      {dataStatus === 'partial' && (
+        <>
+          <span className="sli-partial" aria-hidden="true">*</span>
+          <span className="sr-only"> (measured on partial data)</span>
+        </>
+      )}{' '}
+      {met ? 'Met' : 'Missed'}
     </span>
   );
 }

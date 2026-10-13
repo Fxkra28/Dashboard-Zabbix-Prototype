@@ -39,7 +39,7 @@ excluded. Builds used to write it next to `vite.config.ts`, and Vite loads the `
 stale one in one folder silently replaced that folder's real config. `tsconfig.node.json` now
 writes it under `node_modules/.tmp`, and one that turns up beside the source shows here.
 
-**Why not one repository with two deployment profiles?** It was considered (ayoyo_1.1 IN-13): a
+**Why not one repository with two deployment profiles?** It was considered (tracker IN-13): a
 `deploy/hosted.env.example` and a `deploy/local.env.example`, with the local copy started by
 `docker compose -p hcml-portal-ollama --env-file deploy/local.env up -d`, and the per-copy
 documents kept as separate files. It was not done: on 7 October 2026 the owner accepted the
@@ -94,13 +94,13 @@ are working on the plain-language layer.
 
 ## The checks
 
-Eleven committed checks, each one written because something specific broke. Run the ones your change
+Twelve committed checks, each one written because something specific broke. Run the ones your change
 can affect; run all of them before you call a change finished.
 
 | Check | Run it | What it exists to prevent |
 |---|---|---|
-| Tests | `npm test` in `server/` | 1495 tests, 65 files. The status-code semantics are pinned here: a rejected token is 503, never 502 or 504. The SLA report files are pinned here too: the tests read each PDF and workbook back, and compare the theme colours, the logo and the wording copied from the web app with their originals. Files that are not code are read as text too, because nothing else would notice them breaking: `docker-compose.yml` against the BFF's settings and the Dockerfile's build arguments, `nginx.conf`, and the CI workflow |
-| Web tests | `npm test` in `web/` | 788 tests in jsdom. They pin bugs that were found once: a slow answer for an old selection overwriting the new one, and, caught in review, sign-in returning to `/LOGIN` (the sign-in page again) and the wall bringing back a row marked "Cleared" after it had left the screen. Also the 401 handling and the CSRF header, and the report download buttons: one request however often they are pressed, and a month change dropping the request still in flight. Also the notices that say data is old (Zabbix stopped collecting, or a report is the last copy kept), the CSV formula guard, and the Assistant's conversation being cleared at sign-out |
+| Tests | `npm test` in `server/` | 1508 tests, 66 files. The status-code semantics are pinned here: a rejected token is 503, never 502 or 504. The SLA report files are pinned here too: the tests read each PDF and workbook back, and compare the theme colours, the logo and the wording copied from the web app with their originals. Files that are not code are read as text too, because nothing else would notice them breaking: `docker-compose.yml` against the BFF's settings and the Dockerfile's build arguments, `nginx.conf`, and the CI workflow |
+| Web tests | `npm test` in `web/` | 822 tests in jsdom. They pin bugs that were found once: a slow answer for an old selection overwriting the new one, and, caught in review, sign-in returning to `/LOGIN` (the sign-in page again) and the wall bringing back a row marked "Cleared" after it had left the screen. Also the 401 handling and the CSRF header, and the report download buttons: one request however often they are pressed, and a month change dropping the request still in flight. Also the notices that say data is old (Zabbix stopped collecting, or a report is the last copy kept), the CSV formula guard, and the Assistant's conversation being cleared at sign-out |
 | Lint | `npm run lint` in `web/` | typescript-eslint, the two classic react-hooks rules and jsx-a11y. Three `eslint-disable` comments pointed at the hooks rule before anything ran it, and the first run found 14 form labels tied to no control |
 | Types | `npm run typecheck` in `server/` and in `web/` | Both check their test config too |
 | API contract | `npx tsx scripts/openapi.check.ts` in `server/` | The endpoint table drifted twice: it claimed 35 endpoints while listing all of them, and 23 of 35 line citations pointed at unrelated lines after the route files grew. A third hand-written list would drift the same way |
@@ -109,9 +109,10 @@ can affect; run all of them before you call a change finished.
 | Design tokens | `node scripts/tokens.check.mjs` in `web/` | The sheet held 42 padding values, 16 font sizes and 14 radii against 13 tokens, and three of its colours failed WCAG unnoticed: `--muted` sat 0.07 short of AA for as long as the file existed. Contrast is computed here, not asserted, so a token edited to an illegible colour fails instead of shipping |
 | Parsers | `../server/node_modules/.bin/tsx scripts/markdown.check.ts` and `units.check.ts` in `web/` | The assistant's markdown renderer and the unit/duration formatters: standalone scripts, written before the web had a test runner |
 | Links | `node scripts/links.check.mjs` in `web/` | 41 relative links per copy had broken again after the ERD folder moved, 30 of them in `docs/erd/erd.md`. macOS resolves a wrong-case path, so the check matches each segment's exact spelling, and a link out of the repo fails, because a checkout does not have it |
+| Diagrams | `node scripts/diagrams.check.mjs` in `web/` | Nine renders in one copy and eight in the other were older than their sources by file date, and a file date is no use in a git checkout. Each `.mmd` now ends with a stamp holding the hash of its source, and the check fails when the source changed after it. It cannot see whether the render was redone: `node scripts/diagrams.stamp.mjs` is where that is said, run last |
 | Copies | `node scripts/parity.check.mjs` in `web/` | The two folders drifting: it lists every file that differs between them, or exists in one only, outside the short list meant to differ, which names its 17 files one by one. Until it existed the recipe above was a number someone had to remember, and `README_copy.md` had already made that number wrong once |
 
-`server/scripts/validate-sli.ts` is a twelfth, but it is not part of the routine set: it needs
+`server/scripts/validate-sli.ts` is a thirteenth, but it is not part of the routine set: it needs
 HCML's real Availability Report spreadsheets in `~/Downloads` and a running BFF. It compares the
 derived SLA against HCML's own published figures, and it never runs in CI.
 
@@ -123,7 +124,7 @@ pushing them, and runs `nginx -t` in the web image. CI holds one tree, so the pa
 its own self-test there, and confirms that every file on its list exists: run the comparison on the machine that has both copies. The workflow has
 not run on GitHub yet, so the image builds, `nginx -t` and the secret scan below are untested until it does.
 
-Since 12 October 2026 (ayoyo_1.1 SC-17) the workflow's token is read-only, and every action in it is pinned
+Since 12 October 2026 (tracker SC-17) the workflow's token is read-only, and every action in it is pinned
 to a full commit SHA, with the tag it came from in the comment after it: a tag can be moved to other code, a
 SHA cannot. A third job, `secrets`, runs gitleaks over the commits of each push and pull request. It does not
 read the history already in the repository, so the token in `cb97069` does not fail it; revoking that token is
@@ -135,7 +136,7 @@ other way. The SHAs, the gitleaks job and the Dependabot file have not met GitHu
 
 ### Writing a new checker
 
-Follow the eight that exist. The house pattern, in order of how often it has mattered:
+Follow the nine that exist. The house pattern, in order of how often it has mattered:
 
 1. A self-test over fixtures, before it touches a real file. `openapi.check.ts`,
    `css.check.mjs` and `tokens.check.mjs` all do this. A checker that has never failed has never
@@ -193,6 +194,11 @@ The Mermaid sources in [`schema/`](schema/), [`flow/`](flow/) and [`erd/`](erd/)
 render beside them. After editing a `.mmd`, **re-render and check the picture, not the source.** The
 tested `mermaid-cli` invocation is in each folder's README, along with the rules that were learned by
 breaking them: an unfilled subgraph frame, no bare `%%`, no numeric HTML entities in labels.
+
+When the render is done, run `node web/scripts/diagrams.stamp.mjs` from the repo root. It sets the
+last line of each `.mmd` you changed to `%% source-hash:` and the hash of the source, and refuses a
+source whose PDF is older than it. `node web/scripts/diagrams.check.mjs` fails, in CI too, on a source
+edited after its stamp. A comment-only edit that cannot change the picture takes `--force`.
 
 Count that each lane still reads in order and that no box has lost an edge. A Mermaid diagram that
 parses is not a Mermaid diagram that is readable.

@@ -104,6 +104,8 @@ export default function TimeSeriesChart({
   height?: number;
 }) {
   const summaryId = useId();
+  const dataId = useId();
+  const [showData, setShowData] = useState(false);
   const chartName = `Line chart of ${series.map((s) => seriesLabel(s, series)).join('; ')}, ${fmtTime(from)} to ${fmtTime(to)}`;
   // Up to two unit families get their own axis (e.g. bps left, % right).
   const unitAxes: string[] = [];
@@ -283,6 +285,58 @@ export default function TimeSeriesChart({
           </div>
         ))}
       </div>
+      {/* The chart gives its values only on hover. The tables give them to a keyboard and a screen reader. */}
+      <div className="chart-data-bar">
+        <button
+          type="button"
+          className="btn ghost sm"
+          aria-expanded={showData}
+          aria-controls={dataId}
+          onClick={() => setShowData((on) => !on)}
+        >
+          {showData ? 'Hide data' : 'Show data'}
+        </button>
+      </div>
+      <div id={dataId}>{showData && <ChartData series={series} />}</div>
+    </div>
+  );
+}
+
+/** What the chart plots, as one plain table per series. Only built while the reader has it open. */
+function ChartData({ series }: { series: GraphSeries[] }) {
+  return (
+    <div className="chart-data">
+      {series.map((s) => {
+        const label = seriesLabel(s, series);
+        // The same condition as the tooltip's range: a trend point carries its min and max, a step line does not.
+        const ranged = !s.step && s.points.some((p) => p[2] !== null && p[3] !== null);
+        return (
+          // A long table scrolls in its own box, which takes focus so the keyboard can scroll it.
+          <div key={s.itemid} className="table-wrap chart-data-scroll" role="region" aria-label={`Data of ${label}`} tabIndex={0}>
+            <table className="data compact">
+              <caption>{label}</caption>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>{ranged ? 'Average' : 'Value'}</th>
+                  {ranged && <th>Min</th>}
+                  {ranged && <th>Max</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {s.points.map((p) => (
+                  <tr key={p[0]}>
+                    <td className="nowrap">{formatDateTime(p[0])}</td>
+                    <td className="nowrap">{orNoData(formatValue(p[1], s.units))}</td>
+                    {ranged && <td className="nowrap">{orNoData(formatValue(p[2], s.units))}</td>}
+                    {ranged && <td className="nowrap">{orNoData(formatValue(p[3], s.units))}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </div>
   );
 }

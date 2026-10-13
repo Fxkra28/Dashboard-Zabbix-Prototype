@@ -309,14 +309,11 @@ export function checkStatusText(css) {
 }
 
 /**
- * Off-scale sizes in the TSX files that are known and not yet decided, by file under src/ and
- * the declaration, with how many. 12.5px is between --t-sm and --t-base and rounds differently
- * per browser (the stylesheet header says so); which one it should be is the owner's call.
+ * Off-scale sizes in the TSX files that are known and accepted, by file under src/ and the
+ * declaration, with how many: `'pages/X.tsx': { 'fontSize: 12.5': 1 }`. None now. An entry that no
+ * longer occurs fails the check, so a size that gets fixed cannot stay on the list.
  */
-export const TSX_EXCEPTIONS = {
-  'pages/Capacity.tsx': { 'fontSize: 12.5': 1 },
-  'pages/Network.tsx': { 'fontSize: 12.5': 1 },
-};
+export const TSX_EXCEPTIONS = {};
 
 const stripTsxComments = (text) =>
   text

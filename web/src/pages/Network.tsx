@@ -125,7 +125,7 @@ export default function Network() {
         <div className="panel-head">
           <h2>Network devices</h2>
           {devices.length > 0 && (
-            <span className="muted" style={{ fontSize: 12.5 }}>
+            <span className="muted" style={{ fontSize: 12 }}>
               {counts.up} up · {counts.down} down · {counts.unknown} no data
               {counts.disabled > 0 && ` · ${counts.disabled} disabled`}
             </span>
@@ -278,20 +278,29 @@ export default function Network() {
                             const sel = port?.index === r.index;
                             const canGraph = !!(r.itemids.in || r.itemids.out);
                             return (
+                              // The interface name is the keyboard path, a real button; the row click only widens the target for a mouse.
                               <tr
                                 key={r.index}
                                 className={`${canGraph ? 'clickable' : ''}${sel ? ' sel' : ''}`}
-                                tabIndex={canGraph ? 0 : undefined}
-                                title={canGraph ? 'Graph this port’s traffic' : undefined}
                                 onClick={() => openPort(r)}
-                                onKeyDown={(e) => {
-                                  if (!canGraph || !activates(e)) return;
-                                  e.preventDefault();
-                                  openPort(r);
-                                }}
                               >
                                 <td>
-                                  <div style={{ fontWeight: 500 }}>{r.name}</div>
+                                  {canGraph ? (
+                                    <button
+                                      type="button"
+                                      className="port-open"
+                                      aria-pressed={sel}
+                                      title="Graph this port’s traffic"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openPort(r);
+                                      }}
+                                    >
+                                      {r.name}
+                                    </button>
+                                  ) : (
+                                    <div style={{ fontWeight: 500 }}>{r.name}</div>
+                                  )}
                                   {r.alias && <div className="muted port-alias">{r.alias}</div>}
                                 </td>
                                 <td>

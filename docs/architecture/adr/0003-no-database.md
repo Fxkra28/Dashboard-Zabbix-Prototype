@@ -48,7 +48,7 @@ headers (`X-Data-Stale`, `X-Data-Age-Seconds`); problem and acknowledgement stat
   roles (`PORTAL_USERS`), the Zabbix read and write tokens, the model key, `JWT_SECRET` and the SLA
   settings live there. Git ignores them on purpose, so a lost laptop or a deleted file takes all of
   it, and this ADR once said the portal had no state to back up, which was wrong (corrected
-  2026-10-07, ayoyo_1.1 IN-24). The answer is a backup of those files, kept encrypted and off the
+  2026-10-07, tracker IN-24). The answer is a backup of those files, kept encrypted and off the
   machine, and a versioned list of the non-secret settings:
   [`operations/backup-and-restore.md`](../../operations/backup-and-restore.md) and
   `deploy/settings.example`.

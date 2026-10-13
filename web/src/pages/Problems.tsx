@@ -245,7 +245,7 @@ export default function Problems() {
                         <th>Duration</th>
                         <th>Ack</th>
                         <th>Tags</th>
-                        {(caps.ai || canAck) && <th><span className="sr-only">Actions</span></th>}
+                        {(caps.ai || canAck) && <th className="sticky-end"><span className="sr-only">Actions</span></th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -301,7 +301,7 @@ export default function Problems() {
                             </span>
                           </td>
                           {(caps.ai || canAck) && (
-                            <td>
+                            <td className="sticky-end">
                               <span style={{ display: 'inline-flex', gap: 6 }}>
                                 {caps.ai && (
                                   <button

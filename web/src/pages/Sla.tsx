@@ -224,7 +224,7 @@ function GroupTable({
               <th title="Every device's downtime in the group, added up. Devices down at the same time count separately">
                 Downtime (sum)
               </th>
-              {aiEnabled && <th><span className="sr-only">Actions</span></th>}
+              {aiEnabled && <th className="sticky-end"><span className="sr-only">Actions</span></th>}
             </tr>
           </thead>
           <tbody>
@@ -235,7 +235,8 @@ function GroupTable({
                   <SliPill sli={g.sli} target={target} />
                 </td>
                 <td className="muted nowrap" title="Devices with data / devices">
-                  {g.withData} / {g.hosts}
+                  <span aria-hidden="true">{g.withData} / {g.hosts}</span>
+                  <span className="sr-only">{g.withData} of {g.hosts} devices have data</span>
                 </td>
                 <td className={g.belowTarget ? 'sla-over' : 'muted'}>{g.belowTarget}</td>
                 <td className="muted nowrap">
@@ -251,7 +252,7 @@ function GroupTable({
                   )}
                 </td>
                 {aiEnabled && (
-                  <td>
+                  <td className="sticky-end">
                     <button
                       className="btn ghost sm"
                       onClick={() =>

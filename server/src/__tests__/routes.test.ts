@@ -319,7 +319,7 @@ describe('input validation and error shape', () => {
 
 
 describe('net routes', () => {
-  it('answers 200 on both network endpoints (the other three were removed, ayoyo_1.1 BK-11)', async () => {
+  it('answers 200 on both network endpoints (the other three were removed, tracker BK-11)', async () => {
     zabbixReturns({ 'host.get': [zHost()], 'item.get': [] });
     const { netRoutes } = await import('../routes/net.js');
     const app = await buildTestApp(netRoutes);

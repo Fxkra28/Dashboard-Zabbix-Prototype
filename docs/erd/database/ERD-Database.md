@@ -20,6 +20,8 @@ npx @mermaid-js/mermaid-cli -i ERD-Database.mmd -o ERD-Database.pdf -w 2600 -b w
 npx @mermaid-js/mermaid-cli -i ERD-Database.mmd -o ERD-Database.png -w 2600 -s 2 -b white
 ```
 
+Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+
 The same rules as the other diagram apply: keep `layout: elk` and every `style … fill:none`, or edges disappear under the domain frames. See [`erd.md`](../erd.md). Measured with the same script as that diagram, ELK lays this one out with 5 edge crossings and no edge through an unrelated table; dagre gives 18 and 21. `direction LR`, `mergeEdges: true`, the three other ELK node-placement strategies, `considerModelOrder` and two other domain orders also give 5, and a third order gives 6. The two tag-matching lines are written `problem_tag` → `service_problem_tag` and `service_tag` → `sla_service_tag` on purpose: the other way round, ELK sends the first back up around the whole events domain, where it reads as an extra frame. Either order is the same relationship. The per-domain views below have two crossings between them: one in [Services](#services), and one in [Acknowledge writes](#acknowledge-writes) that no layout removes, because `acknowledges` and `task` each point at both task tables, and two parents linked to the same two children always cross once in a layered drawing.
 
 ---

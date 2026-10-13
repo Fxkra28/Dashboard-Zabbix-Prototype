@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { GraphSeries } from '../types';
 
 // jsdom has no canvas, and the drawing is not what is under test.
@@ -58,5 +59,88 @@ describe('TimeSeriesChart accessibility (UX-17)', () => {
   it('says so in the description when a series has no data in the range', () => {
     render(<TimeSeriesChart series={[series('1', 'Bits received', null)]} from={1_800_000_000} to={1_800_003_600} />);
     expect(screen.getByRole('img')).toHaveAccessibleDescription(/no data in this range/);
+  });
+});
+
+describe('the data tables behind the chart (UX-17)', () => {
+  const window_ = { from: 1_800_000_000, to: 1_800_003_600 };
+  const T = 1_800_000_000_000;
+  const show = async (ui: React.ReactElement) => {
+    const user = userEvent.setup();
+    render(ui);
+    return user;
+  };
+
+  it('keeps the tables out of the page until asked, with a button that says what it will do', () => {
+    render(<TimeSeriesChart series={[series('1', 'Bits received', stats)]} {...window_} />);
+    const button = screen.getByRole('button', { name: 'Show data' });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(document.getElementById(button.getAttribute('aria-controls') ?? '')).not.toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('opens one table per series, named by the series, and closes them again', async () => {
+    const user = await show(
+      <TimeSeriesChart series={[series('1', 'Bits received', stats), series('2', 'Bits sent', stats)]} {...window_} />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+
+    const open = screen.getByRole('button', { name: 'Hide data' });
+    expect(open).toHaveAttribute('aria-expanded', 'true');
+    const tables = screen.getAllByRole('table');
+    expect(tables.map((t) => t.querySelector('caption')?.textContent)).toEqual(['Bits received', 'Bits sent']);
+    expect(screen.getByRole('region', { name: 'Data of Bits received' })).toHaveAttribute('tabindex', '0');
+
+    await user.click(open);
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show data' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('lists every plotted point with its time and value in the series own units', async () => {
+    const s = series('1', 'Bits received', stats);
+    s.points = [
+      [T, 1_000_000, null, null],
+      [T + 60_000, 2_500_000, null, null],
+    ];
+    const user = await show(<TimeSeriesChart series={[s]} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Time', 'Value']);
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getAllByRole('cell')[1]).toHaveTextContent('1 Mbps');
+    expect(within(rows[1]).getAllByRole('cell')[1]).toHaveTextContent('2.5 Mbps');
+  });
+
+  it('says "No data" for a collection gap, as words a screen reader can read', async () => {
+    const s = series('1', 'Bits received', stats);
+    s.points = [
+      [T, 1_000_000, null, null],
+      [T + 60_000, null, null, null],
+    ];
+    const user = await show(<TimeSeriesChart series={[s]} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+
+    const gap = within(screen.getAllByRole('row')[2]).getAllByRole('cell')[1];
+    expect(gap).toHaveTextContent('No data');
+  });
+
+  it('adds Min and Max for a trend series, which carries them, and not for a step line', async () => {
+    const trend = series('1', 'Bits received', stats);
+    trend.points = [[T, 2_000_000, 1_000_000, 3_000_000]];
+    const user = await show(<TimeSeriesChart series={[trend]} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Time', 'Average', 'Min', 'Max']);
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell');
+    expect([cells[1], cells[2], cells[3]].map((c) => c.textContent)).toEqual(['2 Mbps', '1 Mbps', '3 Mbps']);
+  });
+
+  it('leaves Min and Max off a step line even when its points carry them', async () => {
+    const step = { ...series('1', 'Link state', stats), step: true, units: '' };
+    step.points = [[T, 1, 0, 1]];
+    const user = await show(<TimeSeriesChart series={[step]} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Time', 'Value']);
   });
 });

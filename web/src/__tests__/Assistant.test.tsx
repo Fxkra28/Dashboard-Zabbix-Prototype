@@ -55,7 +55,8 @@ describe('the Assistant page before it knows whether a model is configured', () 
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByLabelText('Question for the assistant')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(health).toHaveBeenCalledTimes(2);
+    // The call that failed, the retry, and the model check the page makes once it is configured.
+    expect(health).toHaveBeenCalledTimes(3);
   });
 
   it('shows the checking state again while a retry is in flight', async () => {

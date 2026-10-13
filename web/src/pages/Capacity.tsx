@@ -61,7 +61,7 @@ function MetricPanel({
                 <th>{iface ? 'Port' : 'Item'}</th>
                 <th style={{ width: 150 }}>Average ({days}d)</th>
                 <th>Peak</th>
-                <th><span className="sr-only">Actions</span></th>
+                <th className="sticky-end"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -79,7 +79,7 @@ function MetricPanel({
                           }}
                         />
                       </span>
-                      <strong style={{ fontSize: 12.5 }}>
+                      <strong style={{ fontSize: 12 }}>
                         {r.avg.toFixed(1)}
                         {r.units}
                       </strong>
@@ -89,7 +89,7 @@ function MetricPanel({
                     {r.max.toFixed(1)}
                     {r.units}
                   </td>
-                  <td>
+                  <td className="sticky-end">
                     <Link className="btn ghost sm" to={`/graphs?hostid=${r.hostid}&itemid=${r.itemid}`}>
                       Graph
                     </Link>

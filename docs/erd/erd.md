@@ -31,6 +31,8 @@ npx @mermaid-js/mermaid-cli -i ERD-Mermaid.mmd -o ERD-Mermaid.pdf -w 2600 -b whi
 npx @mermaid-js/mermaid-cli -i ERD-Mermaid.mmd -o ERD-Mermaid.png -w 2600 -s 2 -b white
 ```
 
+Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+
 `--pdfFit` sizes the page to the chart; without it the diagram is squeezed onto A4 and unreadable.
 
 **The file declares `layout: elk` in its frontmatter, and that matters.** Mermaid's default engine

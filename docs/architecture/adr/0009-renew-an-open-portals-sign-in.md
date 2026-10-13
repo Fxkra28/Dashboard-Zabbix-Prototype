@@ -6,7 +6,7 @@
 * Amended: 2026-09-25 by [ADR-0010](0010-session-cookie.md). The token moved from `localStorage` into
   an httpOnly cookie, and renewal is timed from the `expiresIn` the BFF sends. The bullets below
   describe the renewal as it works now.
-* Amended: 2026-10-12 (ayoyo_1.1 SC-14). Since 7 October every request looks its user up again, so a removed
+* Amended: 2026-10-12 (tracker SC-14). Since 7 October every request looks its user up again, so a removed
   user loses access at once rather than at the next renewal. The 12 hours is now the default of `SESSION_HOURS`,
   a setting from 2 to 24, and raising `SESSION_EPOCH` ends every session without a new secret.
 
@@ -80,7 +80,7 @@ issuing two-minute tokens, before ADR-0010.
   taken out of `PORTAL_USERS` loses access within 12 hours of the BFF restart, when their current
   token runs out (a live stream is ended by the BFF at that moment, SC-15). Without that lookup, renewal would have made a removed user's access endless. A
   changed role reaches an open page at its next renewal instead of at the next sign-in. Audit item
-  SC-14 in `ayoyo_1.1.md` (no revocation) is only partly closed: one person's token still cannot be
+  SC-14 in `tracker.md` (no revocation) is only partly closed: one person's token still cannot be
   cancelled alone.
 * A closed tab renews nothing. A laptop that sleeps past the expiry wakes to the login page; one
   that wakes before it renews within a minute.

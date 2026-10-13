@@ -560,13 +560,14 @@ a {
   margin-top: var(--s-1);
 }
 
-/* Two-column dashboard layout (collapses on narrow screens) */
+/* Two-column dashboard layout (collapses on narrow screens). minmax(0, ...) lets a track shrink
+   below its widest content; a bare 1fr stops at it, and a wide table then pushes the page sideways. */
 .two-col {
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
 }
 @media (max-width: 1100px) {
   .two-col {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -774,6 +775,15 @@ table.data tr:last-child td {
 table.data tr:hover td {
   background: var(--surface-2);
 }
+/* The Actions column stays in view while the rest of a wide table scrolls under it, so Explain, Ack
+   and the graph links are not past the card's edge. The fill is opaque to hide what scrolls beneath;
+   the hover rule above is the more specific one and still colours it. */
+table.data th.sticky-end,
+table.data td.sticky-end {
+  position: sticky;
+  right: 0;
+  background: var(--surface);
+}
 
 /* Badges / pills */
 .badge {
@@ -967,8 +977,13 @@ a.btn:hover {
 .device.down {
   border-left-color: var(--danger);
 }
+/* A ring made of shadow, not outline: the keyboard focus ring is an outline, and on a selected card it
+   would otherwise replace the selection and look the same as it. The offset puts it outside the ring. */
 .device.sel {
-  outline: 2px solid var(--mid);
+  box-shadow: var(--shadow), 0 0 0 2px var(--mid);
+}
+.device.sel:focus-visible {
+  outline-offset: 4px;
 }
 .device .name {
   font-weight: 600;
@@ -2083,6 +2098,31 @@ button.btn[aria-disabled='true'] {
   color: var(--muted);
   margin-right: 3px;
 }
+.chart-data-bar {
+  margin-top: var(--s-2);
+}
+/* A long series scrolls inside its own box, with the column names kept in view. */
+.chart-data {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-2);
+}
+.chart-data-scroll {
+  max-height: 320px;
+  overflow: auto;
+}
+.chart-data-scroll caption {
+  padding: 0 0 var(--s-1);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  text-align: left;
+}
+.chart-data-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
 
 .pager {
   display: flex;
@@ -2116,6 +2156,21 @@ button.btn[aria-disabled='true'] {
 }
 table.data.ports tr.clickable {
   cursor: pointer;
+}
+/* The interface name is the row's button: it looks like the text it replaced. */
+table.data.ports button.port-open {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+table.data.ports button.port-open:hover {
+  text-decoration: underline;
 }
 table.data.ports tr.sel td {
   background: var(--tint);
@@ -2468,10 +2523,6 @@ table.data a:not(.btn):hover {
 .drawer:focus:not(:focus-visible),
 .modal:focus:not(:focus-visible) {
   outline: none;
-}
-table.data.ports tr.clickable:focus-visible {
-  outline: 2px solid var(--mid);
-  outline-offset: -2px;
 }
 
 /* Sidebar rail, theme picker, and the shell's response to both. DESIGN.md §6. */

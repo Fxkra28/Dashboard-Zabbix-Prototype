@@ -151,7 +151,7 @@ export default function LatestData() {
                         <th>Last check</th>
                         <th>Last value</th>
                         <th>Change</th>
-                        <th><span className="sr-only">Actions</span></th>
+                        <th className="sticky-end"><span className="sr-only">Actions</span></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -192,7 +192,7 @@ export default function LatestData() {
                                 <NoData label="Not compared" />
                               )}
                             </td>
-                            <td>
+                            <td className="sticky-end">
                               {graphable(i) && (
                                 <Link
                                   className="btn ghost sm"

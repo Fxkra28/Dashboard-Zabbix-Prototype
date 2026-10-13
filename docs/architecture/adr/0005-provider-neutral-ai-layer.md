@@ -49,7 +49,7 @@ sibling repo the same box is green and there is no boundary at all.
 **Decided 25 September 2026: this copy keeps hosted Claude.** The owner's reason: the two copies exist
 to compare a hosted API model with a local one head to head, and the local side of that comparison is
 `hcml-portal-ollama`. The two safeguards offered with the decision were held back at first and went in
-on 7 October 2026 (ayoyo_1.1 SC-01 and SC-09). Under every AI answer a line names Anthropic as the
+on 7 October 2026 (tracker SC-01 and SC-09). Under every AI answer a line names Anthropic as the
 external service the question was sent to. The portal shows it only when `AI_PROVIDER` is `anthropic`,
 so a local model shows nothing. Both copies limit Explain and the assistant for each signed-in user,
 the same in both so the comparison stays fair: 10 calls a minute each, at most 4 hosted calls at once,

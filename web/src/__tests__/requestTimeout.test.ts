@@ -52,7 +52,7 @@ const outcome = (p: Promise<unknown>) =>
     (error: unknown) => ({ error: error as Error }),
   );
 
-describe('a read that never answers (ayoyo_1.1 FR-11)', () => {
+describe('a read that never answers (tracker FR-11)', () => {
   it('fails after 30 s with a sentence a person can read, not a bare AbortError', async () => {
     const { api } = await load();
     stalled();

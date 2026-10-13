@@ -44,7 +44,7 @@ function composeEnv(): Map<string, string | null> {
   return out;
 }
 
-describe('the browser-to-nginx hop is drawn as plain HTTP (ayoyo_1.1 IN-26)', () => {
+describe('the browser-to-nginx hop is drawn as plain HTTP (tracker IN-26)', () => {
   // The same sentence in every copy and every document, so that the two copies cannot disagree again.
   const NOTE = "plain HTTP on this computer's loopback address";
   const DOCS = ['README.md', 'docs/index.md', 'setup.md', 'docs/flow/README.md'];
@@ -75,7 +75,7 @@ describe('the browser-to-nginx hop is drawn as plain HTTP (ayoyo_1.1 IN-26)', ()
   });
 });
 
-describe('docs/operations/tls.md (ayoyo_1.1 IN-26)', () => {
+describe('docs/operations/tls.md (tracker IN-26)', () => {
   const text = read('docs/operations/tls.md');
   const fences = [...text.matchAll(/```(\w*)\n([\s\S]*?)```/g)].map((m) => ({ lang: m[1], body: m[2] }));
   const fence = (lang: string) => fences.find((f) => f.lang === lang)?.body ?? '';
@@ -176,7 +176,7 @@ describe('TLS in front: what the BFF does with the proxy headers (docs/operation
   });
 });
 
-describe('docs/operations/backup-and-restore.md (ayoyo_1.1 IN-24)', () => {
+describe('docs/operations/backup-and-restore.md (tracker IN-24)', () => {
   const text = read('docs/operations/backup-and-restore.md');
 
   it('names both .env files and what is in them', () => {
@@ -219,7 +219,7 @@ describe('docs/operations/backup-and-restore.md (ayoyo_1.1 IN-24)', () => {
   });
 });
 
-describe('"nothing to back up" is gone from the documents it was in (ayoyo_1.1 IN-24)', () => {
+describe('"nothing to back up" is gone from the documents it was in (tracker IN-24)', () => {
   it.each(['docs/index.md', 'docs/architecture/adr/0003-no-database.md', 'docs/flow/README.md'])('%s', (rel) => {
     expect(flat(rel)).not.toMatch(/nothing to back up/i);
   });
@@ -245,7 +245,7 @@ describe('"nothing to back up" is gone from the documents it was in (ayoyo_1.1 I
   });
 });
 
-describe('deploy/settings.example (ayoyo_1.1 IN-24)', () => {
+describe('deploy/settings.example (tracker IN-24)', () => {
   const lines = read('deploy/settings.example').split('\n');
   const active = new Map<string, string>();
   for (const line of lines) {

@@ -4,7 +4,7 @@ A deep-dive into the architecture, data flow, and the Zabbix-native features thi
 re-implements. Read [README.md](README.md) first for installation and configuration; this document
 explains *how it all fits together* and *why*.
 
-It is the reference you grep, not the one you read front to back: 30 sections, one per subsystem.
+It is the reference you grep, not the one you read front to back: 31 sections, one per subsystem.
 Sections 14 to 26 are the only written record of why the derived figures are calculated the way they
 are, so they matter most when a number has to be defended.
 
@@ -182,7 +182,7 @@ Location: [`server/src/`](server/src/). Stack: Node 24 + Fastify 5 + TypeScript 
 | `shutdown.ts` | Closes the BFF on `SIGTERM` and `SIGINT`: live streams end first, the process exits when `app.close()` finishes, and after 8 s at most, inside Docker's 10 s stop timeout. A second signal exits at once. |
 | `staleness.ts` | Adds `X-Data-Stale` and `X-Data-Age-Seconds` to an answer that is an old copy kept because Zabbix failed (§26). |
 | [`index.ts`](server/src/index.ts) | Builds the Fastify app and registers, in this order: helmet → CORS → rate limit → compression → stale headers → health → auth → the eighteen route plugins. Validates config before listening and exits rather than booting unsafely, and installs the `SIGTERM` handler once it listens. |
-| [`server/src/__tests__/`](server/src/__tests__/) | 1495 vitest tests. Zabbix is mocked at `zabbix.ts`, the one point all API traffic funnels through. See [§22](#22-testing). |
+| [`server/src/__tests__/`](server/src/__tests__/) | 1508 vitest tests. Zabbix is mocked at `zabbix.ts`, the one point all API traffic funnels through. See [§22](#22-testing). |
 
 ### Endpoint reference (+ cache TTLs)
 
@@ -317,7 +317,7 @@ Server-Sent Events are the simplest live-push transport (chosen over WebSocket i
   to the last one sent is never sent again, and one where only a name or host changed goes after at
   most 30 s. A frame carries only the fields the Dashboard reads (`eventid`, `objectid`, `object`, `name`, `severity`, `clock`,
   `r_eventid`, `acknowledged`, `suppressed`, `host`, `hostid`): no tags, no `opdata`, and none of the other fields Zabbix
-  returns, which is about half the size of the full list (ayoyo_1.1 IN-11). After 15 s of
+  returns, which is about half the size of the full list (tracker IN-11). After 15 s of
   silence it sends an `event: ping` whose data is `{ "ageMs": n }`, the age of the last good read of
   the list, so the page's "Data as of" keeps moving on a quiet estate. It drops the client on
   disconnect. `X-Accel-Buffering: no` tells nginx to stream, not buffer.
@@ -1035,7 +1035,7 @@ Next: SSO or LDAP in place of env users. The acknowledge/close write-back that o
 (§20), through a separate `ZABBIX_WRITE_TOKEN` that is deliberately not the read-only token.
 
 
-### What changed on 7 October 2026 (ayoyo_1.1 SC-14, SC-19, SC-22, BK-03, FR-13, SC-07, SC-20, IN-09)
+### What changed on 7 October 2026 (tracker SC-14, SC-19, SC-22, BK-03, FR-13, SC-07, SC-20, IN-09)
 
 - Every request looks its user up again. A token is checked, then the user is found in `PORTAL_USERS` and the current role is used, not the one the token was signed with. Remove someone and restart the BFF and their tokens stop working at once; change a role and it takes effect at once. A new `JWT_SECRET` still ends everyone's.
 - Tokens name their portal. Each carries an issuer and an audience built from the session cookie name (`hcml-portal:hcml_session`, `hcml-portal:hcml_session_ollama`), so a token from :8081 is refused on :8082 even when both share a `JWT_SECRET`. No `.env` change is needed.
@@ -1193,7 +1193,7 @@ curl "localhost:4000/api/reports/noise?days=7" | jq '.concentration, .counts'
 
 ## 22. Testing
 
-`cd server && npm test`, 1495 tests in 65 files, no live Zabbix required.
+`cd server && npm test`, 1508 tests in 66 files, no live Zabbix required.
 
 The mock point. Every Zabbix call in the server funnels through one `fetch` in
 [`zabbix.ts`](server/src/zabbix.ts), exposed as `zbx()` and `zbxWrite()`. Mocking that single module
@@ -1304,7 +1304,7 @@ serves, and hides its version. The CSP only reports for now: violations show in 
 and nothing is blocked.
 
 
-### Request ids and `/api/ready` (7 October 2026, ayoyo_1.1 IN-09)
+### Request ids and `/api/ready` (7 October 2026, tracker IN-09)
 
 - One id per request. nginx makes it (`$request_id`, in `web/bff-proxy.inc`), replacing anything the client sent, and writes it in its access log as `rid=`. The BFF uses it as Fastify's request id: it is `reqId` on every BFF log line of the request, the `X-Request-Id` header of the reply (the live stream's too), and `requestId` in the body of every error. To follow a failure, ask for the `requestId` shown in the error and search both logs for it. A request that reaches the BFF some other way keeps a sent id only if it is 8 to 64 letters, digits, `.`, `_` or `-`, and gets a new one otherwise, so a caller cannot choose what is written to the log.
 - `GET /api/ready` answers `503` while the portal cannot read Zabbix and `200` otherwise, with the same body either way: the check's fields (`ok`, `zabbix`, `zabbixMs`, `model`, `checkedAt`) and the version, start time, build and screen count. It is for a monitor that holds a session or Bearer token, so it is guarded like any route (viewer). `/api/health` stays public and always 200, which is what the container healthcheck reads. Both read one cached check, so polling either costs Zabbix at most one call in 15 s. The model never changes the status.
@@ -1415,7 +1415,7 @@ rate-limited like any other request.
 
 - The notice. When the hosted Anthropic backend is configured (`AI_PROVIDER=anthropic`) the Assistant and Explain say, under every answer, what left the machine: "Each question, and a summary of the estate, is sent to Anthropic, an external AI service" and "To write this, the details shown here were sent to Anthropic, an external AI service". It follows `aiExternal` in `GET /api/health`. With a local model, as in hcml-portal-ollama, nothing is shown.
 - Per-user limits. Each signed-in user, or each client address when sign-in is off, may make `AI_CHAT_PER_MINUTE` Assistant questions and `AI_EXPLAIN_PER_MINUTE` explanations a minute (10 each). Over it is `429 rate_limited` with `Retry-After`. The count is kept in memory, so a restart gives everyone a fresh allowance.
-- Concurrency. `AI_MAX_CONCURRENT` (4) hosted calls run at once; the next waits its turn and is told the assistant is busy after about 20 seconds. A local model still takes one at a time. That slot belongs to one BFF process: a second BFF pointed at the same Ollama does not see it, so its question would run while another is answering and wait inside Ollama, with no word to the reader. Run one BFF per Ollama server. Setting `OLLAMA_NUM_PARALLEL` in Ollama's own environment lets Ollama take several questions at once, which only matters with more than one BFF, and needs memory for each (ayoyo_1.1 IN-21).
+- Concurrency. `AI_MAX_CONCURRENT` (4) hosted calls run at once; the next waits its turn and is told the assistant is busy after about 20 seconds. A local model still takes one at a time. That slot belongs to one BFF process: a second BFF pointed at the same Ollama does not see it, so its question would run while another is answering and wait inside Ollama, with no word to the reader. Run one BFF per Ollama server. Setting `OLLAMA_NUM_PARALLEL` in Ollama's own environment lets Ollama take several questions at once, which only matters with more than one BFF, and needs memory for each (tracker IN-21).
 - Daily token budget, hosted only. `AI_DAILY_TOKENS_PER_USER` (500,000) and `AI_DAILY_TOKENS_TOTAL` (2,000,000), counted from the tokens the API says it billed and reset at midnight in `SLA_TIMEZONE`. Used up is `429 ai_budget` with the time to midnight. `0` switches a budget off. A local model has no bill and no budget.
 
 ---
@@ -1588,6 +1588,9 @@ method counts each as 100 %; the SLA page lists them and the figures are unchang
 
 - `web/scripts/css.check.mjs` fails on an unclosed block, a stray `}` or a declaration outside a rule
   (a lost brace once left ~50 rules silently unapplied; Vite does not catch it).
+- `web/scripts/diagrams.check.mjs` fails when a diagram source was edited after its stamp, the
+  `%% source-hash:` line that ends each `.mmd`. A file date cannot say whether a render is old, because a
+  git checkout resets it; `web/scripts/diagrams.stamp.mjs` sets the stamp, after the re-render.
 - The two portals no longer drift by construction: since 18 September they hold the same source tree,
   so `diff -r` over `server/src`, `server/scripts`, `web/src` and `web/scripts` must print nothing.
   That replaced `scripts/check-sync.mjs` and its list of allowed differences, which had nothing left
@@ -1658,15 +1661,15 @@ not discovered by a reader.
 ### Security, still open
 
 - A password can still be plain text in `.env` (an scrypt hash is accepted since 7 October 2026, SC-22)
-  and users come from environment variables, so adding one needs a restart. Audit items BE-16 and
-  BE-17; BE-12 to BE-15 were fixed on 24 September 2026.
-- `server/.env` holds the placeholder `JWT_SECRET` that the BFF is designed to refuse, which is
-  why that file runs with `AUTH_ENABLED=false`. DOC-11, held deliberately. The sign-in path itself
-  has been exercised against a local BFF started with a test secret (ADR-0009, ADR-0010).
-- The two copies can share one `JWT_SECRET`. A token names its portal (the issuer and audience come
-  from the cookie name), so one minted by :8081 is refused on :8082 even then. A secret for each copy is
-  still the safer setup, because a leak of a shared one forges a session on both. That is a `.env` change
-  for the owner (SC-14).
+  and users come from environment variables, so adding one needs a restart. The audit items on this,
+  BE-12 to BE-17, are closed.
+- `server/.env` has held a random `JWT_SECRET` of its own since 13 October 2026 (DOC-11, SC-04), where
+  it held the placeholder the BFF is designed to refuse. It still runs with `AUTH_ENABLED=false` for local
+  development. The sign-in path itself has been exercised against a local BFF started with a test secret
+  (ADR-0009, ADR-0010).
+- Each running portal has a `JWT_SECRET` of its own since 13 October 2026 (SC-14). A token also names its
+  portal (the issuer and audience come from the cookie name), so one minted by :8081 is refused on :8082
+  either way; a secret for each copy means a leak of one cannot forge a session on the other.
 - `hcml-portal-ollama` is not under version control at all. Everything in it exists in one place
   on one disk. B1.
 - The Anthropic API key has been flagged for rotation since 10 September and has not been
@@ -1793,7 +1796,7 @@ better place to start if you are asking "why does this page exist?" rather than 
 
 ## 30. What changed on 12 October 2026
 
-*The "numbers 5 to 19" round of [`ayoyo_1.1.md`](ayoyo_1.1.md): SC-17, SC-21, IN-19, IN-04, BK-04, SC-14,
+*The "numbers 5 to 19" round of [`tracker.md`](tracker.md): SC-17, SC-21, IN-19, IN-04, BK-04, SC-14,
 IN-25, BK-11, IN-22, IN-23, IN-01, FR-16 and the template note of IN-06. Each is built and tested in both
 copies. Both portals were rebuilt from this code on the afternoon of 12 October and are running it (the steps
 and what was checked are at the end of this section). What needs a secret or a decision from you was left alone, and the last subsection
@@ -2052,3 +2055,112 @@ reload to get the new page. The Zabbix stack was not part of this rebuild.
   deployments is your call; an empty `ZABBIX_WRITE_TOKEN` turns write-back off.
 * SC-01 and SC-06. Rotating the Anthropic key, making the GitHub repository private and revoking the token in
   `cb97069` are yours. The repository was public when last checked.
+
+
+## 31. What changed on 13 October 2026
+
+*The "priorities 1 to 4" round of [`tracker.md`](tracker.md), done at your word, "everything except SC-06, IN-08 and SC-01": UX-14, UX-17, UX-18, UX-21, IN-21, IN-18, IN-01, the decision to keep SC-15 as it is, and the four items that live in `.env` files, IN-06, SC-14, SC-04 and SC-20, for which you allowed those lines to be opened. You had not chosen between the options, so each item took the smallest choice, named below. Each is built and tested in both copies, and both portals were rebuilt from this code the same morning and are running it (the last subsections give the steps and what was checked).*
+
+### Narrow screens and wide tables (UX-14; §6)
+
+The look in headless Chrome on 8 October found the Dashboard wider than the window at 390 px, and the Problems table wider than its card at 1440 px.
+
+The first came from one rule. `.two-col`, the two-column grid of the Dashboard and the Inventory report, used bare `1fr` columns, and a `1fr` column cannot shrink below its widest content, so the host-group table, which sat in no scrolling box, set the width of the whole grid. The columns are now `minmax(0, 1.4fr) minmax(0, 1fr)` (a single `minmax(0, 1fr)` below 1100 px), the table sits in a `table-wrap`, and the Inventory gap-list controls wrap and shrink. `markup.test.tsx` fails on a table outside a `table-wrap` and on a `.two-col` track that cannot shrink.
+
+Before the fix, 4 of the 85 combinations of page and width (17 pages at 1440, 1024, 720, 390 and 320 px) ran past the window: the Dashboard at 390 px (189 px) and 320 px (259 px), and the Inventory report at 390 px (55 px) and 320 px (125 px). After it: all 85 combinations fit, with no page wider than its window. A browser zoom of 200 percent on a 1440 px window is the 720 px column. The sweep is `myown/checks/layout-sweep.mjs`, which reads a dev portal and clicks nothing. It emulates a phone in headless Chrome; no real phone was used.
+
+The second was the Problems table: 1,283 px wide in a card 1,094 px wide, so Explain and Ack sat past the right edge until the card was scrolled. The widest column was Tags, 288 px, set by one tag of 43 characters among the 666 problems of the restored data. Capping the chips at 10rem left the table 85 px too wide, and letting them wrap squeezed the column to 79 px, so the Actions column now stays in view instead: `position: sticky; right: 0` with an opaque fill (`.sticky-end`), on the Problems, Hosts and Sites, Latest data, Capacity and SLA tables. At 1440, 1024 and 390 px the Problems Actions header sits at the card's right edge while the table scrolls 189, 605 and 1,027 px, and the Hosts and Latest data tables do the same at 1024 px (124 and 204 px). The content and the type are as they were.
+
+### Charts: Show data (UX-17; §6)
+
+A "Show data" button under each chart's summary opens the plotted values as plain tables, one per series, and "Hide data" closes them. It is a real button with `aria-expanded` and `aria-controls`. Each table has a caption naming the series and the columns Time and Value, or Time, Average, Min and Max for a series from hourly trends, the ones whose tooltip shows a range. It is a table per series, not one merged table, because the items of different hosts are sampled at different moments. A long series scrolls in its own box, 320 px tall, which takes focus so the keyboard can scroll it, and its header row stays in view. The tables are built only while open: a series holds up to 1,500 points, the BFF's default. Checked in headless Chrome on a September item: 325 rows and the four columns. `TimeSeriesChart.test.tsx` has six new tests.
+
+### Network ports and device cards (UX-18; §6)
+
+A port row was a focusable `<tr>` with a tooltip as its only name. The interface name is now a button (`Gi1/0/2`, with the tooltip as its description and `aria-pressed` for the port that is open). The row has no tab stop and no title, and a click anywhere else on it still opens the graph, for a mouse. A port with nothing to graph is plain text.
+
+A selected device card is drawn with a 2 px shadow ring instead of an outline, because the keyboard focus ring is an outline, and the old `.device.sel` outline replaced it: a focused card looked the same as a selected one. A card that is both now shows both, the focus ring 4 px outside the selection ring (measured in Chrome: a `0 0 0 2px` shadow, and a solid 2 px outline at offset 4 px).
+
+Four facts that lived only in tooltips are now also text for a screen reader, and the tooltip stays for the mouse: why a refresh failed, that a figure rests on partial data (the asterisk is hidden from a reader and the words replace it), what the devices-with-data count on the SLA page counts, and what "degraded" means on a site. The other tooltips repeat visible text, describe a button, or give an item's key, and a button's tooltip is already its description. Tests: `networkPorts.test.tsx` (9) and `tooltipFacts.test.tsx` (4).
+
+### Explain and the Assistant say when the model is not answering (IN-21; §24)
+
+`/api/health` has carried `ready.model` since 7 October, from one cached `GET {AI_BASE_URL}/models`: `ok`, `down`, `off`, or `not_checked` for the hosted Anthropic model, which a probe would bill. The web app now reads it. When the Explain panel or the Assistant opens it asks `/api/health` once, and when `model` is `down` a note says "The AI model is not answering right now, so a request may fail. The rest of the portal is not affected." It is the `refresh-failed` note, at the top of the Explain dialog's body and above the Assistant's question box.
+
+The buttons stay enabled. The check is cached for 15 seconds, and an older answer is served for up to a minute while a new check runs, so it can lag a model that has just come back, and a button that is disabled by a stale answer is worse than one that fails. The note never shows on the hosted copy, whose state is `not_checked`, and a failed health call shows nothing. `modelNotice.test.tsx` has 12 tests, and a mutant that stops reading `down` fails four of them.
+
+### The type scale (UX-21)
+
+Both inline `fontSize: 12.5` (the average value in the Capacity table, the device summary on Network) are `12`, the `--t-sm` step the other inline sizes use. `tokens.check.mjs` lists no exceptions now, and still fails when a listed one stops occurring.
+
+### Diagram freshness (IN-18)
+
+Each of the ten `.mmd` sources ends with `%% source-hash: <12 hex>`, the SHA-256 of the source without that line. `web/scripts/diagrams.check.mjs` fails when a source differs from its stamp, when a source has no PDF beside it, and when a PDF or PNG sits in a folder of sources with no source of its own. It is read-only, and CI runs it after the link check.
+
+`web/scripts/diagrams.stamp.mjs` writes the stamp, and is the step run after a re-render. It refuses a source whose PDF is older than the source, the one mistake it can see, and `--force` stamps anyway for an edit that cannot change the picture, such as a comment. A stamp does not prove that the render was redone; it is the person's word, which is why stamping is a separate step from checking.
+
+Mermaid ignores the comment: ServerFlow, CDM and the database ERD (the ELK layout) rendered identically with and without it, the SVG compared after the ids were normalised and the rough.js jitter removed for the ERD. `diagrams-check.test.ts` has 12 tests. Both copies were stamped after the re-render of 12 October.
+
+### The build stamp and the changelog (IN-01)
+
+`CHANGELOG.md` lists what changed in each build, newest first, and names the commit. Both portals were built as `748136c-dirty`: the hash of `HEAD`, and `-dirty` because the working tree holds changes that are not committed. To stamp a build the same way:
+
+```sh
+BUILD_COMMIT=$(git rev-parse --short HEAD)$([ -n "$(git status --porcelain)" ] && echo -dirty) \
+BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+```
+
+The `hcml-portal-ollama` copy has no git of its own, so it takes the hash of `hcml-portal`. Nothing is tagged: a tag names a commit, and the work is not committed.
+
+### The four `.env` changes (IN-06, SC-14, SC-04, SC-20; §8, §10, §19)
+
+You allowed those lines to be opened, and nothing was printed: a script changed the named keys and reported only whether each was set and how long it was. The four files were copied to a private folder first. Your encrypted copies of these files ([`docs/operations/backup-and-restore.md`](docs/operations/backup-and-restore.md)) hold the old values now, so make new ones: that page asks for a new copy after every change to a token, `JWT_SECRET` or a setting.
+
+| Item | File | Before | Now |
+|---|---|---|---|
+| IN-06 | the `.env` beside `docker-compose.yml`, both copies | `ZABBIX_WRITE_TOKEN` set | empty |
+| SC-14 | the same two files | one `JWT_SECRET`, the same in both | a different random 64-character `JWT_SECRET` in each |
+| SC-04 | `server/.env`, both copies | the 29-character placeholder, the same in both | a random 64-character secret, different in each |
+| SC-20 | the root `.env`, both copies | no `NET_GROUP_IDS` | `NET_GROUP_IDS=7,19,20,22,23,24` |
+
+IN-06. Acknowledge and Close are off in both portals. The buttons are gone, the Problems page says "Acknowledge is off on this portal. Ask the portal admin to turn it on.", and each BFF logs one warning at its start. Zabbix here is a restored database with no server process, so a close would be accepted, queued and never applied. To turn it on again, make an API token in Zabbix for a user who may update problems, put it in `.env` as `ZABBIX_WRITE_TOKEN=`, and run `docker compose up -d portal-bff`.
+
+SC-14. Each portal has a secret of its own, so a leak of one cannot forge a session on the other. Every session ended when the BFFs were recreated: each open page reaches the sign-in form at its next request.
+
+SC-04. The dev secrets are real now, which means a dev BFF started with `AUTH_ENABLED=true` no longer refuses on the placeholder. Dev still runs with sign-in off.
+
+SC-20. Zabbix has nine host groups. The six that name network gear are in: ARUBA (7), IP INTERNET PUBLIC (19), REPEATER (20), HCML Network (22), FIREWALL DEVICES HCML (23) and SWITCH DEVICE HCML (24). Left out are Zabbix servers (4), Virtual machines (6) and Web Monitoring (25). Each choice was measured before it was written, by starting extra dev BFFs on other ports with `NET_GROUP_IDS` in their environment and comparing what `/api/net/devices` and `/api/links` returned:
+
+| Groups | Devices on the Network page | Links |
+|---|---|---|
+| none set (before) | 142 | 135 |
+| 7, 19, 20, 22, 23, 24 (now) | 139 | 135 |
+| 22, 23, 24 only | 133 | 130 |
+
+The three hosts that went are the ones in none of the six groups. The last row shows why the three HCML groups alone were not enough: nine devices and five links of Aruba, repeaters and the internet probes sit in the other three.
+
+It also does what SC-20 is for: a viewer's maps lose the network hosts and their links. HCML has four maps, with 38 elements and 36 links, and 31 of those elements and all 36 links are network hosts, so a viewer's maps are close to empty. An operator sees them whole. If that is not what you want, blank the line and run `docker compose up -d portal-bff`: the map is cut only while the variable is set, and the operator's pages go back to every host.
+
+### Putting it live (done on 13 October)
+
+Both portals were rebuilt from this code on the morning of 13 October, at your word, hosted first (04:48:36 UTC) and then ollama (04:48:55). The images of the 12 October build are tagged `<name>:rollback-13oct` (for example `hcml-portal-portal-bff:rollback-13oct`). The command, in each folder:
+
+```sh
+BUILD_COMMIT=748136c-dirty BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+```
+
+Checked without signing in: all four containers `healthy` with no restart, and the Zabbix stack untouched; both pages serve the new bundle `index-DIeBCwKH.js`, and the lazy chunks hold "Show data", the model note and the `sticky-end` class; each BFF reports `NET_GROUP_IDS=7,19,20,22,23,24`, an empty write token, its own 64-character `JWT_SECRET` (the two differ) and its build stamp; `/api/health` answers `writeBack: false` on both; `/api/problems` is refused with 401; the BFFs log one warning each, that the write token is not set, and the web logs hold nothing.
+
+Not checked, because it needs a sign-in on this build: the footer line (`Build 748136c-dirty, 13/10/2026, 11.48.36 WIB` on :8081 and `11.48.55 WIB` on :8082), a report download through nginx's buffer, the live stream, the Problems page without its buttons, and a viewer's maps. `myown/checks/signedin_check.py` runs the first four against a portal; it reads the sign-in from `PORTAL_USER` and `PORTAL_PASSWORD` and prints neither.
+
+To go back: `docker tag <name>:rollback-13oct <name>:latest` for the four images, then `docker compose up -d --no-build` in each folder. The settings are a separate matter. The `.env` values from before the change are in the private folder the work used, which goes when the macOS temp folder is cleaned; a write token can be made again in Zabbix.
+
+### Left alone, and why
+
+* SC-06, SC-01 and IN-08. Making the GitHub repository private and revoking the token in `cb97069`, rotating the Anthropic key, and putting `hcml-portal-ollama` under git are yours, and you said to leave them.
+* SC-15. The caps stay: 100 screens in all (`STREAM_MAX_CLIENTS`) and 5 per user (`STREAM_MAX_PER_USER`). A wall of more than five screens on one shared login needs the second raised in `.env`.
+* BK-14. Query and response schemas change how every query string is read, and generating the OpenAPI file adds `@fastify/swagger`, a dependency.
+* FR-16. What is left is generating the web types from the OpenAPI file with `openapi-typescript`, a dev dependency.
+* IN-11. A smaller stream frame risks delaying frames past the 45 second watchdog that the Dashboard uses to notice a dead stream.
+* BK-13. Rounding explicit graph ranges to the minute gains nothing: the range picker already sends minute-aligned times.
+* IN-13 and IN-25. One repository with two deployment profiles is a structure decision, and the Linux compose file needs a Linux server to try it on.

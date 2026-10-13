@@ -421,6 +421,8 @@ export const api = {
       defaults?: { availabilityMinSeverity?: number; timezone?: string };
       /** Only in the reply a signed-in caller gets. */
       build?: { commit?: string; time?: string };
+      /** Only in the reply a signed-in caller gets: the BFF's cached check of Zabbix and of the AI model. */
+      ready?: { model?: string };
     }>('/api/health'),
   hosts: () => request<Host[]>('/api/hosts', { guard: hostListGuard }),
   hostsOverview: () => request<HostOverview[]>('/api/hosts/overview', { guard: hostOverviewGuard }),

@@ -115,6 +115,9 @@ jobs:
       - name: Every relative link in the docs resolves, spelled exactly
         run: node web/scripts/links.check.mjs
 
+      - name: Every diagram source still matches its stamp, and has its PDF
+        run: node web/scripts/diagrams.check.mjs
+
       # CI holds one tree, so this runs the script's own checks and skips the comparison.
       # The comparison needs the sibling copy and is run on the machine that has both.
       - name: The two copies match

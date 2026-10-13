@@ -126,14 +126,14 @@ freshly copied `.env` will not start until both are filled in, or, for local wor
 
 ```bash
 cd server
-npm test                                  # 1495 tests, 65 files
+npm test                                  # 1508 tests, 66 files
 npm run typecheck
 npx tsx scripts/openapi.check.ts          # the API contract matches the code
 npx tsx scripts/erd.check.ts              # the database ERD matches its .erd model
 npx tsx scripts/validate-sli.ts           # the derived SLA against HCML's published reports
 
 cd ../web
-npm test                                  # 788 tests, 54 files, in jsdom
+npm test                                  # 822 tests, 57 files, in jsdom
 npm run lint                              # eslint
 npm run typecheck
 ../server/node_modules/.bin/tsx scripts/markdown.check.ts   # web/ has no tsx of its own
@@ -141,6 +141,7 @@ npm run typecheck
 node scripts/css.check.mjs
 node scripts/tokens.check.mjs             # contrast, and no raw values past the tokens
 node scripts/links.check.mjs              # every relative link in the docs resolves
+node scripts/diagrams.check.mjs           # every diagram source still matches its stamp
 node scripts/parity.check.mjs            # the two copies match (needs both folders side by side)
 ```
 

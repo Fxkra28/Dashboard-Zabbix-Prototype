@@ -78,7 +78,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | `dotenv` | ^16.4 | `.env` in dev. In Docker, Compose passes the environment directly |
 | `@anthropic-ai/sdk` | ^0.124 | The `anthropic` backend of the AI layer, and nothing else. The OpenAI-compatible backend is hand-rolled on `fetch`: one response shape to maintain instead of a second SDK to keep current |
 | Report writers | not a package | `src/export/` writes the monthly SLA report as a PDF and as an Excel workbook, on request, with Node's built-in `zlib` and `crypto` modules and no PDF or spreadsheet library. ADR-0011 (`docs/architecture/adr/0011-build-the-sla-report-files-in-the-bff.md`) has the trade-off |
-| Vitest | ^5.0 | 1495 tests in 65 files. Zabbix is mocked at `src/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
+| Vitest | ^5.0 | 1508 tests in 66 files. Zabbix is mocked at `src/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
 | tsx | ^4.16 | `npm run dev` watch mode only. Production runs plain `node dist/index.js` |
 
 ### Web: `web/`
@@ -91,7 +91,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | ECharts + `echarts-for-react` | ^6.1 / ^3.0 | Registered selectively (line chart, grid, tooltip, legend, data zoom, canvas renderer) instead of the barrel, which pulls in roughly a megabyte of chart types nothing draws. Drawn with the `v5` theme ECharts 6 ships, so the parts the portal does not colour itself look as they did on 5.x. Imported only by `TimeSeriesChart`, so its 608 kB chunk loads on Graphs and Network and nowhere else |
 | Custom CSS | not a package | One `styles.css`. HCML blue `#2B5584`, measured from the company logo, with Inter for text and IBM Plex Mono for IDs and figures. Light and dark come from one set of CSS variables, per [`DESIGN.md`](DESIGN.md). `web/scripts/tokens.check.mjs` computes the contrast of every pair in both themes and fails on a raw value used where a token exists |
 | Hand-rolled, on purpose | not a package | `hooks/useSSE.ts` over native `EventSource`; `hooks/useAsync.ts` for server state, in place of a query library; `lib/markdown.ts` in 141 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
-| Vitest + Testing Library | ^5.0 / ^16.3 | 788 tests in 54 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api.ts`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
+| Vitest + Testing Library | ^5.0 / ^16.3 | 822 tests in 57 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api.ts`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
 | ESLint | ^9.39 | `npm run lint` in `web/`: typescript-eslint, the two classic react-hooks rules and jsx-a11y's recommended set. On 9 because jsx-a11y does not support ESLint 10 yet |
 
 ### Around it
@@ -153,15 +153,15 @@ hcml-portal/
 │       ├── export/          # SLA report files: one document model, a PDF writer, an Excel writer
 │       ├── routes/          # 18 modules → 35 endpoints (41 with health, ready and the four auth/ routes);
 │       │                    #   sliExport.ts serves the report files
-│       └── __tests__/       # vitest suite (1495 tests); export-*.test.ts cover the report files
+│       └── __tests__/       # vitest suite (1508 tests); export-*.test.ts cover the report files
 ├── web/                     # React + TypeScript + Vite
 │   ├── src/
 │   │   ├── pages/           # 18, all lazy-loaded
 │   │   ├── components/      # Layout, Sidebar, ExplainPanel, AckDialog, ReportDownload, …
 │   │   ├── hooks/           # useAsync, useSSE, useAuth, useUiPrefs, useUrlState, …
-│   │   ├── __tests__/       # vitest + Testing Library, in jsdom (788 tests); ReportDownload and reportApi cover the download
+│   │   ├── __tests__/       # vitest + Testing Library, in jsdom (822 tests); ReportDownload and reportApi cover the download
 │   │   └── api.ts, types.ts, theme.ts, styles.css
-│   ├── scripts/             # css.check.mjs, tokens.check.mjs, markdown.check.ts, units.check.ts, links.check.mjs
+│   ├── scripts/             # css.check.mjs, tokens.check.mjs, markdown.check.ts, units.check.ts, links.check.mjs, diagrams.check.mjs, diagrams.stamp.mjs
 │   ├── public/              # logo.png · logo-mark.png · logo-icon.png (served at /)
 │   └── brand/               # the supplied original, kept for provenance, not served
 ├── docs/                    # everything documentary lives here
@@ -176,10 +176,11 @@ hcml-portal/
 │   ├── operations/          # backing up the .env files; TLS for any deployment beyond localhost
 │   └── erd/                 # the full data model (erd.md) and the reference set behind it
 ├── deploy/                  # settings.example: every non-secret setting and its default
-├── .github/workflows/       # docs.yml: typechecks, web lint, both test suites, the web build, the eight checkers, npm audit, a secret scan, both Docker builds
+├── .github/workflows/       # docs.yml: typechecks, web lint, both test suites, the web build, the nine checkers, npm audit, a secret scan, both Docker builds
 ├── .github/dependabot.yml   # weekly pull requests for the actions, the npm packages and the base images
 ├── DESIGN.md                # the design direction: identity, palette, typography, mood
-├── setup.md                 # how each subsystem works and why, 30 sections
+├── CHANGELOG.md             # what changed in each build, newest first
+├── setup.md                 # how each subsystem works and why, 31 sections
 ├── AUDIT_REPORT.md          # security + documentation audits
 ├── docker-compose.yml       # portal-web (nginx) + portal-bff
 └── web/nginx.conf           # serves the build, reverse-proxies /bff
@@ -213,7 +214,7 @@ cd server
 cp .env.example .env          # set ZBX_URL + ZABBIX_API_TOKEN; auth needs JWT_SECRET + PORTAL_PASS
 npm install
 npm run dev                   # http://localhost:4000
-npm test                      # 1495 tests, no live Zabbix needed
+npm test                      # 1508 tests, no live Zabbix needed
 
 curl localhost:4000/api/health   # { ok, ts, ai, writeBack, defaults, version, startedAt, build, ready, streams }
 ```
@@ -322,8 +323,8 @@ Three roles, and the BFF is what enforces them:
 The sidebar hides what your role cannot reach, but that is cosmetic: the guard is server-side and
 returns 403 whatever the browser shows. The rules are `ROUTE_RULES` in `server/src/auth.ts`. A password
 in `.env` is plain text unless the entry is an scrypt hash (accepted since 7 October 2026), and either is
-compared in constant time. See [Known gaps](#known-gaps): audit items BE-16 and BE-17, which are
-recorded in `hcml-portal-ollama/AUDIT_REPORT.md` (this copy's report covers the web app).
+compared in constant time. The BFF audit items on this (BE-12 to BE-17, in `hcml-portal-ollama/AUDIT_REPORT.md`) are closed;
+what is still open is under [Known gaps](#known-gaps).
 
 ### The 18 pages
 
@@ -588,11 +589,11 @@ Ollama. Either way the snapshot is capped (20 problems, a budget per section) an
 
 ```bash
 cd server
-npm test          # 1495 tests
+npm test          # 1508 tests
 npm run typecheck # app and tests
 
 cd ../web
-npm test          # 788 tests, in jsdom
+npm test          # 822 tests, in jsdom
 npm run lint      # eslint
 npm run typecheck # app and tests
 ```
@@ -626,7 +627,7 @@ copied from the web app drifts from its original.
 | [`docs/getting-started.md`](docs/getting-started.md) | From a fresh clone to a running portal, step by step |
 | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | The API contract: all 41 endpoints, checked against the code |
 | [`docs/architecture/adr/`](docs/architecture/adr/) | Why the system is shaped this way: 11 decision records |
-| [`setup.md`](setup.md) | How each part works and why, in 30 sections |
+| [`setup.md`](setup.md) | How each part works and why, in 31 sections |
 | [`docs/schema/`](docs/schema/) | The data model on three pages |
 | [`docs/flow/`](docs/flow/) | The same system in motion, on three more pages |
 | [`docs/contributing.md`](docs/contributing.md) | The house rules before you change anything |
@@ -642,9 +643,10 @@ Kept short and honest; the full list is [`setup.md` §27](setup.md#27-limitation
 
 - The dataset is frozen at 17 Sep 2026 16:59:37. Local polling was stopped deliberately: a
   laptop should not poll production equipment. Every figure here is a snapshot of that moment.
-- Security items BE-16 and BE-17 are open (in `hcml-portal-ollama/AUDIT_REPORT.md`; BE-12 to BE-15 were fixed on 24 Sep 2026): a password in `.env` can still be plain text (an scrypt hash is accepted since 7 October 2026), users come from
-  environment variables, and `server/.env` still holds the placeholder `JWT_SECRET` the BFF is
-  designed to refuse. The Anthropic key flagged on 10 Sep has still not been rotated.
+- Security: a password in `.env` can still be plain text (an scrypt hash is accepted since 7 October 2026), and users come from
+  environment variables. One thing is still the owner's to change: the Anthropic key flagged on 10 Sep has not
+  been rotated. The dev `server/.env` files hold a secret of their own since 13 October 2026. The audit items BE-12 to
+  BE-17 are closed.
 - Nothing persists. No audit trail of who acknowledged what, no saved views, no user table, and
   a closed month's SLA is recomputed from scratch after every restart.
 - The SLA report files are new. The Excel file was checked with several readers but has not been
@@ -805,7 +807,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Typecheck | Running the TypeScript checker (`npm run typecheck`) to catch mistakes, without building anything |
 | TypeScript | JavaScript with types that are checked before the code runs. Both `server/` and `web/` are written in it |
 | Vite | The tool that serves the web app during development and builds it for production |
-| Vitest | The test runner. `npm test` runs 1495 tests in `server/` with Zabbix faked, so no live system is needed, and 788 in `web/` |
+| Vitest | The test runner. `npm test` runs 1508 tests in `server/` with Zabbix faked, so no live system is needed, and 822 in `web/` |
 | zlib, crypto | Two modules that come with Node itself: zlib compresses and unpacks data, and crypto does hashing. The SLA report's PDF and Excel writers are built on them, in place of a PDF or spreadsheet library |
 
 ### Documents
@@ -818,4 +820,4 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | OpenAPI | A standard file format that describes every endpoint of an API. The portal's is `docs/api/openapi.yaml`, and a script checks it against the code |
 | PDF, Excel file, CSV | A PDF is a document that looks the same on every screen and printer. An Excel file is a spreadsheet: here a workbook whose name ends in `.xlsx`. A CSV file is a plain-text table, one row per line with the values separated by commas. The SLA report downloads as a PDF or an Excel file, and the portal makes no CSV |
 | README | This file: the first document to read in a code repository |
-| `setup.md` | How each part of the portal works and why, in 30 sections |
+| `setup.md` | How each part of the portal works and why, in 31 sections |

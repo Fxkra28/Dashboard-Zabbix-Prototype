@@ -17,8 +17,8 @@ const SRC = fileURLToPath(new URL('..', import.meta.url));
 const NOT_PASSED: Record<string, string> = {
   HOST: 'the container must listen on 0.0.0.0, so the HOST=127.0.0.1 of local dev must never reach it',
   ZBX_TOKEN: 'a deprecated alias; passing it beside ZABBIX_API_TOKEN would trip the startup warning',
-  ANTHROPIC_API_KEY: 'hcml-portal-ollama passes no Anthropic key on purpose (ayoyo_1.1 IN-03)',
-  ALLOW_WRITE_WITHOUT_AUTH: 'a local-dev opt-in; the container always signs in, so it must never reach it (ayoyo_1.1 SC-07)',
+  ANTHROPIC_API_KEY: 'hcml-portal-ollama passes no Anthropic key on purpose (tracker IN-03)',
+  ALLOW_WRITE_WITHOUT_AUTH: 'a local-dev opt-in; the container always signs in, so it must never reach it (tracker SC-07)',
 };
 
 /** Every variable named in the non-test sources under src/: process.env.X, process.env['X'] and envNum('X'). */
@@ -113,7 +113,7 @@ const DIFFERS_BY_DESIGN = new Set([
 
 afterEach(() => vi.unstubAllEnvs());
 
-describe('docker-compose.yml and the BFF (ayoyo_1.1 IN-04)', () => {
+describe('docker-compose.yml and the BFF (tracker IN-04)', () => {
   it('passes every variable the BFF reads, apart from the ones it holds back on purpose', () => {
     const read = variablesRead();
     // A guard on the reader itself: finding nothing would make this test pass for the wrong reason.

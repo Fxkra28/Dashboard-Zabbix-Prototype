@@ -8,6 +8,7 @@ import { fmtTime } from '../lib/severity';
 import { orNoData } from './NoData';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import AiDataNotice from './AiDataNotice';
+import ModelOfflineNotice from './ModelOfflineNotice';
 
 /**
  * The plain-language layer's UI: a slide-over that translates one Zabbix artifact (a problem's tags
@@ -66,6 +67,7 @@ function Drawer({
 
         {/* A Tab stop of its own: a long explanation scrolls only once the body can take focus. */}
         <div className="drawer-body" tabIndex={0} role="region" aria-labelledby={titleId}>
+          <ModelOfflineNotice />
           {children}
         </div>
 

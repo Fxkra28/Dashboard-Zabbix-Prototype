@@ -165,6 +165,7 @@ describe('.github/workflows/docs.yml', () => {
       'web/scripts/markdown.check.ts',
       'web/scripts/units.check.ts',
       'web/scripts/links.check.mjs',
+      'web/scripts/diagrams.check.mjs',
       'web/scripts/parity.check.mjs',
     ])('runs %s', (script) => {
       expect(runs(validate, new RegExp(`\\s${script.replace(/\./g, '\\.')}(\\s|$)`))).toBe(true);

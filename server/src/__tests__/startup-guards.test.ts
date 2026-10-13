@@ -97,7 +97,7 @@ describe('passwords stored as scrypt hashes (SC-22)', () => {
   });
 });
 
-describe('AUTH_ENABLED (ayoyo_1.1 BK-03)', () => {
+describe('AUTH_ENABLED (tracker BK-03)', () => {
   const REST = { JWT_SECRET: STRONG, PORTAL_USER: 'admin', PORTAL_PASS: 'a-long-real-password', PORTAL_USERS: '' };
 
   it('is on when unset or empty, and for true, 1 and yes in any case', async () => {
@@ -160,7 +160,7 @@ describe('TRUST_PROXY', () => {
     }
   });
 
-  it('with one hop, takes the address nginx appended, not the one the client wrote (ayoyo_1.1 SC-05)', async () => {
+  it('with one hop, takes the address nginx appended, not the one the client wrote (tracker SC-05)', async () => {
     const { config, trustProxyOption } = await load({ TRUST_PROXY: 'true' });
     const app = Fastify({ trustProxy: trustProxyOption(config.trustProxy) });
     app.get('/ip', async (req) => ({ ip: req.ip }));

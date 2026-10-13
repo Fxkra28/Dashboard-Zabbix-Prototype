@@ -460,7 +460,7 @@ describe('fetchTrendsSliced', () => {
   });
 });
 
-describe('computeSli: planned maintenance (ayoyo_1.1 BK-05)', () => {
+describe('computeSli: planned maintenance (tracker BK-05)', () => {
   it('leaves maintenance windows out of downtime and total, for hosts named directly or through a group', async () => {
     const A = AUG.from;
     const D = 86400;

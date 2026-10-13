@@ -141,8 +141,8 @@ describe('HostTable', () => {
 
   const head = (extra: string) =>
     '<thead><tr><th>Host</th><th>Interface</th><th>Availability</th><th>Status</th><th>Problems</th>' +
-    `${extra}<th><span class="sr-only">Actions</span></th></tr></thead>`;
-  const graphs = (id: string) => `<td><a class="btn ghost sm" href="/graphs?hostid=${id}" data-discover="true">Graphs</a></td>`;
+    `${extra}<th class="sticky-end"><span class="sr-only">Actions</span></th></tr></thead>`;
+  const graphs = (id: string) => `<td class="sticky-end"><a class="btn ghost sm" href="/graphs?hostid=${id}" data-discover="true">Graphs</a></td>`;
   // The two rows without problem chips, as the Hosts page drew them before the table was shared.
   const edge = (from: string) =>
     '<tr><td style="font-weight: 500;">edge-2</td>' +

@@ -1,7 +1,7 @@
 # Keep the sign-in token in an httpOnly session cookie
 
 * Status: accepted
-* Deciders: HCML internship project (the owner decided audit item SC-11 in `ayoyo_1.1.md` on 25 September 2026)
+* Deciders: HCML internship project (the owner decided audit item SC-11 in `tracker.md` on 25 September 2026)
 * Date: 2026-09-25
 
 ## Context and Problem Statement
@@ -11,7 +11,7 @@ sent it as `Authorization: Bearer` on every request. Any script running on the p
 and send it somewhere else, where it worked on every route, acknowledge included, until it ended.
 With [ADR-0009](0009-renew-an-open-portals-sign-in.md) a stolen token can also be renewed without
 end. The Content-Security-Policy that would limit an injected script is still report-only
-(ayoyo_1.1 IN-02).
+(tracker IN-02).
 
 The live stream had the same token in its URL, `/api/stream?token=…`, because `EventSource`
 cannot set a header. A URL reaches access logs, error logs and browser history. nginx and the BFF
@@ -91,7 +91,7 @@ to `/login?next=%2Fhosts`.
   it sends a cookie with every request to the portal. Every state-changing route now depends on
   `SameSite=Strict` and the `X-HCML-CSRF` check, and both cover unsafe methods only: a route that
   changed state on a GET would be open to forgery, so writes must stay on POST. `WEB_ORIGIN` is still
-  allowed credentials by CORS (ayoyo_1.1 SC-18), so a page served from that origin could send the
+  allowed credentials by CORS (tracker SC-18), so a page served from that origin could send the
   header.
 * Cookies ignore ports. Everything on one host name shares its cookies, so the two portals on
   127.0.0.1:8081 and :8082 need different names (`SESSION_COOKIE=hcml_session_ollama` in the ollama

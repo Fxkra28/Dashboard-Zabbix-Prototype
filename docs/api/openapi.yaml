@@ -291,7 +291,7 @@ paths:
         Credentials come from `PORTAL_USERS` (comma-separated `name:password:role` triples) or from
         `PORTAL_USER`/`PORTAL_PASS` as a single-admin shorthand. A password is plain text or an scrypt
         hash (`scrypt.N.r.p.salt.hash`, made by `server/scripts/hash-password.ts`), and either is compared
-        in constant time. A plain one is still plain text in the environment (open audit item BE-16).
+        in constant time. A plain one is still plain text in the environment.
 
         The token goes into the session cookie, never the body. Needs `X-HCML-CSRF: 1`, with or
         without a cookie, and with auth off too: a refused sign-in gets 403 and sets no cookie.

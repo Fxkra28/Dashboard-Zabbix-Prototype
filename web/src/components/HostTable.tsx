@@ -28,7 +28,7 @@ export function HostTable({ hosts, siteFrom = false }: { hosts: HostTableRow[]; 
             <th>Status</th>
             <th>Problems</th>
             {siteFrom && <th>Site from</th>}
-            <th><span className="sr-only">Actions</span></th>
+            <th className="sticky-end"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -69,7 +69,7 @@ export function HostTable({ hosts, siteFrom = false }: { hosts: HostTableRow[]; 
                     </span>
                   </td>
                 )}
-                <td>
+                <td className="sticky-end">
                   <Link className="btn ghost sm" to={`/graphs?hostid=${h.hostid}`}>
                     Graphs
                   </Link>

@@ -43,6 +43,8 @@ npx @mermaid-js/mermaid-cli -i ERD-Conceptual.mmd -o ERD-Conceptual.pdf -w 2600 
 npx @mermaid-js/mermaid-cli -i ERD-Conceptual.mmd -o ERD-Conceptual.png -w 2600 -s 2 -b white
 ```
 
+Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+
 `LR`, not `TB`. A Merise graph puts an extra node on every edge, so its longest path is about double the
 logical model's: `TB` came out 3712 × 16590, a 1:4.5 tower. `LR` is 5168 × 1348. Even so the single canvas
 is a reference sheet, not a reading diagram. Read the six domain views below instead.

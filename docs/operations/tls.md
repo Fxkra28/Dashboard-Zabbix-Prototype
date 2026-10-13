@@ -3,7 +3,7 @@
 The portal speaks plain HTTP. In Docker, nginx in the `portal-web` container listens on port 8080, and
 Docker publishes it on `127.0.0.1:8081` (`127.0.0.1:8082` for `hcml-portal-ollama`) and nowhere
 else. On the machine that runs it, that traffic never leaves the machine. Nothing in this repository
-terminates TLS (ayoyo_1.1 IN-26).
+terminates TLS (tracker IN-26).
 
 That is right for a laptop and wrong for anything else. Over a network, the pages, the sign-in
 password and the session cookie would all cross it in clear. So for any deployment beyond localhost,

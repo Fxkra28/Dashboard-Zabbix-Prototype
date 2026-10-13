@@ -111,20 +111,20 @@ describe('auth guard', () => {
 
   // The stream takes no ?token=, because EventSource
   // cannot send headers and sends the session cookie like every request.
-  it('refuses ?token= on the live stream too, which opens with the cookie instead (ayoyo_1.1 SC-03, SC-11)', async () => {
+  it('refuses ?token= on the live stream too, which opens with the cookie instead (tracker SC-03, SC-11)', async () => {
     const token = tokenFor('ana', 'viewer');
     expect((await app.inject({ url: `/api/stream?token=${token}` })).statusCode).toBe(401);
     expect((await app.inject({ url: '/api/stream', headers: cookieOnly(token) })).statusCode).toBe(200);
   });
 
-  it('refuses ?token= on every route (ayoyo_1.1 SC-03)', async () => {
+  it('refuses ?token= on every route (tracker SC-03)', async () => {
     const token = tokenFor('ana', 'viewer');
     expect((await app.inject({ url: `/api/hosts?token=${token}` })).statusCode).toBe(401);
     // The header still works when a stray query token rides along.
     expect((await app.inject({ url: `/api/hosts?token=junk`, headers: bearer(token) })).statusCode).toBe(200);
   });
 
-  it('guards the path the router decodes, not the raw URL text (ayoyo_1.1 SC-02)', async () => {
+  it('guards the path the router decodes, not the raw URL text (tracker SC-02)', async () => {
     for (const url of ['/%61pi/hosts', '/api/%68osts', '/%61pi/zz-unknown']) {
       expect((await app.inject({ url })).statusCode, url).toBe(401);
     }
@@ -424,7 +424,7 @@ describe('GET /api/auth/me', () => {
   });
 });
 
-describe('CSRF check on cookie requests (ayoyo_1.1 SC-11)', () => {
+describe('CSRF check on cookie requests (tracker SC-11)', () => {
   const ack = (headers: Record<string, string>) => app.inject({ method: 'POST', url: '/api/problems/acknowledge', headers });
   const operator = () => tokenFor('olu', 'operator');
 

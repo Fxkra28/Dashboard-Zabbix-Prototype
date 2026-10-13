@@ -65,6 +65,8 @@ export function RefreshFailed({ error, updatedAt }: { error: string; updatedAt?:
   return (
     <div className="refresh-failed" role="status" title={error}>
       Refresh failed: showing data from {updatedAt ? clockTime(updatedAt) : 'earlier'}
+      {/* The tooltip is for a mouse; a screen reader gets the cause as text. */}
+      <span className="sr-only">. {error}</span>
     </div>
   );
 }

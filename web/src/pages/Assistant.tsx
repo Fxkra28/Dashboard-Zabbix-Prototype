@@ -7,6 +7,7 @@ import type { ChatContext, ChatMessage } from '../types';
 import { Empty, Loading } from '../components/states';
 import Markdown from '../components/Markdown';
 import AiDataNotice from '../components/AiDataNotice';
+import ModelOfflineNotice from '../components/ModelOfflineNotice';
 
 /**
  * The Assistant page: free-form questions about the estate, answered from a
@@ -263,6 +264,7 @@ export default function Assistant() {
         {error && <div className="chat-error">Couldn’t answer: {error}</div>}
       </div>
 
+      <ModelOfflineNotice />
       <div className="chat-compose">
         {/* Never disabled: a disabled box loses focus, and the next question can be typed while this answer streams. */}
         <textarea

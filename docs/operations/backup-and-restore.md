@@ -5,7 +5,7 @@ them. They are in the `.env` files. Git ignores those files on purpose, because 
 and tokens, so a clone of the repository does not bring them back. This page says what to keep, how
 to keep it, and how to start again from it. It corrects an older claim in
 [`../index.md`](../index.md) and [ADR-0003](../architecture/adr/0003-no-database.md) that there is
-"nothing to back up" (ayoyo_1.1 IN-24).
+"nothing to back up" (tracker IN-24).
 
 ## What the portal keeps
 

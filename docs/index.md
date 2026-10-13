@@ -33,7 +33,7 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 | Understand why it is shaped this way | [`architecture/adr/`](architecture/adr/): eleven decisions |
 | See how it works | [`architecture/`](architecture/): diagrams and the subsystem index |
 | See who uses it | [`ux/README.md`](ux/README.md): the three roles and the acknowledge journey, derived from the code |
-| Change something | [`../setup.md`](../setup.md), 30 sections, one per subsystem |
+| Change something | [`../setup.md`](../setup.md), 31 sections, one per subsystem |
 | Change it safely | [`contributing.md`](contributing.md): the house rules, and why each one exists |
 | Know what is wrong with it | [`../AUDIT_REPORT.md`](../AUDIT_REPORT.md) and `setup.md` §27 |
 
@@ -41,8 +41,8 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 
 | | |
 |---|---|
-| Front end | React 18 + TypeScript + Vite, ECharts. 18 pages, 788 tests, linted with eslint |
-| Back end | Fastify 5 + TypeScript on Node 24. 18 route modules, 41 endpoints, 1495 tests |
+| Front end | React 18 + TypeScript + Vite, ECharts. 18 pages, 822 tests, linted with eslint |
+| Back end | Fastify 5 + TypeScript on Node 24. 18 route modules, 41 endpoints, 1508 tests |
 | Data source | The Zabbix JSON-RPC API. Nothing else: no database, no volumes, no data files |
 | Writes | Exactly one: acknowledge/close, behind a separate token and the operator role |
 | Downloads | The monthly SLA report as a PDF or an Excel file, built when asked from the cached figures and never stored |
@@ -67,7 +67,7 @@ shows is a snapshot of that moment. [ADR-0008](architecture/adr/0008-stop-local-
 
 ```
 README.md                  install, configure, run
-setup.md                   30 sections, one per subsystem: the deep reference
+setup.md                   31 sections, one per subsystem: the deep reference
 AUDIT_REPORT.md            what two audits found, and what is still open
 docs/
   index.md                 this file
@@ -81,7 +81,7 @@ docs/
 deploy/
   settings.example         every non-secret setting and its default, versioned
 .github/
-  workflows/docs.yml       typechecks, web lint, both test suites, the web build, the eight checkers, npm audit, a secret scan, both Docker builds
+  workflows/docs.yml       typechecks, web lint, both test suites, the web build, the nine checkers, npm audit, a secret scan, both Docker builds
   dependabot.yml           weekly pull requests for the actions, the npm packages and the base images
 ```
 

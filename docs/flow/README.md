@@ -298,6 +298,8 @@ npx @mermaid-js/mermaid-cli -i ServerFlow.mmd -o ServerFlow.pdf -w 2600 -b white
 npx @mermaid-js/mermaid-cli -i DataFlow.mmd   -o DataFlow.pdf   -w 2600 -b white --pdfFit
 ```
 
+Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+
 `--pdfFit` sizes the page to the chart; without it the diagram is squeezed onto A4 and unreadable.
 For a raster copy to paste into slides, swap the output for `.png` and add `-s 2`.
 

@@ -260,26 +260,28 @@ export default function Overview() {
           >
             {(groups) =>
               groups.length ? (
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Host group</th>
-                      <th>Severities</th>
-                      <th style={{ textAlign: 'right' }}>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groups.map((g) => (
-                      <tr key={g.groupid}>
-                        <td>{g.name}</td>
-                        <td>
-                          <SeverityCounts bySeverity={g.bySeverity} />
-                        </td>
-                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{g.total}</td>
+                <div className="table-wrap">
+                  <table className="data">
+                    <thead>
+                      <tr>
+                        <th>Host group</th>
+                        <th>Severities</th>
+                        <th style={{ textAlign: 'right' }}>Total</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {groups.map((g) => (
+                        <tr key={g.groupid}>
+                          <td>{g.name}</td>
+                          <td>
+                            <SeverityCounts bySeverity={g.bySeverity} />
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{g.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <div className="state">No problems across any host group.</div>
               )
