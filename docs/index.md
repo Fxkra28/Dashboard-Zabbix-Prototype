@@ -32,6 +32,7 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 | Download the monthly SLA report | [`../README.md`](../README.md#download-the-sla-report) for the buttons and the endpoint, [`../setup.md`](../setup.md) §18 for how the files are built |
 | Understand why it is shaped this way | [`architecture/adr/`](architecture/adr/): eleven decisions |
 | See how it works | [`architecture/`](architecture/): diagrams and the subsystem index |
+| See what it looks like | [`screenshots/README.md`](screenshots/README.md): the main pages as images, with every name replaced |
 | See who uses it | [`ux/README.md`](ux/README.md): the three roles and the acknowledge journey, derived from the code |
 | Change something | [`../setup.md`](../setup.md), 31 sections, one per subsystem |
 | Change it safely | [`contributing.md`](contributing.md): the house rules, and why each one exists |
@@ -76,6 +77,7 @@ docs/
   api/openapi.yaml         the contract: 41 endpoints
   architecture/adr/        why it is the way it is: 11 decisions
   schema/  flow/  erd/     the diagrams; erd/erd.md is the data model in prose
+  screenshots/             the main pages as images, with host names, addresses and interface descriptions replaced
   ux/                      who uses it: the three roles and the acknowledge journey (derived, not interviewed)
   operations/              backing up and restoring the .env files; TLS beyond localhost
 deploy/

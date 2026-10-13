@@ -9,7 +9,16 @@ A build is named by the commit it was made from. The sidebar footer shows it onc
 and so does a signed-in `/api/health`. A `-dirty` suffix means the build was made from a working tree
 with changes that were not committed. Nothing is tagged: the commit is the version.
 
-## 13 October 2026 (not committed yet, built as 748136c-dirty)
+## Not yet committed (13 October 2026)
+
+- Screenshots. `docs/screenshots/` holds seven images of the main pages, and the README and the
+  getting-started guide show some of them. Every host name, address and interface description in them
+  is a stand-in, and each image was looked at before it was added.
+
+## 13 October 2026 (cef91b3)
+
+The running portals were built from this work a few hours before it was committed, so they report
+`748136c-dirty` until they are rebuilt.
 
 - Narrow screens (UX-14). The Dashboard and the Inventory report no longer run past the window at 390
   and 320 px: the two-column grid lets its columns shrink, the host-group table scrolls inside its card,

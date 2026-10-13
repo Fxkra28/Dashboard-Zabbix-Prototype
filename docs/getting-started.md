@@ -122,6 +122,13 @@ Both `.env.example` files ship `AUTH_ENABLED=true` with `JWT_SECRET` and `PORTAL
 freshly copied `.env` will not start until both are filled in, or, for local work only,
 `AUTH_ENABLED=false` is set.
 
+## What you should see
+
+Signed in, the first page is the Dashboard. The names here are stand-ins; [`screenshots/`](screenshots/README.md)
+has the other main pages, the dark theme and the narrow-screen layout.
+
+![The Dashboard: counts for the estate, the live list of open problems and problems by host group](screenshots/dashboard.png)
+
 ## Checks you can run
 
 ```bash

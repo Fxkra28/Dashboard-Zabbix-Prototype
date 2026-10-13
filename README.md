@@ -19,6 +19,21 @@ sibling copy, `hcml-portal-ollama`, runs the same code against a model on the lo
 New to the abbreviations? Every one used in this file is explained in the
 [Glossary](#glossary) at the end.
 
+### What it looks like
+
+![The Dashboard: counts for the estate, the live list of open problems and problems by host group](docs/screenshots/dashboard.png)
+
+![Problems: one row per open problem, with host, severity, duration, tags and an Explain button](docs/screenshots/problems.png)
+
+![Sites: one card per site, with its problems by severity and how many devices are down](docs/screenshots/sites.png)
+
+![Graphs: one item over a calendar month, with its minimum, average, maximum and last values and a Show data button](docs/screenshots/graphs.png)
+
+Host names, addresses and interface descriptions in these images are stand-ins; the counts, severities,
+times and site names are real. The dark theme, the narrow-screen layout and the Network page (every device
+reads "No data" there, because the Zabbix server of this restored copy is off) are in
+[`docs/screenshots/`](docs/screenshots/README.md), with how the names were replaced.
+
 ### How the parts connect
 
 ```
@@ -41,6 +56,7 @@ pipeline, the cache, sign-in, where a number comes from, both AI paths and the o
 
 ### Contents
 
+- [What it looks like](#what-it-looks-like): the main pages, as images
 - [Tech stack](#tech-stack): what it is built with, and why
 - [Layout](#layout): where each file lives
 - [Quick start (local dev)](#quick-start-local-dev): run it on your own machine

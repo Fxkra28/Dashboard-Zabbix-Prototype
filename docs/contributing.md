@@ -62,7 +62,8 @@ are about the data, because the data is real:
   is set, so leave that unset in a dev `server/.env`.
 - **Never commit estate data.** No per-host output, no Availability Report spreadsheets, no database
   dump, no screenshots with real host names in them. A downloaded SLA report, PDF or Excel, is
-  per-host output: it names every device.
+  per-host output: it names every device. The one exception is [`screenshots/`](screenshots/README.md),
+  where every name is replaced and every image is looked at before it is added.
 - **Never commit a credential.** `.env` and `server/.env` are gitignored and must stay that way.
   `.env.example` is committed and must never hold a real value, not a Zabbix token, not an API key,
   not a password, not a `JWT_SECRET`.

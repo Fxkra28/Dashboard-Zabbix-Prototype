@@ -2103,14 +2103,14 @@ Mermaid ignores the comment: ServerFlow, CDM and the database ERD (the ELK layou
 
 ### The build stamp and the changelog (IN-01)
 
-`CHANGELOG.md` lists what changed in each build, newest first, and names the commit. Both portals were built as `748136c-dirty`: the hash of `HEAD`, and `-dirty` because the working tree holds changes that are not committed. To stamp a build the same way:
+`CHANGELOG.md` lists what changed in each build, newest first, and names the commit. Both portals were built as `748136c-dirty`: the hash of `HEAD`, and `-dirty` because the working tree held changes that were not yet committed. The work was committed afterwards as `cef91b3`, and the running portals report `748136c-dirty` until they are rebuilt. To stamp a build the same way:
 
 ```sh
 BUILD_COMMIT=$(git rev-parse --short HEAD)$([ -n "$(git status --porcelain)" ] && echo -dirty) \
 BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
 ```
 
-The `hcml-portal-ollama` copy has no git of its own, so it takes the hash of `hcml-portal`. Nothing is tagged: a tag names a commit, and the work is not committed.
+The `hcml-portal-ollama` copy has no git of its own, so it takes the hash of `hcml-portal`. Nothing is tagged: say if you want a tag on `cef91b3`.
 
 ### The four `.env` changes (IN-06, SC-14, SC-04, SC-20; §8, §10, §19)
 
@@ -2154,6 +2154,16 @@ Checked without signing in: all four containers `healthy` with no restart, and t
 Not checked, because it needs a sign-in on this build: the footer line (`Build 748136c-dirty, 13/10/2026, 11.48.36 WIB` on :8081 and `11.48.55 WIB` on :8082), a report download through nginx's buffer, the live stream, the Problems page without its buttons, and a viewer's maps. `myown/checks/signedin_check.py` runs the first four against a portal; it reads the sign-in from `PORTAL_USER` and `PORTAL_PASSWORD` and prints neither.
 
 To go back: `docker tag <name>:rollback-13oct <name>:latest` for the four images, then `docker compose up -d --no-build` in each folder. The settings are a separate matter. The `.env` values from before the change are in the private folder the work used, which goes when the macOS temp folder is cleaned; a write token can be made again in Zabbix.
+
+### Screenshots in the README and the docs
+
+`docs/screenshots/` holds seven images of the main pages (the Dashboard in the light and dark themes and on a narrow screen, Problems, Sites, Graphs and Network), and the README and the getting-started guide show some of them. The repository is public and the portal shows HCML's host names, so the images were made with the names replaced, not edited afterwards. A capture script drives Chrome and rewrites every host name, IP address and interface description in the page. It reads the real host list from the portal at run time, so nothing real is written in the script, and it refuses to write an image while a real name is left.
+
+The stand-ins are stable, so one host has one name in every image: `1.4 SW-04` for a host with a site number, `INET : JAKARTA WAN-114` for a link, an address in 198.18.0.0/15, and `link-` with three digits for a description or a link name. Its first runs stopped on what they found, and each find got a rule: the free-text values of problem tags (`health-check`, `description`), SD-WAN link names in square brackets in problem texts, and VPN tunnel and interface labels in the Graphs item list. After that every image was looked at, because the check reads text and cannot read a chart.
+
+The script and its self-test (a made-up estate, with eight mutants of the script, all caught) are in `myown/screenshots/`, outside the repository, because the script works from the real host list. The images came from a dev portal running this code with sign-in off, which shows the pages an administrator sees. The unreplaced originals stay in `pic/`, which git ignores.
+
+Left out on purpose: the SLA page, which prints each site's availability for the month, figures a reader could take for HCML's own. The images do show the size and shape of the estate, 139 hosts and 666 open problems, though not what the devices are called. If that is too much, the counts can be replaced as well. A new image goes through the same capture, and `docs/contributing.md` says so.
 
 ### Left alone, and why
 
