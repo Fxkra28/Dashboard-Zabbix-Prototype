@@ -61,7 +61,7 @@ pipeline, the cache, sign-in, where a number comes from, both AI paths and the o
 - [Layout](#layout): where each file lives
 - [Quick start (local dev)](#quick-start-local-dev): run it on your own machine
 - [Deploy (Docker, next to Zabbix)](#deploy-docker-next-to-zabbix): run it in containers
-- [Usage](#usage): signing in, the 18 pages, downloading the SLA report, calling the API, the assistant
+- [Usage](#usage): signing in, the 19 pages, downloading the SLA report, calling the API, the assistant
 - [Configuration](#configuration): every setting the BFF reads
 - [Testing](#testing)
 - [Milestones](#milestones)
@@ -94,7 +94,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | `dotenv` | ^16.4 | `.env` in dev. In Docker, Compose passes the environment directly |
 | `@anthropic-ai/sdk` | ^0.124 | The `anthropic` backend of the AI layer, and nothing else. The OpenAI-compatible backend is hand-rolled on `fetch`: one response shape to maintain instead of a second SDK to keep current |
 | Report writers | not a package | `src/export/` writes the monthly SLA report as a PDF and as an Excel workbook, on request, with Node's built-in `zlib` and `crypto` modules and no PDF or spreadsheet library. ADR-0011 (`docs/architecture/adr/0011-build-the-sla-report-files-in-the-bff.md`) has the trade-off |
-| Vitest | ^5.0 | 1508 tests in 66 files. Zabbix is mocked at `src/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
+| Vitest | ^5.0 | 1622 tests in 73 files. Zabbix is mocked at `src/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
 | tsx | ^4.16 | `npm run dev` watch mode only. Production runs plain `node dist/index.js` |
 
 ### Web: `web/`
@@ -103,11 +103,11 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 |---|---|---|
 | React | ^18.3 | The library every screen of the web app is written in |
 | Vite | ^8.3 | Dev server proxies `/bff` → `:4000`, so dev and prod hit the same paths. The production build is static files |
-| `react-router-dom` | ^7.18 | All 18 pages are `lazy()`. The initial bundle is 210 kB JS + 37 kB CSS; a page after that costs between 2 and 17 kB |
+| `react-router-dom` | ^7.18 | All 19 pages are `lazy()`. The initial bundle is 210 kB JS + 37 kB CSS; a page after that costs between 2 and 17 kB |
 | ECharts + `echarts-for-react` | ^6.1 / ^3.0 | Registered selectively (line chart, grid, tooltip, legend, data zoom, canvas renderer) instead of the barrel, which pulls in roughly a megabyte of chart types nothing draws. Drawn with the `v5` theme ECharts 6 ships, so the parts the portal does not colour itself look as they did on 5.x. Imported only by `TimeSeriesChart`, so its 608 kB chunk loads on Graphs and Network and nowhere else |
 | Custom CSS | not a package | One `styles.css`. HCML blue `#2B5584`, measured from the company logo, with Inter for text and IBM Plex Mono for IDs and figures. Light and dark come from one set of CSS variables, per [`DESIGN.md`](DESIGN.md). `web/scripts/tokens.check.mjs` computes the contrast of every pair in both themes and fails on a raw value used where a token exists |
 | Hand-rolled, on purpose | not a package | `hooks/useSSE.ts` over native `EventSource`; `hooks/useAsync.ts` for server state, in place of a query library; `lib/markdown.ts` in 141 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
-| Vitest + Testing Library | ^5.0 / ^16.3 | 822 tests in 57 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api.ts`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
+| Vitest + Testing Library | ^5.0 / ^16.3 | 1026 tests in 70 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api.ts`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
 | ESLint | ^9.39 | `npm run lint` in `web/`: typescript-eslint, the two classic react-hooks rules and jsx-a11y's recommended set. On 9 because jsx-a11y does not support ESLint 10 yet |
 
 ### Around it
@@ -169,13 +169,13 @@ hcml-portal/
 │       ├── export/          # SLA report files: one document model, a PDF writer, an Excel writer
 │       ├── routes/          # 18 modules → 35 endpoints (41 with health, ready and the four auth/ routes);
 │       │                    #   sliExport.ts serves the report files
-│       └── __tests__/       # vitest suite (1508 tests); export-*.test.ts cover the report files
+│       └── __tests__/       # vitest suite (1622 tests); export-*.test.ts cover the report files
 ├── web/                     # React + TypeScript + Vite
 │   ├── src/
 │   │   ├── pages/           # 18, all lazy-loaded
 │   │   ├── components/      # Layout, Sidebar, ExplainPanel, AckDialog, ReportDownload, …
 │   │   ├── hooks/           # useAsync, useSSE, useAuth, useUiPrefs, useUrlState, …
-│   │   ├── __tests__/       # vitest + Testing Library, in jsdom (822 tests); ReportDownload and reportApi cover the download
+│   │   ├── __tests__/       # vitest + Testing Library, in jsdom (1026 tests); ReportDownload and reportApi cover the download
 │   │   └── api.ts, types.ts, theme.ts, styles.css
 │   ├── scripts/             # css.check.mjs, tokens.check.mjs, markdown.check.ts, units.check.ts, links.check.mjs, diagrams.check.mjs, diagrams.stamp.mjs
 │   ├── public/              # logo.png · logo-mark.png · logo-icon.png (served at /)
@@ -184,7 +184,7 @@ hcml-portal/
 │   ├── index.md             # what is documented, and in what order to read it
 │   ├── getting-started.md   # clone → running portal
 │   ├── contributing.md      # the house rules, and why each one exists
-│   ├── api/openapi.yaml     # all 41 endpoints; checked by scripts/openapi.check.ts
+│   ├── api/openapi.yaml     # all 43 endpoints; checked by scripts/openapi.check.ts
 │   ├── architecture/adr/    # 11 Architecture Decision Records (MADR)
 │   ├── schema/              # the data model on three pages: CDM · ERD · PDM (start here)
 │   ├── flow/                # how it runs: WebFlow · ServerFlow · DataFlow, and nine one-line flows
@@ -202,7 +202,7 @@ hcml-portal/
 └── web/nginx.conf           # serves the build, reverse-proxies /bff
 ```
 
-18 pages: Dashboard · Problems · Sites · Hosts · Graphs · Latest data · Maps · Network ·
+19 pages: Dashboard · Problems · Sites · Hosts · Devices · Graphs · Latest data · Maps · Network ·
 Links & WAN health · Services · SLA · Availability & response · Capacity trends · Alert noise ·
 Top 100 triggers · Inventory & ownership scorecard · Assistant · Login
 
@@ -230,7 +230,7 @@ cd server
 cp .env.example .env          # set ZBX_URL + ZABBIX_API_TOKEN; auth needs JWT_SECRET + PORTAL_PASS
 npm install
 npm run dev                   # http://localhost:4000
-npm test                      # 1508 tests, no live Zabbix needed
+npm test                      # 1622 tests, no live Zabbix needed
 
 curl localhost:4000/api/health   # { ok, ts, ai, writeBack, defaults, version, startedAt, build, ready, streams }
 ```
@@ -342,15 +342,15 @@ in `.env` is plain text unless the entry is an scrypt hash (accepted since 7 Oct
 compared in constant time. The BFF audit items on this (BE-12 to BE-17, in `hcml-portal-ollama/AUDIT_REPORT.md`) are closed;
 what is still open is under [Known gaps](#known-gaps).
 
-### The 18 pages
+### The 19 pages
 
 Grouped by the question each one answers, not by the order they appear in the sidebar.
 
 | Page | Route | What it answers |
 |---|---|---|
-| Dashboard | `/` | Is anything wrong right now? The only page that streams |
+| Dashboard | `/` | Is anything wrong right now? The only page that streams. Operators and admins get a second view, the internet traffic meters: a gauge for each link, read from HCML's Zabbix dashboard, with a link that is down said to be down, the other direction shown when it is high, and a card for the links on the first view. A wall screen turns between the two by itself (`/?wall=1`, `rotate=` for the seconds) |
 | Problems · Alert noise · Top 100 triggers | `/problems` · `/reports/noise` · `/reports/top-triggers` | What is firing, and what fires so often that nobody reads it any more |
-| Sites · Hosts · Latest data · Graphs · Maps | `/sites` · `/hosts` · `/latest` · `/graphs` · `/maps` | Where a device is, what it is reporting, and what it looked like an hour ago |
+| Sites · Hosts · Devices · Latest data · Graphs · Maps | `/sites` · `/hosts` · `/devices` · `/latest` · `/graphs` · `/maps` | Where a device is, what kind it is, what it is reporting, and what it looked like an hour ago |
 | Network · Links & WAN health | `/network` · `/links` | Operator role and above. The WAN view: which links are up, and what they cost in latency and loss |
 | Services · SLA · Availability & response | `/services` · `/sla` · `/reports/availability` | The monthly figure. Derived in the portal, validated against HCML's own published reports, and downloadable as a PDF or an Excel file |
 | Capacity trends | `/reports/capacity` | What is filling up, and roughly when it runs out |
@@ -431,7 +431,7 @@ The guard lets exactly four routes through without a token: `GET /api/health`,
 router matched, not the URL text, so an encoded path such as `/%61pi/hosts` is guarded like
 `/api/hosts`. Every error, at every status, has the same body: `{ "error": "…", "message": "…" }`.
 
-The full contract is [`docs/api/openapi.yaml`](docs/api/openapi.yaml): 41 endpoints, both security
+The full contract is [`docs/api/openapi.yaml`](docs/api/openapi.yaml): 43 endpoints, both security
 schemes, every status code, and [`docs/api/README.md`](docs/api/README.md) shows how to read it with
 nothing installed. It is checked against the code by `./server/node_modules/.bin/tsx server/scripts/openapi.check.ts`, so it
 cannot quietly drift.
@@ -508,6 +508,7 @@ its default, versioned.
 |---|---|---|
 | `AVAILABILITY_MIN_SEVERITY` | `2` | Severity floor for the availability report. 2, not 3: HCML's estate alarms at Warning, and a floor of 3 makes the page open empty |
 | `LINK_LOSS_WARN` / `LINK_LOSS_CRIT` | `2` / `10` | Packet-loss thresholds, percent |
+| `INTERNET_METERS_DASHBOARD` | `Global view` | The Zabbix dashboard whose gauge widgets are the internet traffic meters on the Dashboard. Each gauge names a link and gives its capacity and colour zones |
 | `NOISE_SHORT_SECONDS` | `300` | Below this, a cleared incident counts as flapping |
 | `NOISE_MIN_COUNT` | `5` | Firings before "flapping" means anything |
 
@@ -605,11 +606,11 @@ Ollama. Either way the snapshot is capped (20 problems, a budget per section) an
 
 ```bash
 cd server
-npm test          # 1508 tests
+npm test          # 1622 tests
 npm run typecheck # app and tests
 
 cd ../web
-npm test          # 822 tests, in jsdom
+npm test          # 1026 tests, in jsdom
 npm run lint      # eslint
 npm run typecheck # app and tests
 ```
@@ -641,7 +642,7 @@ copied from the web app drifts from its original.
 |---|---|
 | [`docs/index.md`](docs/index.md) | Start here. What is documented, and in what order to read it |
 | [`docs/getting-started.md`](docs/getting-started.md) | From a fresh clone to a running portal, step by step |
-| [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | The API contract: all 41 endpoints, checked against the code |
+| [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | The API contract: all 43 endpoints, checked against the code |
 | [`docs/architecture/adr/`](docs/architecture/adr/) | Why the system is shaped this way: 11 decision records |
 | [`setup.md`](setup.md) | How each part works and why, in 31 sections |
 | [`docs/schema/`](docs/schema/) | The data model on three pages |
@@ -823,7 +824,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Typecheck | Running the TypeScript checker (`npm run typecheck`) to catch mistakes, without building anything |
 | TypeScript | JavaScript with types that are checked before the code runs. Both `server/` and `web/` are written in it |
 | Vite | The tool that serves the web app during development and builds it for production |
-| Vitest | The test runner. `npm test` runs 1508 tests in `server/` with Zabbix faked, so no live system is needed, and 822 in `web/` |
+| Vitest | The test runner. `npm test` runs 1622 tests in `server/` with Zabbix faked, so no live system is needed, and 1026 in `web/` |
 | zlib, crypto | Two modules that come with Node itself: zlib compresses and unpacks data, and crypto does hashing. The SLA report's PDF and Excel writers are built on them, in place of a PDF or spreadsheet library |
 
 ### Documents

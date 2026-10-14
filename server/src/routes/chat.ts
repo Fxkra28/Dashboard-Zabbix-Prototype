@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { buildFocus, cleanAnswer, getSnapshot, streamAnswer, systemText, type ChatTurn } from '../chat.js';
 import { AiDisabledError, AiUpstreamError, prefillModel, warmModel, type OllamaStats } from '../ai.js';
 import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../zabbix.js';
+import { SOURCE_DOWN } from '../errors.js';
 import { aiGuard, chargeTo } from '../limits.js';
 import { chatBody } from '../schemas.js';
 
@@ -74,14 +75,12 @@ async function warmAndPrefill(log: FastifyBaseLogger, load: boolean): Promise<vo
   }
 }
 
-/** Typed AI and Zabbix errors carry wording for a reader (their `detail` is for the log); anything else is a bug. */
+/** Typed AI errors carry wording for a reader (their `detail` is for the log), a Zabbix failure is errors.ts's one sentence, and anything else is a bug. */
 function publicMessage(err: unknown): string {
-  const typed =
-    err instanceof AiUpstreamError ||
-    err instanceof AiDisabledError ||
-    err instanceof ZabbixApiError ||
-    err instanceof ZabbixTimeoutError ||
-    err instanceof ZabbixAuthError;
+  if (err instanceof ZabbixApiError || err instanceof ZabbixTimeoutError || err instanceof ZabbixAuthError) {
+    return SOURCE_DOWN;
+  }
+  const typed = err instanceof AiUpstreamError || err instanceof AiDisabledError;
   return typed ? err.message : 'The assistant hit an unexpected error. Details are in the BFF log.';
 }
 

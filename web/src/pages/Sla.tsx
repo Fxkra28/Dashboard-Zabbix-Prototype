@@ -30,6 +30,7 @@ import { naturalCompare } from '../lib/sites';
 import { recentMonths } from '../lib/time';
 import { useReportTimeZone } from '../hooks/useReportTimeZone';
 import { PERCENT_DP, dur } from '../lib/units';
+import { count } from '../lib/plural';
 
 /**
  * Services → SLA, read-only.
@@ -341,6 +342,7 @@ function DeviceTable({ report }: { report: SliReport }) {
       <div className="panel-head">
         <h2>By device</h2>
         <input
+          name="device-filter"
           type="text"
           className="sli-search"
           placeholder="Filter devices…"
@@ -350,7 +352,7 @@ function DeviceTable({ report }: { report: SliReport }) {
         />
       </div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-        {report.hosts.length} devices{noData ? ` · ${noData} without data are listed last` : ''}. * = measured
+        {count(report.hosts.length, 'device')}{noData ? ` · ${noData} without data are listed last` : ''}. * = measured
         on partial data.
       </div>
       <div className="table-wrap sli-scroll">
@@ -818,7 +820,7 @@ export default function SlaPage() {
         source.data && (
           <div className="muted sli-source-note">
             Zabbix has {source.data.slas} SLA{source.data.slas === 1 ? '' : 's'} with{' '}
-            {source.data.services ? `${source.data.services} services but no measurements` : 'no services attached'}
+            {source.data.services ? `${count(source.data.services, 'service')} but no measurements` : 'no services attached'}
             , so this page shows the SLA derived in the portal.
           </div>
         )

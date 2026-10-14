@@ -22,6 +22,7 @@ and was deleted on 22 September 2026. One file per decision does not rot as a un
 | [0009](0009-renew-an-open-portals-sign-in.md) | Renew an open portal's sign-in, for every user | accepted, amended by 0010 and on 2026-10-12 | 2026-09-25 |
 | [0010](0010-session-cookie.md) | Keep the sign-in token in an httpOnly session cookie | accepted | 2026-09-25 |
 | [0011](0011-build-the-sla-report-files-in-the-bff.md) | Build the SLA report files in the BFF, with hand-written PDF and Excel writers instead of a library | accepted | 2026-10-02 |
+| [0012](0012-internet-meters-from-the-zabbix-dashboard.md) | Draw the internet traffic meters from the gauge widgets of the Zabbix dashboard HCML already keeps | accepted | 2026-10-14 |
 
 ## How they relate
 
@@ -32,6 +33,7 @@ and was deleted on 22 September 2026. One file per decision does not rot as a un
  │    └── 0004  derive the SLA
  │         └── 0011  the SLA report as a file, built per request and stored nowhere
  ├── 0006  read-only, one write
+ │    └── 0012  the internet meters read HCML's own Zabbix dashboard, and store nothing
  └── 0005  provider-neutral AI
 
 0008  stop polling ──── freezes the dataset 0007 measures against

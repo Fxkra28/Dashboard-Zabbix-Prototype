@@ -122,6 +122,7 @@ export default function RangePicker({ value, onChange }: { value: GraphRange; on
         </button>
       </div>
       <select
+        name="range-month"
         aria-label="Calendar month"
         className="range-month"
         value={value.kind === 'month' && !custom ? value.month : ''}
@@ -141,13 +142,14 @@ export default function RangePicker({ value, onChange }: { value: GraphRange; on
       {custom && (
         <div className="range-custom">
           <input
+            name="range-from"
             type="datetime-local"
             aria-label="From"
             value={fromText}
             onChange={(e) => setFromText(e.target.value)}
           />
           <span className="muted">→</span>
-          <input type="datetime-local" aria-label="To" value={toText} onChange={(e) => setToText(e.target.value)} />
+          <input name="range-to" type="datetime-local" aria-label="To" value={toText} onChange={(e) => setToText(e.target.value)} />
           <button
             type="button"
             className="btn sm"

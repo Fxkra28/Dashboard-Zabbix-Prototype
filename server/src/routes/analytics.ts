@@ -9,6 +9,7 @@ import { computeSli, type DataStatus, type SliGroup, type SliReport } from '../s
 import { monthBounds, parseMonth } from '../sli/time.js';
 import type { SiteRef } from '../naming.js';
 import { getMonthlySli, parseProfile } from './sli.js';
+import { createGate } from '../gate.js';
 
 /**
  * Automated reporting (HCML Goal 6): *"hard to see SLA, capacity trends, and recurring issues."*
@@ -945,6 +946,13 @@ const CAPACITY_TTL = 300_000;
  */
 const staleReport = (ttlMs: number) => ({ staleMs: ttlMs, staleIfError: true });
 
+/**
+ * How many reports over days of history are read from Zabbix at once: a cold `noise` report over 365 days takes 7 s and thousands of SQL statements,
+ * and every new `days` or `severity` is a cold one, so the others wait their turn. A cached answer never waits.
+ */
+export const HEAVY_REPORTS_AT_ONCE = 2;
+export const heavy = createGate(HEAVY_REPORTS_AT_ONCE);
+
 export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
   // intParam, not Math.min/Math.max around Number(): `days=abc` is NaN, NaN
   // survives both clamps, and a NaN `time_from` removes the time bound entirely.
@@ -965,7 +973,7 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
         return cached(
           `avail:all:${days}:${minSeverity}`,
           REPORT_TTL,
-          () => getAvailability(days, minSeverity),
+          () => heavy.run(() => getAvailability(days, minSeverity)),
           staleReport(REPORT_TTL),
         );
       }
@@ -973,7 +981,7 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
       return cached(
         `avail:all:${month}:${minSeverity}`,
         REPORT_TTL,
-        () => getAvailability(days, minSeverity, month),
+        () => heavy.run(() => getAvailability(days, minSeverity, month)),
         staleReport(REPORT_TTL),
       );
     }
@@ -983,7 +991,7 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
     return cached(
       `avail:${profile}:${days}`,
       REPORT_TTL,
-      () => getDerivedAvailability({ days, profile, minSeverity }),
+      () => heavy.run(() => getDerivedAvailability({ days, profile, minSeverity })),
       staleReport(REPORT_TTL),
     );
   });
@@ -998,7 +1006,7 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
     const report = await cached(
       `noise:${days}:${minSeverity}`,
       REPORT_TTL,
-      () => getNoise(days, minSeverity),
+      () => heavy.run(() => getNoise(days, minSeverity)),
       staleReport(REPORT_TTL),
     );
     return topNoise(report, top);
@@ -1010,6 +1018,11 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
     const q = req.query as { days?: string; top?: string };
     const days = intParam(q.days, 7, 1, 365);
     const top = intParam(q.top, 10, 1, 50);
-    return cached(`capacity:${days}:${top}`, CAPACITY_TTL, () => getCapacity(days, top), staleReport(CAPACITY_TTL));
+    return cached(
+      `capacity:${days}:${top}`,
+      CAPACITY_TTL,
+      () => heavy.run(() => getCapacity(days, top)),
+      staleReport(CAPACITY_TTL),
+    );
   });
 }

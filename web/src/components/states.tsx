@@ -12,13 +12,16 @@ export function Loading({ label = 'Loading…' }: { label?: string }) {
 }
 
 /**
- * What to check, when the message says. A Zabbix failure reaches the page as the BFF's sentence
- * ("Zabbix rejected the API token…", "Could not reach Zabbix…"); a JSON-RPC error names a bad
- * request, not the connection. A fetch that never reached the BFF, or a proxy with nothing behind
- * it, means the BFF itself. Setting names and the BFF are for the portal admin; everyone else is
- * told who to ask, in plain words.
+ * What to check, when the message says. A Zabbix failure arrives as the BFF's one sentence with a reference to find in its log; a JSON-RPC error names a
+ * bad request; a fetch that never reached the BFF, or a proxy with nothing behind it, means the BFF itself. Setting names are for the portal admin only.
  */
 function hintFor(message: string, admin: boolean): string | null {
+  // The sentence already tells everyone else to ask an administrator, so only the admin gets a line.
+  if (/data source is not answering/i.test(message)) {
+    return admin
+      ? 'Check that ZBX_URL and ZABBIX_API_TOKEN are set on the BFF and that Zabbix is reachable. The BFF log holds the cause under that reference.'
+      : null;
+  }
   const zabbix =
     (/zabbix/i.test(message) && !/"code":\s*-?\d/.test(message)) ||
     // Zabbix's web server itself failing: "problem.get: HTTP 502 Bad Gateway"

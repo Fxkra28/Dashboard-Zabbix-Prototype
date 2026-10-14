@@ -8,6 +8,7 @@ import { Empty, Loading } from '../components/states';
 import Markdown from '../components/Markdown';
 import AiDataNotice from '../components/AiDataNotice';
 import ModelOfflineNotice from '../components/ModelOfflineNotice';
+import { count } from '../lib/plural';
 
 /**
  * The Assistant page: free-form questions about the estate, answered from a
@@ -56,7 +57,7 @@ function ContextStrip({ context }: { context: ChatContext | null }) {
         {context.unacknowledged ? ` · ${context.unacknowledged} unacknowledged` : ''}
       </span>
       <span className="pill">
-        {context.hosts} hosts · {context.sites} site{context.sites === 1 ? '' : 's'}
+        {count(context.hosts, 'host')} · {count(context.sites, 'site')}
       </span>
       <span className="pill">
         {context.slas} SLA{context.slas === 1 ? '' : 's'} · {context.degradedServices} degraded service
@@ -268,6 +269,7 @@ export default function Assistant() {
       <div className="chat-compose">
         {/* Never disabled: a disabled box loses focus, and the next question can be typed while this answer streams. */}
         <textarea
+          name="question"
           ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

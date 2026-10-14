@@ -18,7 +18,7 @@
 | Three roles, ranked: viewer, operator, admin | `server/src/auth.ts` `ROUTE_RULES` |
 | An unmatched route needs `viewer`, so a new route is private by default | `auth.ts:49` |
 | Only `/api/reports/inventory` needs admin | `auth.ts:42` |
-| Only `/api/links`, `/api/net` and the write route (acknowledge, with close as an option) need operator | `auth.ts:43,45` |
+| Only `/api/links`, `/api/net` (the Dashboard's internet traffic meters, `/api/net/meters`, among them) and the write route (acknowledge, with close as an option) need operator | `auth.ts:43,45` |
 | 18 pages, 17 of them behind the shell | `web/src/App.tsx` |
 | 139 monitored hosts across 14 sites | Zabbix, measured 15 September 2026 |
 | Exactly one write exists: acknowledge and close | `server/src/routes/actions.ts` |
@@ -90,6 +90,11 @@ something else. Three consequences, all of which are now in the interface:
   is the one place `MOTION 1/5` is relaxed.
 - Severity is the only loud colour anywhere, which is what makes a red chip readable at distance
   when everything else is one blue.
+- A wall that is to turn to the internet meters has to be signed in as an operator or an admin: the
+  meters are interface data, which a viewer does not get (`viewerPolicy.ts`). A wall signed in as a viewer
+  shows the Overview alone and asks for nothing more. An operator's session on a screen nobody watches is
+  an operator's session, so the wall's account should be one made for it, and the write token (which is
+  what lets an operator acknowledge) should stay off, as it is now.
 
 ## Journey: a problem gets acknowledged
 

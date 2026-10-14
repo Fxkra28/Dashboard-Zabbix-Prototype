@@ -138,13 +138,16 @@ describe('POST /api/chat', () => {
       throw new ZabbixApiError('Zabbix could not be reached.', 'ZBX_URL=http://zabbix.internal:8080');
     });
     const zbx = await ask();
-    expect(told(zbx.body)).toBe('Zabbix could not be reached.');
+    // A reader is told the one sentence for every Zabbix failure; the wording and the address stay in the log.
+    expect(told(zbx.body)).toBe('The data source is not answering.');
     expect(zbx.body).not.toContain('zabbix.internal');
+    expect(zbx.body).not.toContain('could not be reached');
     expect(lines.join('\n')).toContain('zabbix.internal');
+    expect(lines.join('\n')).toContain('Zabbix could not be reached.');
     await app.close();
   });
 
-  it('keeps the wording of every typed error, and swaps only the untyped one', async () => {
+  it('keeps the wording of a typed AI error, gives a Zabbix failure its one sentence, and swaps only the untyped one', async () => {
     vi.mocked(getSnapshot).mockResolvedValue(snapshot('SNAPSHOT'));
     const app = await buildTestApp(chatRoutes);
     const told = async (err: Error) => {
@@ -159,13 +162,16 @@ describe('POST /api/chat', () => {
       return (frames(res.body).find((f) => f.event === 'error')?.data as { message: string }).message;
     };
 
-    // Each of these reads as an instruction to the reader, so a generic line would hide what to do.
-    const typed = [
-      new AiDisabledError(),
+    // The AI wording reads as an instruction to the reader, so a generic line would hide what to do.
+    const disabled = new AiDisabledError();
+    expect(await told(disabled)).toBe(disabled.message);
+    // A Zabbix failure names a method or a setting only an administrator can use: one sentence for all.
+    const zabbix = [
       new ZabbixTimeoutError('Zabbix took too long to answer.'),
       new ZabbixAuthError('Zabbix rejected the portal token.'),
+      new ZabbixApiError('problem.get: HTTP 500 Internal Server Error'),
     ];
-    for (const err of typed) expect(await told(err)).toBe(err.message);
+    for (const err of zabbix) expect(await told(err)).toBe('The data source is not answering.');
     expect(await told(new Error('read ECONNRESET 10.1.2.3:8080'))).toBe(
       'The assistant hit an unexpected error. Details are in the BFF log.',
     );

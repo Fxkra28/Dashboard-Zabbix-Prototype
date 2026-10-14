@@ -7,6 +7,7 @@ import { Async, Loaded, Loading } from '../components/states';
 import { Field } from '../components/Field';
 import { severity } from '../lib/severity';
 import { clipLine, placeLabels } from '../lib/mapLabels';
+import { count } from '../lib/plural';
 
 const ELEMENT_LABEL: Record<string, string> = {
   '0': 'Host',
@@ -219,7 +220,7 @@ function MapCanvas({ map }: { map: MapDetail }) {
       </svg>
       <div className="muted" style={{ fontSize: 12, marginTop: 10, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
         <span>
-          {map.selements?.length ?? 0} elements · {map.links?.length ?? 0} links ·{' '}
+          {count(map.selements?.length ?? 0, 'element')} · {count(map.links?.length ?? 0, 'link')} ·{' '}
           {withProblems} of {hostEls.length} hosts with open problems · drawn from the Zabbix map
           {leftOut.length > 0 && ` · ${leftOut.length} name${leftOut.length === 1 ? '' : 's'} left out where crowded: ${leftOut.join(', ')}`}
         </span>

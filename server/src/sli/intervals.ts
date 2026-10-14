@@ -68,8 +68,3 @@ export function complementIntervals(holes: Interval[], from: number, to: number)
   if (cursor < to) out.push([cursor, to]);
   return out;
 }
-
-/** Sorted hour starts (Unix seconds) → merged `[start, end)` spans. */
-export function hoursToIntervals(hours: Iterable<number>): Interval[] {
-  return mergeIntervals([...hours].map((h): Interval => [h, h + 3600]));
-}

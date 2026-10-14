@@ -95,7 +95,7 @@ describe('docs/operations/tls.md (tracker IN-26)', () => {
     ]) {
       expect(nginx, needle).toContain(needle);
     }
-    // The BFF sends its own HSTS header on /bff/ replies; a browser reads only the first, so the recipe hides it.
+    // The BFF sends none (hsts: false, no-store.test.ts); a browser reads only the first, so the recipe hides one in case helmet's is turned on.
     expect(nginx).toContain('proxy_hide_header Strict-Transport-Security;');
   });
 

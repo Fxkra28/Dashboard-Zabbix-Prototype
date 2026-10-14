@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useOutletContext } from 'react-router-dom';
 import { api, streamUrl } from '../api';
 import { useAsync } from '../hooks/useAsync';
 import { useNow } from '../hooks/useNow';
 import { useSSE } from '../hooks/useSSE';
+import { useSearchPatch, useUrlState } from '../hooks/useUrlState';
+import { useMeters } from '../hooks/useMeters';
+import { useFitHeight } from '../hooks/useFitHeight';
+import { useWallRotation } from '../hooks/useWallRotation';
+import { roleAllows, useAuth } from '../hooks/useAuth';
 import { useChangeHighlight, useReducedMotion } from '../hooks/useChangeHighlight';
 import type { Problem, Stats, Freshness, GroupProblems } from '../types';
 import { SEVERITIES } from '../theme';
@@ -11,9 +16,12 @@ import KpiCard from '../components/KpiCard';
 import ProblemsTable from '../components/ProblemsTable';
 import BrandMark from '../components/BrandMark';
 import { SeverityCounts } from '../components/StatusBadge';
+import InternetMeters from '../components/InternetMeters';
+import { Tabs, tabButtonId, tabsPanelId } from '../components/Tabs';
 import { Async, RefreshFailed } from '../components/states';
 import type { LayoutContext } from '../components/Layout';
 import { LIVE_ROWS, liveRows, topRows } from '../lib/liveList';
+import { internetCard, rotateSeconds, slidesOf, wallPages, type Slide } from '../lib/wall';
 import { ageWords, momentWords } from '../lib/freshness';
 import { problemListGuard } from '../lib/guards';
 
@@ -54,12 +62,15 @@ function WallBar({
   lateMinutes,
   idleFor,
   onExit,
+  rotation,
 }: {
   shownAt: number | null;
   lateMinutes: number | null;
   /** How long Zabbix has collected nothing, in words, or null while it is collecting. */
   idleFor: string | null;
   onExit: () => void;
+  /** The control for the turning slides, or null where nothing turns. */
+  rotation: { running: boolean; onToggle: () => void } | null;
 }) {
   return (
     <header className="wall-bar">
@@ -74,6 +85,11 @@ function WallBar({
         {lateMinutes !== null && <span className="wall-label">No new data for {lateMinutes} min</span>}
         {idleFor !== null && <span className="wall-label">Zabbix collected nothing for {idleFor}</span>}
       </div>
+      {rotation && (
+        <button type="button" className="btn ghost sm" onClick={rotation.onToggle}>
+          {rotation.running ? 'Pause rotation' : 'Resume rotation'}
+        </button>
+      )}
       <button type="button" className="btn ghost sm" onClick={onExit}>
         Exit wall mode
       </button>
@@ -81,8 +97,60 @@ function WallBar({
   );
 }
 
+/** The Dashboard's two views, like the pages of a Zabbix dashboard. The second is the internet traffic meters. */
+const VIEWS = ['overview', 'internet'] as const;
+const VIEW_TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'internet', label: 'Internet traffic' },
+] as const;
+
 export default function Overview() {
   const { wall, exitWall } = useOutletContext<LayoutContext>();
+  // The meters are interface data, which is for operators and admins; a viewer sees the Overview alone.
+  const { role } = useAuth();
+  const canSeeMeters = role !== null && roleAllows(role, 'operator');
+  const [view, setView] = useUrlState<(typeof VIEWS)[number]>('view', 'overview', { options: VIEWS });
+  const viewsId = useId();
+
+  // One request serves the card and the meters view, and a wall that turns to them finds them loaded.
+  const metersQ = useMeters(canSeeMeters);
+
+  // A wall has no one to click it, so it turns by itself: Overview, then meters, `rotate=` seconds each (30 by default).
+  // An address that names a view holds it, and a click on a tab or on Pause stops the turning until Resume.
+  const { search } = useLocation();
+  const params = useMemo(() => new URLSearchParams(search), [search]);
+  const named = VIEWS.find((v) => v === params.get('view')) ?? null;
+  const seconds = rotateSeconds(params.get('rotate'));
+  const turning = wall && canSeeMeters;
+  const pages = wallPages(metersQ.data?.meters.length ?? 0);
+  const slides = useMemo(
+    () => (turning ? slidesOf({ overview: named !== 'internet', internet: named !== 'overview', pages }) : slidesOf({ overview: true, internet: false, pages: 1 })),
+    [turning, named, pages],
+  );
+  const [paused, setPaused] = useState(false);
+  // A wall entered again starts turning, whatever was paused the last time.
+  useEffect(() => setPaused(false), [wall]);
+  const rotation = useWallRotation(slides, turning ? seconds : 0, paused);
+  const patchUrl = useSearchPatch();
+  const shown: Slide = turning ? rotation.slide : canSeeMeters && view === 'internet' ? { view: 'internet', page: 0 } : { view: 'overview' };
+  const choose = (v: (typeof VIEWS)[number]) => {
+    if (!wall) return setView(v);
+    // Named even for the Overview, which the address would otherwise leave out as the default.
+    patchUrl({ view: v });
+    setPaused(true);
+  };
+  const turningControl =
+    turning && seconds > 0 && (paused || named === null)
+      ? {
+          running: rotation.running,
+          onToggle: () => {
+            if (rotation.running) return setPaused(true);
+            setPaused(false);
+            patchUrl({ view: null });
+          },
+        }
+      : null;
+  const card = internetCard(metersQ.data);
   const reduceMotion = useReducedMotion();
   const now = useNow(5_000);
   const statsQ = useAsync<Stats>(() => api.stats(), [], 30_000);
@@ -138,167 +206,208 @@ export default function Overview() {
   /** A count once the list is in, a placeholder before, never a zero that only means "not loaded". */
   const count = (n: number) => (current ? n : '…');
 
+  // A wall cannot be scrolled: draw what is under its bar smaller until it fits, measured again when the lists change.
+  const { wrap: fitWrap, inner: fitInner } = useFitHeight<HTMLDivElement, HTMLDivElement>(wall, [
+    wall,
+    shown.view,
+    shown.view === 'internet' ? shown.page : 0,
+    metersQ.data,
+    statsQ.data,
+    groupsQ.data,
+    current,
+    now,
+  ]);
+
   return (
     <>
-      {wall && <WallBar shownAt={shownAt} lateMinutes={lateMinutes} idleFor={idleFor} onExit={exitWall} />}
-      {/* System information (Zabbix "System information" report) */}
-      {statsQ.error &&
-        (statsQ.data ? (
-          <RefreshFailed error={statsQ.error} updatedAt={statsQ.updatedAt} />
-        ) : (
-          <div className="refresh-failed" role="status" title={statsQ.error}>
-            Couldn’t load the counts: {statsQ.error}
-          </div>
-        ))}
-      {/* Stable wording: it is announced on a change, and a running count would be read out every minute. */}
-      {collectedAt !== null && (
-        <div className="refresh-failed" role="status">
-          Zabbix has collected nothing since {momentWords(collectedAt * 1000, now)}. What you see on this page
-          is from then, not from now.
-        </div>
-      )}
-      <div className="grid kpis">
-        <KpiCard label="Hosts" value={stats?.hosts ?? '…'} sub="monitored" />
-        <KpiCard label="Items" value={stats?.items ?? '…'} sub="collecting" />
-        <KpiCard label="Triggers" value={stats?.triggers ?? '…'} />
-        <KpiCard label="Host groups" value={stats?.groups ?? '…'} />
-      </div>
-
-      {/* Problem KPIs */}
-      <div className="grid kpis">
-        <KpiCard label="Open problems" value={count(problems.length)} />
-        <KpiCard
-          label="High / Disaster"
-          value={count(high)}
-          accent={SEVERITIES[5].color}
-          sub="severity ≥ High"
-        />
-        <KpiCard
-          label="Warnings"
-          value={count(bySev(2) + bySev(3))}
-          accent={SEVERITIES[3].color}
-          sub="Warning + Average"
-        />
-        <KpiCard
-          label="Unacknowledged"
-          value={count(problems.filter((p) => p.acknowledged !== '1').length)}
-          accent={SEVERITIES[4].color}
-        />
-      </div>
-
-      <div className="grid two-col">
-        <div className="panel">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0 }}>Live problems</h2>
-            <span className="live-status">
-              {shownAt !== null && <span className="live-age">Updated {clockTime(shownAt)}</span>}
-              {/* Announced on a change of state only; the visible label's minute count would be read out every minute. */}
-              <span className="sr-only" aria-live="polite">
-                {late && shownAt !== null
-                  ? `No new data since ${clockTime(shownAt)}`
-                  : collectedAt !== null
-                    ? `Zabbix has collected nothing since ${momentWords(collectedAt * 1000, now)}`
-                    : streaming
-                      ? 'Live'
-                      : live.error
-                        ? 'Polling: live stream error'
-                        : 'Polling'}
-              </span>
-              <span
-                className={`live${late || idleFor !== null ? ' late' : streaming ? '' : ' off'}`}
-                title={live.error ?? pollQ.error ?? undefined}
-                aria-hidden="true"
-              >
-                <span className="dot" />
-                {lateMinutes !== null
-                  ? `No new data for ${lateMinutes} min`
-                  : idleFor !== null
-                    ? `Zabbix has collected nothing for ${idleFor}`
-                    : streaming
-                      ? 'Live'
-                      : live.error
-                        ? 'Polling: live stream error'
-                        : 'Polling'}
-              </span>
-            </span>
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <Async
-              loading={pollQ.loading && !live.data}
-              error={streaming ? null : pollQ.error}
-              data={current}
-              updatedAt={shownAt}
-            >
-              {() => (
-                <>
-                  <ProblemsTable problems={rows} marks={marks} />
-                  {problems.length > 0 && (
-                    <p className="panel-foot">
-                      {Math.min(LIVE_ROWS, problems.length)} of {problems.length} open problems, worst first.
-                      {/* A wall has no one to click it. */}
-                      {!wall && (
-                        <>
-                          {' '}
-                          <Link to="/problems">View all problems</Link>
-                        </>
-                      )}
-                    </p>
-                  )}
-                </>
-              )}
-            </Async>
-          </div>
-        </div>
-
-        <div className="panel">
-          <h2>Problems by host group</h2>
-          <Async
-            loading={groupsQ.loading}
-            error={groupsQ.error}
-            data={groupsQ.data}
-            updatedAt={groupsQ.updatedAt}
+      {wall && <WallBar shownAt={shownAt} lateMinutes={lateMinutes} idleFor={idleFor} onExit={exitWall} rotation={turningControl} />}
+      <div ref={fitWrap}>
+        <div ref={fitInner}>
+          {canSeeMeters && (
+            <Tabs id={viewsId} label="Dashboard view" tabs={VIEW_TABS} value={shown.view} onChange={choose} className="dash-tabs" />
+          )}
+          <div
+            {...(canSeeMeters
+              ? { role: 'tabpanel', id: tabsPanelId(viewsId), 'aria-labelledby': tabButtonId(viewsId, shown.view) }
+              : {})}
           >
-            {(groups) =>
-              groups.length ? (
-                <div className="table-wrap">
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>Host group</th>
-                        <th>Severities</th>
-                        <th style={{ textAlign: 'right' }}>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {groups.map((g) => (
-                        <tr key={g.groupid}>
-                          <td>{g.name}</td>
-                          <td>
-                            <SeverityCounts bySeverity={g.bySeverity} />
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{g.total}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="state">No problems across any host group.</div>
-              )
-            }
-          </Async>
+            {shown.view === 'internet' ? (
+              <InternetMeters q={metersQ} page={turning ? { index: shown.page, pages } : undefined} />
+            ) : (
+              <>
+                  {/* System information (Zabbix "System information" report) */}
+                  {statsQ.error &&
+                    (statsQ.data ? (
+                      <RefreshFailed error={statsQ.error} updatedAt={statsQ.updatedAt} />
+                    ) : (
+                      <div className="refresh-failed" role="status" title={statsQ.error}>
+                        Couldn’t load the counts: {statsQ.error}
+                      </div>
+                    ))}
+                  {/* Stable wording: it is announced on a change, and a running count would be read out every minute. */}
+                  {collectedAt !== null && (
+                    <div className="refresh-failed" role="status">
+                      Zabbix has collected nothing since {momentWords(collectedAt * 1000, now)}. What you see on this page
+                      is from then, not from now.
+                    </div>
+                  )}
+                  <div className="grid kpis">
+                    <KpiCard label="Hosts" value={stats?.hosts ?? '…'} sub="monitored" />
+                    <KpiCard label="Items" value={stats?.items ?? '…'} sub="collecting" />
+                    <KpiCard label="Triggers" value={stats?.triggers ?? '…'} />
+                    <KpiCard label="Host groups" value={stats?.groups ?? '…'} />
+                  </div>
 
-          <h2 style={{ marginTop: 22 }}>Problems by severity</h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            {SEVERITIES.slice()
-              .reverse()
-              .map((s) => (
-                <div key={s.level} className="sev-tile">
-                  <span className="dot" style={{ background: s.color }} />
-                  <span style={{ fontSize: 'var(--t-base)' }}>{s.name}</span>
-                  <strong>{count(bySev(s.level))}</strong>
-                </div>
-              ))}
+                  {/* Problem KPIs */}
+                  <div className="grid kpis">
+                    <KpiCard label="Open problems" value={count(problems.length)} />
+                    <KpiCard
+                      label="High / Disaster"
+                      value={count(high)}
+                      accent={SEVERITIES[5].color}
+                      sub="severity ≥ High"
+                    />
+                    <KpiCard
+                      label="Warnings"
+                      value={count(bySev(2) + bySev(3))}
+                      accent={SEVERITIES[3].color}
+                      sub="Warning + Average"
+                    />
+                    <KpiCard
+                      label="Unacknowledged"
+                      value={count(problems.filter((p) => p.acknowledged !== '1').length)}
+                      accent={SEVERITIES[4].color}
+                    />
+                    {/* Interface data is for operators and admins, so a viewer's row has no fifth card. */}
+                    {canSeeMeters && (
+                      <KpiCard
+                        label="Internet links"
+                        value={metersQ.data ? (card.value ?? '—') : metersQ.error ? '—' : '…'}
+                        sub={metersQ.data ? card.sub : metersQ.error ? 'Could not be read' : undefined}
+                        accent={card.tone === 'critical' ? SEVERITIES[5].color : card.tone === 'warn' ? SEVERITIES[3].color : undefined}
+                      />
+                    )}
+                  </div>
+
+                  <div className="grid two-col">
+                    <div className="panel">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h2 style={{ margin: 0 }}>Live problems</h2>
+                        <span className="live-status">
+                          {shownAt !== null && <span className="live-age">Updated {clockTime(shownAt)}</span>}
+                          {/* Announced on a change of state only; the visible label's minute count would be read out every minute. */}
+                          <span className="sr-only" aria-live="polite">
+                            {late && shownAt !== null
+                              ? `No new data since ${clockTime(shownAt)}`
+                              : collectedAt !== null
+                                ? `Zabbix has collected nothing since ${momentWords(collectedAt * 1000, now)}`
+                                : streaming
+                                  ? 'Live'
+                                  : live.error
+                                    ? 'Polling: live stream error'
+                                    : 'Polling'}
+                          </span>
+                          <span
+                            className={`live${late || idleFor !== null ? ' late' : streaming ? '' : ' off'}`}
+                            title={live.error ?? pollQ.error ?? undefined}
+                            aria-hidden="true"
+                          >
+                            <span className="dot" />
+                            {lateMinutes !== null
+                              ? `No new data for ${lateMinutes} min`
+                              : idleFor !== null
+                                ? `Zabbix has collected nothing for ${idleFor}`
+                                : streaming
+                                  ? 'Live'
+                                  : live.error
+                                    ? 'Polling: live stream error'
+                                    : 'Polling'}
+                          </span>
+                        </span>
+                      </div>
+                      <div style={{ marginTop: 14 }}>
+                        <Async
+                          loading={pollQ.loading && !live.data}
+                          error={streaming ? null : pollQ.error}
+                          data={current}
+                          updatedAt={shownAt}
+                        >
+                          {() => (
+                            <>
+                              <ProblemsTable problems={rows} marks={marks} />
+                              {problems.length > 0 && (
+                                <p className="panel-foot">
+                                  {Math.min(LIVE_ROWS, problems.length)} of {problems.length} open problems, worst first.
+                                  {/* A wall has no one to click it. */}
+                                  {!wall && (
+                                    <>
+                                      {' '}
+                                      <Link to="/problems">View all problems</Link>
+                                    </>
+                                  )}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </Async>
+                      </div>
+                    </div>
+
+                    <div className="panel">
+                      <h2>Problems by host group</h2>
+                      <Async
+                        loading={groupsQ.loading}
+                        error={groupsQ.error}
+                        data={groupsQ.data}
+                        updatedAt={groupsQ.updatedAt}
+                      >
+                        {(groups) =>
+                          groups.length ? (
+                            <div className="table-wrap">
+                              <table className="data">
+                                <thead>
+                                  <tr>
+                                    <th>Host group</th>
+                                    <th>Severities</th>
+                                    <th style={{ textAlign: 'right' }}>Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {groups.map((g) => (
+                                    <tr key={g.groupid}>
+                                      <td>{g.name}</td>
+                                      <td>
+                                        <SeverityCounts bySeverity={g.bySeverity} />
+                                      </td>
+                                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{g.total}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="state">No problems across any host group.</div>
+                          )
+                        }
+                      </Async>
+
+                      <h2 style={{ marginTop: 22 }}>Problems by severity</h2>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                        {SEVERITIES.slice()
+                          .reverse()
+                          .map((s) => (
+                            <div key={s.level} className="sev-tile">
+                              <span className="dot" style={{ background: s.color }} />
+                              <span style={{ fontSize: 'var(--t-base)' }}>{s.name}</span>
+                              <strong>{count(bySev(s.level))}</strong>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+
+              </>
+            )}
           </div>
         </div>
       </div>

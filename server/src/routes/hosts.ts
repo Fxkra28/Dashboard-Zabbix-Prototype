@@ -48,6 +48,33 @@ interface ZHost {
   interfaces?: { ip: string; type?: string; available?: string }[];
 }
 
+/** Each host with its live problem counts and its reachability state (ping first; reachability.ts). */
+export async function getHostOverview() {
+  const [hosts, problems, icmp] = await Promise.all([
+    zbx<ZHost[]>('host.get', {
+      output: ['hostid', 'name', 'status', 'maintenance_status'],
+      selectInterfaces: ['ip', 'type', 'available'],
+      sortfield: 'name',
+    }),
+    cached('problems', 5_000, getProblems).then(openProblems),
+    getIcmpByHost(),
+  ]);
+
+  const counts: Record<string, { total: number; bySeverity: Record<string, number> }> = {};
+  for (const p of problems) {
+    if (!p.hostid) continue;
+    const c = (counts[p.hostid] ??= { total: 0, bySeverity: {} });
+    c.total++;
+    c.bySeverity[p.severity] = (c.bySeverity[p.severity] ?? 0) + 1;
+  }
+
+  return hosts.map((h) => ({
+    ...h,
+    ...hostState(h, icmp.get(h.hostid)),
+    problems: counts[h.hostid] ?? { total: 0, bySeverity: {} },
+  }));
+}
+
 export async function hostRoutes(app: FastifyInstance): Promise<void> {
   // All hosts (+ interfaces w/ availability). Cached 30s.
   // Each host carries `site` read from its name (naming.ts), null when the name doesn't say.
@@ -64,33 +91,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
 
   // Monitoring → Hosts: each host + its live problem severity counts, and its
   // reachability `state`/`reason` (ping first; reachability.ts).
-  app.get('/api/hosts/overview', () =>
-    cached('hosts:overview', 15_000, async () => {
-      const [hosts, problems, icmp] = await Promise.all([
-        zbx<ZHost[]>('host.get', {
-          output: ['hostid', 'name', 'status', 'maintenance_status'],
-          selectInterfaces: ['ip', 'type', 'available'],
-          sortfield: 'name',
-        }),
-        cached('problems', 5_000, getProblems).then(openProblems),
-        getIcmpByHost(),
-      ]);
-
-      const counts: Record<string, { total: number; bySeverity: Record<string, number> }> = {};
-      for (const p of problems) {
-        if (!p.hostid) continue;
-        const c = (counts[p.hostid] ??= { total: 0, bySeverity: {} });
-        c.total++;
-        c.bySeverity[p.severity] = (c.bySeverity[p.severity] ?? 0) + 1;
-      }
-
-      return hosts.map((h) => ({
-        ...h,
-        ...hostState(h, icmp.get(h.hostid)),
-        problems: counts[h.hostid] ?? { total: 0, bySeverity: {} },
-      }));
-    }),
-  );
+  app.get('/api/hosts/overview', () => cached('hosts:overview', 15_000, getHostOverview));
 
   // Host groups (for filters). `with_hosts`: `real_hosts` is deprecated in Zabbix 7.0.
   app.get('/api/hostgroups', () =>

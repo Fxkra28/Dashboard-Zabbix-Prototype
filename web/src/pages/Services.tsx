@@ -29,6 +29,7 @@ import {
   NoDataPill,
   lastClosedMonth,
 } from '../components/Sli';
+import { count } from '../lib/plural';
 
 /**
  * Services tree (HCML Goal 2): the portal's answer to
@@ -283,7 +284,7 @@ function ServiceTree({
       <div className="controls">
         {extraControls}
         <FieldSpacer>
-          <span className="pill">{data.total} services</span>
+          <span className="pill">{count(data.total, 'service')}</span>
         </FieldSpacer>
         <FieldSpacer>
           <span className={`pill ${data.degraded ? 'down' : 'up'}`}>

@@ -10,6 +10,13 @@ import { BadRequestError } from './validate.js';
 import { validationProblem } from './schemas.js';
 
 /**
+ * What a screen is told when Zabbix cannot be read. The method name, the setting to check and Zabbix's own words go to the log with the request id,
+ * so the reference below finds the line; a viewer cannot act on them.
+ */
+export const SOURCE_DOWN = 'The data source is not answering.';
+const sourceDown = (requestId: string) => `${SOURCE_DOWN} Tell an administrator and quote reference ${requestId}.`;
+
+/**
  * Map the BFF's typed failures onto HTTP, in one response shape.
  *
  * Every error body is `{ error, message }`: `error` a stable code a client can branch on, `message`
@@ -24,29 +31,29 @@ import { validationProblem } from './schemas.js';
  * starts a listening server on import.
  */
 export function registerErrorHandler(app: FastifyInstance): void {
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof BadRequestError) {
       return reply.code(400).send({ error: 'bad_request', message: err.message });
     }
     // A body schema (schemas.ts) refused the request: the same 400 as the handlers' own checks.
     const invalid = validationProblem(err);
     if (invalid) return reply.code(400).send({ error: 'bad_request', message: invalid });
+    // The message of each Zabbix failure names the method and the setting to check, and `detail`
+    // names ZBX_URL and what Zabbix sent back: the log gets both, the response body neither.
     if (err instanceof ZabbixAuthError) {
-      app.log.error(err.message);
-      return reply.code(503).send({ error: 'zabbix_auth', message: err.message });
+      req.log.error(err.message);
+      return reply.code(503).send({ error: 'zabbix_auth', message: sourceDown(req.id) });
     }
-    // `detail` names ZBX_URL and what Zabbix sent back: the log gets it, the
-    // response body never does.
     if (err instanceof ZabbixTimeoutError) {
-      app.log.error({ detail: err.detail }, err.message);
-      return reply.code(503).send({ error: 'zabbix_timeout', message: err.message });
+      req.log.error({ detail: err.detail }, err.message);
+      return reply.code(503).send({ error: 'zabbix_timeout', message: sourceDown(req.id) });
     }
     if (err instanceof ZabbixWriteDisabledError) {
       return reply.code(503).send({ error: 'zabbix_write_disabled', message: err.message });
     }
     if (err instanceof ZabbixApiError) {
-      app.log.error({ detail: err.detail }, err.message);
-      return reply.code(502).send({ error: 'zabbix_error', message: err.message });
+      req.log.error({ detail: err.detail }, err.message);
+      return reply.code(502).send({ error: 'zabbix_error', message: sourceDown(req.id) });
     }
     // The AI layer is optional garnish: when it fails, say so plainly and
     // leave the rest of the portal alone.

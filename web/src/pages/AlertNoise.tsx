@@ -11,6 +11,7 @@ import KpiCard from '../components/KpiCard';
 import { dur } from '../lib/units';
 import { downloadCsv } from '../lib/csv';
 import { NoData } from '../components/NoData';
+import { count } from '../lib/plural';
 
 /**
  * Alert noise (HCML Goal 4): *"the main issue is not the number of
@@ -190,7 +191,7 @@ export default function AlertNoise() {
               <div className="panel">
                 <div className="panel-head">
                   <h2>
-                    {rows.length} triggers
+                    {count(rows.length, 'trigger')}
                     {data.total !== undefined && data.total > data.triggers.length && (
                       <span className="muted noise-top">
                         {' '}

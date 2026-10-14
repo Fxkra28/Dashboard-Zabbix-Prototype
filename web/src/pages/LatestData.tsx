@@ -55,6 +55,12 @@ export default function LatestData() {
     20_000,
   );
 
+  // The menus come from two lists of their own. When one cannot load, say so: the table below would
+  // otherwise read "No items for this selection" for a reason that has nothing to do with the selection.
+  const listsError = (hostsQ.data == null && hostsQ.error) || (groupsQ.data == null && groupsQ.error) || null;
+  // With no host or group picked and no menu to pick from, the error is the whole story.
+  const noSelectionToShow = listsError !== null && !hostid && !groupid;
+
   const items = q.data?.items ?? [];
   const total = q.data?.total ?? items.length;
   const pageSize = q.data?.pageSize ?? PAGE_SIZE;
@@ -130,11 +136,17 @@ export default function LatestData() {
         </div>
       )}
 
+      {listsError && !noSelectionToShow && (
+        <div className="notice warn" role="alert">
+          The host and group menus could not be loaded: {listsError}
+        </div>
+      )}
+
       <div className="panel">
         <Async
-          loading={q.loading}
-          error={q.error}
-          data={q.data}
+          loading={q.loading && !noSelectionToShow}
+          error={noSelectionToShow ? listsError : q.error}
+          data={noSelectionToShow ? null : q.data}
           stale={q.stale}
           updatedAt={q.updatedAt}
           loadingLabel="Loading latest data…"

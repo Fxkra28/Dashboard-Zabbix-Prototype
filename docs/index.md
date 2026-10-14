@@ -28,13 +28,13 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 | Run it | [`getting-started.md`](getting-started.md) |
 | Back it up, or restore it | [`operations/backup-and-restore.md`](operations/backup-and-restore.md) |
 | Reach it from another machine | [`operations/tls.md`](operations/tls.md): TLS in front, with HSTS |
-| Call it | [`api/openapi.yaml`](api/openapi.yaml), 41 endpoints · [how to view it](api/README.md) |
+| Call it | [`api/openapi.yaml`](api/openapi.yaml), 43 endpoints · [how to view it](api/README.md) |
 | Download the monthly SLA report | [`../README.md`](../README.md#download-the-sla-report) for the buttons and the endpoint, [`../setup.md`](../setup.md) §18 for how the files are built |
-| Understand why it is shaped this way | [`architecture/adr/`](architecture/adr/): eleven decisions |
+| Understand why it is shaped this way | [`architecture/adr/`](architecture/adr/): twelve decisions |
 | See how it works | [`architecture/`](architecture/): diagrams and the subsystem index |
 | See what it looks like | [`screenshots/README.md`](screenshots/README.md): the main pages as images, with every name replaced |
 | See who uses it | [`ux/README.md`](ux/README.md): the three roles and the acknowledge journey, derived from the code |
-| Change something | [`../setup.md`](../setup.md), 31 sections, one per subsystem |
+| Change something | [`../setup.md`](../setup.md), 34 sections, one per subsystem |
 | Change it safely | [`contributing.md`](contributing.md): the house rules, and why each one exists |
 | Know what is wrong with it | [`../AUDIT_REPORT.md`](../AUDIT_REPORT.md) and `setup.md` §27 |
 
@@ -42,8 +42,8 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 
 | | |
 |---|---|
-| Front end | React 18 + TypeScript + Vite, ECharts. 18 pages, 822 tests, linted with eslint |
-| Back end | Fastify 5 + TypeScript on Node 24. 18 route modules, 41 endpoints, 1508 tests |
+| Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1026 tests, linted with eslint |
+| Back end | Fastify 5 + TypeScript on Node 24. 20 route modules, 43 endpoints, 1622 tests |
 | Data source | The Zabbix JSON-RPC API. Nothing else: no database, no volumes, no data files |
 | Writes | Exactly one: acknowledge/close, behind a separate token and the operator role |
 | Downloads | The monthly SLA report as a PDF or an Excel file, built when asked from the cached figures and never stored |
@@ -68,13 +68,13 @@ shows is a snapshot of that moment. [ADR-0008](architecture/adr/0008-stop-local-
 
 ```
 README.md                  install, configure, run
-setup.md                   31 sections, one per subsystem: the deep reference
+setup.md                   34 sections, one per subsystem: the deep reference
 AUDIT_REPORT.md            what two audits found, and what is still open
 docs/
   index.md                 this file
   getting-started.md
   contributing.md          the house rules, and why each one exists
-  api/openapi.yaml         the contract: 41 endpoints
+  api/openapi.yaml         the contract: 43 endpoints
   architecture/adr/        why it is the way it is: 11 decisions
   schema/  flow/  erd/     the diagrams; erd/erd.md is the data model in prose
   screenshots/             the main pages as images, with host names, addresses and interface descriptions replaced

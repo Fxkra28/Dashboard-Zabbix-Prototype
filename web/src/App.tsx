@@ -17,6 +17,7 @@ const Overview = lazy(() => import('./pages/Overview'));
 const Problems = lazy(() => import('./pages/Problems'));
 const Sites = lazy(() => import('./pages/Sites'));
 const Hosts = lazy(() => import('./pages/Hosts'));
+const Devices = lazy(() => import('./pages/Devices'));
 const HostDetail = lazy(() => import('./pages/HostDetail'));
 const LatestData = lazy(() => import('./pages/LatestData'));
 const Maps = lazy(() => import('./pages/Maps'));
@@ -52,6 +53,7 @@ export function AppRoutes() {
         <Route path="/problems" element={<Problems />} />
         <Route path="/sites" element={<Sites />} />
         <Route path="/hosts" element={<Hosts />} />
+        <Route path="/devices" element={<Devices />} />
         <Route path="/graphs" element={<HostDetail />} />
         <Route path="/latest" element={<LatestData />} />
         <Route path="/maps" element={<Maps />} />

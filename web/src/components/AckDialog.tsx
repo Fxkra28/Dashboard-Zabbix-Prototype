@@ -136,6 +136,7 @@ export default function AckDialog({
 
           <label className="check">
             <input
+              name="acknowledge"
               type="checkbox"
               checked={acknowledge}
               onChange={(e) => setAcknowledge(e.target.checked)}
@@ -148,6 +149,7 @@ export default function AckDialog({
 
           <label className={`check${problem.manualClose ? '' : ' disabled'}`}>
             <input
+              name="close"
               type="checkbox"
               checked={close}
               disabled={!problem.manualClose}

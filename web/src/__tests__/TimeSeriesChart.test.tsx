@@ -62,7 +62,7 @@ describe('TimeSeriesChart accessibility (UX-17)', () => {
   });
 });
 
-describe('the data tables behind the chart (UX-17)', () => {
+describe('the data table behind the chart (UX-17)', () => {
   const window_ = { from: 1_800_000_000, to: 1_800_003_600 };
   const T = 1_800_000_000_000;
   const show = async (ui: React.ReactElement) => {
@@ -71,7 +71,7 @@ describe('the data tables behind the chart (UX-17)', () => {
     return user;
   };
 
-  it('keeps the tables out of the page until asked, with a button that says what it will do', () => {
+  it('keeps the table out of the page until asked, with a button that says what it will do', () => {
     render(<TimeSeriesChart series={[series('1', 'Bits received', stats)]} {...window_} />);
     const button = screen.getByRole('button', { name: 'Show data' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -79,7 +79,7 @@ describe('the data tables behind the chart (UX-17)', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 
-  it('opens one table per series, named by the series, and closes them again', async () => {
+  it('opens one table for all the selected items, named by them, and closes it again', async () => {
     const user = await show(
       <TimeSeriesChart series={[series('1', 'Bits received', stats), series('2', 'Bits sent', stats)]} {...window_} />,
     );
@@ -88,12 +88,98 @@ describe('the data tables behind the chart (UX-17)', () => {
     const open = screen.getByRole('button', { name: 'Hide data' });
     expect(open).toHaveAttribute('aria-expanded', 'true');
     const tables = screen.getAllByRole('table');
-    expect(tables.map((t) => t.querySelector('caption')?.textContent)).toEqual(['Bits received', 'Bits sent']);
-    expect(screen.getByRole('region', { name: 'Data of Bits received' })).toHaveAttribute('tabindex', '0');
+    expect(tables).toHaveLength(1);
+    expect(tables[0].querySelector('caption')?.textContent).toBe('Bits received; Bits sent');
+    expect(screen.getByRole('region', { name: 'Data of Bits received, Bits sent' })).toHaveAttribute('tabindex', '0');
 
     await user.click(open);
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getByRole('button', { name: 'Show data' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('gives each selected item its own columns under its name, and the time once, on the left', async () => {
+    const a = series('1', 'Bits received', stats);
+    const b = series('2', 'Bits sent', stats);
+    a.points = [[T, 1_000_000, null, null]];
+    b.points = [[T, 4_000_000, null, null]];
+    const user = await show(<TimeSeriesChart series={[a, b]} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      'Time',
+      'Bits received',
+      'Bits sent',
+      'Value',
+      'Value',
+    ]);
+    const [, , row] = within(table).getAllByRole('row');
+    expect(within(row).getAllByRole('cell').map((c) => c.textContent)).toEqual([
+      expect.stringMatching(/\d/),
+      '1 Mbps',
+      '4 Mbps',
+    ]);
+  });
+
+  it('joins the items on the time of their points, and says so where one has none', async () => {
+    const a = series('1', 'Bits received', stats);
+    const b = series('2', 'Bits sent', stats);
+    a.points = [
+      [T, 1_000_000, null, null],
+      [T + 60_000, 2_000_000, null, null],
+    ];
+    b.points = [
+      [T + 60_000, 5_000_000, null, null],
+      [T + 120_000, 6_000_000, null, null],
+    ];
+    const user = await show(<TimeSeriesChart series={[a, b]} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+
+    const rows = screen.getAllByRole('row').slice(2);
+    expect(rows).toHaveLength(3);
+    const cells = rows.map((r) => within(r).getAllByRole('cell').slice(1));
+    expect(cells[0][0]).toHaveTextContent('1 Mbps');
+    expect(cells[0][1]).toHaveTextContent('No value at this time');
+    expect(cells[1].map((c) => c.textContent)).toEqual(['2 Mbps', '5 Mbps']);
+    expect(cells[2][0]).toHaveTextContent('No value at this time');
+    expect(cells[2][1]).toHaveTextContent('6 Mbps');
+  });
+
+  it('keeps a collection gap apart from a time with no point: the gap says "No data"', async () => {
+    const a = series('1', 'Bits received', stats);
+    const b = series('2', 'Bits sent', stats);
+    a.points = [[T, null, null, null]];
+    b.points = [[T, 4_000_000, null, null]];
+    const user = await show(<TimeSeriesChart series={[a, b]} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+    const [gap, value] = within(screen.getAllByRole('row')[2]).getAllByRole('cell').slice(1);
+    expect(gap).toHaveTextContent('No data');
+    expect(gap).not.toHaveTextContent('No value at this time');
+    expect(value).toHaveTextContent('4 Mbps');
+  });
+
+  it('gives a trend item three columns and a plain item one, side by side', async () => {
+    const trend = series('1', 'Bits received', stats);
+    trend.points = [[T, 2_000_000, 1_000_000, 3_000_000]];
+    const plain = series('2', 'Link state', stats);
+    plain.units = '';
+    plain.step = true;
+    plain.points = [[T, 1, null, null]];
+    const user = await show(<TimeSeriesChart series={[trend, plain]} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      'Time',
+      'Bits received',
+      'Link state',
+      'Average',
+      'Min',
+      'Max',
+      'Value',
+    ]);
+    expect(screen.getByRole('columnheader', { name: 'Bits received' })).toHaveAttribute('colspan', '3');
+    const cells = within(screen.getAllByRole('row')[2]).getAllByRole('cell').slice(1);
+    expect(cells.map((c) => c.textContent)).toEqual(['2 Mbps', '1 Mbps', '3 Mbps', '1']);
   });
 
   it('lists every plotted point with its time and value in the series own units', async () => {
@@ -142,5 +228,26 @@ describe('the data tables behind the chart (UX-17)', () => {
     const user = await show(<TimeSeriesChart series={[step]} {...window_} />);
     await user.click(screen.getByRole('button', { name: 'Show data' }));
     expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Time', 'Value']);
+  });
+
+  it('opens and closes by what its parent says when the parent holds the state, and reports each click', async () => {
+    const onChange = vi.fn();
+    const ui = (open: boolean) => (
+      <TimeSeriesChart series={[series('1', 'Bits received', stats)]} {...window_} dataOpen={open} onDataOpenChange={onChange} />
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(ui(true));
+    expect(screen.getByRole('button', { name: 'Hide data' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('table')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Hide data' }));
+    expect(onChange).toHaveBeenLastCalledWith(false);
+    // The parent has not said so yet: the table is still the parent's to close.
+    expect(screen.getByRole('table')).toBeInTheDocument();
+
+    rerender(ui(false));
+    expect(screen.queryByRole('table')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+    expect(onChange).toHaveBeenLastCalledWith(true);
   });
 });

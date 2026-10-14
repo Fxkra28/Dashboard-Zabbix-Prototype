@@ -112,12 +112,71 @@ describe('web/nginx.conf', () => {
     expect(fonts, 'a /fonts/ location').toBeDefined();
     const headers = find(fonts?.children ?? [], 'add_header');
     expect(headers.map((n) => n.args[0]).sort()).toEqual(
-      ['Cache-Control', 'Content-Security-Policy-Report-Only', 'Referrer-Policy', 'X-Content-Type-Options', 'X-Frame-Options'],
+      ['Cache-Control', 'Content-Security-Policy', 'Referrer-Policy', 'X-Content-Type-Options', 'X-Frame-Options'],
     );
     // The names are not content-hashed, so a replaced font has to reach people within a month.
     const cache = headers.find((n) => n.args[0] === 'Cache-Control')?.args[1] ?? '';
     expect(cache).toBe('public, max-age=2592000');
     expect(own(fonts as Node, 'try_files')).toBe('$uri');
+  });
+
+  it('enforces the CSP in every location that sends headers, and names no report-only header (SC-24)', () => {
+    const sending = locations.filter((l) => find(l.children ?? [], 'add_header').length > 0);
+    expect(sending.map(place).sort()).toEqual(['/', '/assets/', '/fonts/', '~ ^/(?!bff/)(.*/)?\\.', '~* ^/logo(-mark|-icon)?\\.png$']);
+    for (const l of sending) {
+      const names = find(l.children ?? [], 'add_header').map((n) => n.args[0]);
+      expect(names, place(l)).toContain('Content-Security-Policy');
+      expect(names.filter((n) => /report-only/i.test(n)), place(l)).toEqual([]);
+      const csp = find(l.children ?? [], 'add_header').find((n) => n.args[0] === 'Content-Security-Policy');
+      expect(csp?.args.slice(1), place(l)).toEqual(['$csp', 'always']);
+    }
+  });
+
+  describe('dot-files (SC-28)', () => {
+    const dot = locations.find((l) => place(l).startsWith('~ ^/(?!bff/)'));
+    // nginx decodes and normalises the path before it picks a location, so this reads the decoded path.
+    const pattern = new RegExp(String(dot?.args[1]));
+
+    it('answers 404 for a path with a dot-file segment, with the four security headers', () => {
+      expect(dot, 'a dot-file location').toBeDefined();
+      expect(find(dot?.children ?? [], 'return').map((n) => n.args.join(' '))).toEqual(['404']);
+      expect(find(dot?.children ?? [], 'add_header').map((n) => n.args[0]).sort()).toEqual([
+        'Content-Security-Policy',
+        'Referrer-Policy',
+        'X-Content-Type-Options',
+        'X-Frame-Options',
+      ]);
+      expect(find(dot?.children ?? [], 'try_files')).toEqual([]);
+    });
+
+    it('matches every dot-file path, wherever the dot-file is', () => {
+      for (const path of ['/.env', '/.git/config', '/.git', '/a/.b', '/assets/.hidden', '/a/b/.c/d', '/.well-known/x', '/..']) {
+        expect(pattern.test(path), path).toBe(true);
+      }
+    });
+
+    it('leaves the app, its files and /bff alone, including a name that merely contains a dot', () => {
+      for (const path of [
+        '/',
+        '/problems',
+        '/index.html',
+        '/assets/Maps-Mhezgn4X.js',
+        '/fonts/inter-latin.woff2',
+        '/logo.png',
+        '/logo-mark.png',
+        '/bff/api/hosts',
+        '/bff/api/sli/export',
+        '/bff/.env',
+        '/a.b/c',
+      ]) {
+        expect(pattern.test(path), path).toBe(false);
+      }
+    });
+
+    it('comes before the logo location, because the first regex that matches wins', () => {
+      const names = locations.map(place);
+      expect(names.indexOf(place(dot as Node))).toBeLessThan(names.findIndex((n) => n.includes('logo')));
+    });
   });
 
   it('gives no directive twice in one block, which nginx refuses to start on', () => {

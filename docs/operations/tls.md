@@ -66,7 +66,8 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    # The BFF's own HSTS header would otherwise arrive beside this one.
+    # The BFF sends no HSTS header of its own (see below). This keeps a second one from arriving
+    # beside the proxy's if someone turns helmet's on.
     proxy_hide_header Strict-Transport-Security;
     # Event streams: no buffering, and an hour between two reads.
     proxy_buffering off;
@@ -125,17 +126,18 @@ Start with `max-age=300`, five minutes, while you check every address people use
 refusing HTTP until it expires. Leave out `includeSubDomains` and `preload` unless you control every
 name under the domain.
 
-The BFF already sends `Strict-Transport-Security: max-age=31536000; includeSubDomains` on its own
-replies (helmet's default), but those are only the `/bff/` ones. The pages and files that nginx
-serves carry none, so the proxy has to add it. A browser uses only the first such header it
-receives, which is why the nginx recipe hides the BFF's.
+The portal itself is served over plain HTTP, so the BFF sends no `Strict-Transport-Security` header
+(`hsts: false` in `server/src/index.ts`): it would claim a TLS that is not there. Neither do the pages
+and files that nginx serves. The proxy in front has to add the header, to every reply, and then it
+is the only one. A browser uses only the first such header it receives, which is why the nginx recipe
+also hides one if the BFF were ever to send its own.
 
 ## Check that it works
 
 ```bash
 curl -sI http://portal.example.com/ | head -1                                  # 301, to https
 curl -sI https://portal.example.com/ | grep -i strict-transport-security       # the page carries it
-curl -sI https://portal.example.com/bff/api/health | grep -ci strict-transport # 1: one header, not two
+curl -sI https://portal.example.com/bff/api/health | grep -ci strict-transport # 1: the proxy's, and only that
 ```
 
 Then sign in in a browser and open the developer tools. The `hcml_session` cookie (or

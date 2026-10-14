@@ -1,10 +1,11 @@
+import { useId } from 'react';
 import type { DataStatus, SliGap, SliProfile } from '../types';
 import { reportTimeZone, monthLabel, recentMonths } from '../lib/time';
 import { useReportTimeZone } from '../hooks/useReportTimeZone';
 import { PERCENT_DP, formatDuration } from '../lib/units';
 import { percentText } from '../lib/percent';
 import { NoData } from './NoData';
-import { Field } from './Field';
+import { Field, FieldGroup } from './Field';
 
 /**
  * Small shared pieces for the derived monthly SLA views (SLA, Services,
@@ -91,10 +92,11 @@ export function MonthSelect({
   label?: string;
 }) {
   useReportTimeZone(); // the list follows the server's zone once it is known
+  const id = useId();
   const months = recentMonths(12);
   return (
-    <Field label={label}>
-      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+    <Field label={label} htmlFor={id}>
+      <select id={id} name="month" value={value} onChange={(e) => onChange(e.target.value)}>
         {months.map((m, i) => (
           <option key={m} value={m}>
             {monthLabel(m)}
@@ -119,7 +121,7 @@ export function MethodToggle({
   label?: string;
 }) {
   return (
-    <Field label={label}>
+    <FieldGroup label={label}>
       <div className="seg" role="group" aria-label="Calculation method">
         {(['availability', 'hcml-report'] as SliProfile[]).map((p) => (
           <button
@@ -133,7 +135,7 @@ export function MethodToggle({
           </button>
         ))}
       </div>
-    </Field>
+    </FieldGroup>
   );
 }
 

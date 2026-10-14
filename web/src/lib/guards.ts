@@ -10,6 +10,8 @@ import type {
   GraphResponse,
   GraphSeries,
   GroupProblems,
+  Device,
+  DevicesResponse,
   Host,
   HostAvailability,
   HostGap,
@@ -25,6 +27,10 @@ import type {
   MapLink,
   MapSelement,
   Me,
+  Meter,
+  MeterOther,
+  MeterZone,
+  MetersResponse,
   NetDevice,
   NetInterface,
   NetInterfacesResponse,
@@ -185,6 +191,20 @@ const hostOverview = shape<HostOverview>({
   problems: shape<HostOverview['problems']>({ total: num, bySeverity: counts }),
   state: opt(text),
   reason: opt(text),
+});
+
+const device = shape<Device>({
+  ...hostFields,
+  problems: shape<HostOverview['problems']>({ total: num, bySeverity: counts }),
+  state: opt(text),
+  reason: opt(text),
+  site: orNull(siteRef),
+  class: text,
+  category: text,
+});
+const devices = shape<DevicesResponse>({
+  classes: listOf(shape<DevicesResponse['classes'][number]>({ key: text, label: text })),
+  devices: listOf(device),
 });
 
 const stats = shape<Stats>({
@@ -385,6 +405,53 @@ const links = shape<LinksResponse>({
   paths: listOf(shape<LinksResponse['paths'][number]>({ name: text, links: listOf(link), state: text })),
   summary: shape<LinksResponse['summary']>({ total: num, up: num, degraded: num, down: num, unknown: num }),
   thresholds: shape<LinksResponse['thresholds']>({ lossWarn: num, lossCrit: num }),
+});
+
+const meterZone = shape<MeterZone>({ from: num, level: text });
+const meterOther = shape<MeterOther>({
+  direction: text,
+  itemid: text,
+  value: orNull(num),
+  clock: orNull(num),
+  fraction: orNull(num),
+  zone: orNull(text),
+});
+const meter = shape<Meter>({
+  id: text,
+  title: text,
+  page: text,
+  host: orNull(text),
+  hostid: orNull(text),
+  item: orNull(text),
+  itemid: orNull(text),
+  direction: orNull(text),
+  link: text,
+  other: orNull(meterOther),
+  units: text,
+  value: orNull(num),
+  clock: orNull(num),
+  min: num,
+  max: orNull(num),
+  zones: listOf(meterZone),
+  fraction: orNull(num),
+  zone: orNull(text),
+  state: text,
+});
+const meters = shape<MetersResponse>({
+  dashboard: text,
+  found: flag,
+  generatedAt: num,
+  meters: listOf(meter),
+  summary: shape<MetersResponse['summary']>({
+    total: num,
+    current: num,
+    critical: num,
+    warn: num,
+    stale: num,
+    unavailable: num,
+    down: num,
+    otherHigh: num,
+  }),
 });
 
 const sliGroup = shape<SliGroup>({
@@ -589,6 +656,8 @@ const slaSli = shape<SlaSli>({ serviceid: text, name: text, sli: num, uptime: nu
 export const problemListGuard = guard<Problem[]>('the problem list', listOf(problem));
 /** GET /api/hosts/overview. */
 export const hostOverviewGuard = guard<HostOverview[]>('the host list', listOf(hostOverview));
+/** GET /api/devices. */
+export const devicesGuard = guard<DevicesResponse>('the device list', devices);
 /** GET /api/stats. */
 export const statsGuard = guard<Stats>('the dashboard counts', stats);
 /** GET /api/reports/problems-by-group. */
@@ -623,6 +692,8 @@ export const sitesGuard = guard<SitesResponse>('the site list', sites);
 export const scorecardGuard = guard<ScorecardResponse>('the inventory scorecard', scorecard);
 /** GET /api/links. */
 export const linksGuard = guard<LinksResponse>('the link health', links);
+/** GET /api/net/meters. */
+export const metersGuard = guard<MetersResponse>('the internet traffic meters', meters);
 /** GET /api/reports/availability, either basis. */
 export const availabilityGuard = guard<AvailabilityReport>('the availability report', availability);
 /** GET /api/reports/aging. */

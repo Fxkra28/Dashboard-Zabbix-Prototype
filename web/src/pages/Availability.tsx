@@ -31,6 +31,7 @@ import {
 import { monthLabel, recentMonths } from '../lib/time';
 import { useReportTimeZone } from '../hooks/useReportTimeZone';
 import { PERCENT_DP, dur, formatPercent } from '../lib/units';
+import { count } from '../lib/plural';
 
 /**
  * Availability & response report (HCML Goal 6):
@@ -272,7 +273,7 @@ export default function Availability() {
                       value={c.sli === null ? 'No data' : fmtPct(c.sli, PERCENT_DP.availability, target)}
                       sub={
                         c.sli === null
-                          ? `${c.hosts} devices, none with data`
+                          ? `${count(c.hosts, 'device')}, none with data`
                           : `${c.withData} of ${c.hosts} measured · ${c.belowTarget} below ${target}%`
                       }
                       accent={c.sli === null ? 'var(--muted)' : c.meeting ? 'var(--good)' : 'var(--danger)'}

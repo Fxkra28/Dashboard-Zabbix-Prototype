@@ -40,6 +40,24 @@ const dLeaf = { ...leaf, kind: 'host', hostid: '1', dataStatus: 'ok', coverage: 
 const cases: Case[] = [
   { name: 'host list', guard: g.hostListGuard, sample: [hostBase], optional: HOST_OPT.map((p) => `[0].${p}`) },
   { name: 'host group list', guard: g.hostGroupListGuard, sample: [{ groupid: '5', name: 'Switches' }] },
+  {
+    name: 'internet traffic meters',
+    guard: g.metersGuard,
+    sample: {
+      dashboard: 'Global view',
+      found: true,
+      generatedAt: 1_800_000_000,
+      meters: [
+        {
+          id: 'item-1', title: 'SITE ONE INTERNET', page: 'Page 1', host: '1.1 FW', hostid: '10', item: 'Interface wan1(): Bits received', itemid: '1',
+          direction: 'in', link: 'up', other: { direction: 'out', itemid: '2', value: 40_000_000, clock: 1_800_000_000, fraction: 0.08, zone: 'low' },
+          units: 'bps', value: 212_000_000, clock: 1_800_000_000, min: 0, max: 500_000_000,
+          zones: [{ from: 0, level: 'low' }], fraction: 0.42, zone: 'ok', state: 'ok',
+        },
+      ],
+      summary: { total: 1, current: 1, critical: 0, warn: 0, stale: 0, unavailable: 0, down: 0, otherHigh: 0 },
+    },
+  },
   { name: 'item list', guard: g.itemListGuard, sample: [item], optional: ITEM_OPT.map((p) => `[0].${p}`) },
   {
     name: 'latest data',

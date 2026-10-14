@@ -40,6 +40,16 @@ export const IconHost = ({ size }: P) => (
   </svg>
 );
 
+/** A device: a screen on a stand, for the Devices page (the Hosts page keeps the rack). */
+export const IconDevice = ({ size }: P) => (
+  <svg {...base(size)}>
+    <rect x="3" y="4" width="18" height="12" rx="1.5" />
+    <line x1="9" y1="20" x2="15" y2="20" />
+    <line x1="12" y1="16" x2="12" y2="20" />
+    <circle cx="7" cy="10" r="0.6" />
+  </svg>
+);
+
 export const IconNetwork = ({ size }: P) => (
   <svg {...base(size)}>
     <circle cx="12" cy="5" r="2.2" />

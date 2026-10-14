@@ -4,6 +4,7 @@ import { getProblems, type ZbxProblem } from '../queries.js';
 import { cached } from '../cache.js';
 import { config } from '../config.js';
 import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../zabbix.js';
+import { SOURCE_DOWN } from '../errors.js';
 
 /**
  * Live problems via SSE (setup.md §7).
@@ -31,8 +32,6 @@ const KEEPALIVE_MS = 15_000;
 export function pingFrame(ageMs?: number): string {
   return `event: ping\ndata: ${ageMs === undefined ? '{}' : JSON.stringify({ ageMs })}\n\n`;
 }
-/** The keep-alive with nothing to say about the list. */
-export const PING = pingFrame();
 /** setTimeout's longest delay; a token lasts 12 h, far less. */
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
@@ -156,21 +155,22 @@ function broadcast(text: string, now: number): void {
 }
 
 /**
- * What a screen may be told about a failed read. Zabbix's typed errors carry a
- * message written for it (and never the Zabbix address); anything else is a
- * bug, whose wording stays in the log: the same split errors.ts makes.
+ * What a screen may be told about a failed read: a Zabbix failure is errors.ts's one sentence with the method and setting in the log only;
+ * anything else is a bug, whose wording stays in the log too.
  */
 function publicMessage(err: unknown): string {
   const known = err instanceof ZabbixApiError || err instanceof ZabbixTimeoutError || err instanceof ZabbixAuthError;
-  const message = known ? err.message : 'The live stream hit an unexpected error. Details are in the BFF log.';
-  if (message !== lastError) {
+  const message = known ? SOURCE_DOWN : 'The live stream hit an unexpected error. Details are in the BFF log.';
+  // Logged when the failure changes, not when only the wording of the screen stays the same.
+  const logged = known ? err.message : message;
+  if (logged !== lastError) {
     if (err instanceof ZabbixApiError || err instanceof ZabbixTimeoutError) {
       log?.error({ detail: err.detail }, err.message);
     } else {
       log?.error(err);
     }
   }
-  lastError = message;
+  lastError = logged;
   return message;
 }
 

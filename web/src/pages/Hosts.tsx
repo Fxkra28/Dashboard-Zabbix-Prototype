@@ -6,6 +6,7 @@ import type { HostOverview } from '../types';
 import { Async } from '../components/states';
 import { Field, FieldGroup, FieldSpacer } from '../components/Field';
 import { HostTable } from '../components/HostTable';
+import { count } from '../lib/plural';
 
 export default function Hosts() {
   const searchId = useId();
@@ -41,6 +42,7 @@ export default function Hosts() {
             style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, cursor: 'pointer' }}
           >
             <input
+              name="problems-only"
               type="checkbox"
               checked={problemsOnly}
               onChange={(e) => setProblemsOnly(e.target.checked)}
@@ -50,7 +52,7 @@ export default function Hosts() {
           </label>
         </FieldGroup>
         <FieldSpacer>
-          <span className="pill">{filtered.length} hosts</span>
+          <span className="pill">{count(filtered.length, 'host')}</span>
         </FieldSpacer>
       </div>
 

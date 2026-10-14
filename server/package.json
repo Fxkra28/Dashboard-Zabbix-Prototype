@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "description": "BFF for the HCML Monitoring Portal — talks to the Zabbix API, holds the token, caches.",
   "scripts": {
     "dev": "tsx watch src/index.ts",

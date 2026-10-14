@@ -218,6 +218,7 @@ export default function Links() {
                   style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, cursor: 'pointer' }}
                 >
                   <input
+                    name="problems-only"
                     type="checkbox"
                     checked={problemsOnly}
                     onChange={(e) => setProblemsOnly(e.target.checked)}

@@ -11,6 +11,9 @@
  * HTML href and src, and "/x" as the repo root. Not recognised: indented code
  * blocks, so a link-like text in one is checked like prose.
  *
+ * Also checked: a line citation in backticks, such as `server/src/rateLimit.ts:22-35`, must not run past the end of its file.
+ * That proves the lines exist, not that they say what the sentence does. The records of past days (tracker.md, CHANGELOG.md, AUDIT_REPORT.md) are left out.
+ *
  *   node web/scripts/links.check.mjs [repo root]   (default: two levels up)
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -20,11 +23,15 @@ import { fileURLToPath } from 'node:url';
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git']);
 /** Historical records: their links describe the tree as it was when they were written. */
 const SKIP_FILES = new Set(['AUDIT_REPORT.md', 'README_copy.md']);
+/** Their line citations were right on the day and are evidence, not a pointer into today's code. */
+const CITATION_SKIP = new Set(['tracker.md', 'CHANGELOG.md', 'AUDIT_REPORT.md', 'README_copy.md']);
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 // [text](target "title"), where target may be <with spaces> or hold one level of balanced ().
 const INLINE = /\]\(\s*(<[^>\n]*>|[^\s()<]*(?:\([^\s()]*\)[^\s()]*)*)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 const REFERENCE = /^ {0,3}\[(?!\^)[^\]]+\]:\s*(<[^>\n]*>|\S+)/;
+// `path/to/file.ext:12` or `:12-30`, alone in its backticks.
+const CITATION = /`((?:[\w@.-]+\/)*[\w@.-]+\.[a-z]{1,4}):(\d+)(?:-(\d+))?`/g;
 const HTML = /<(?:a|img|source)\b[^>]*?\s(?:href|src)\s*=\s*["']([^"']+)["']/gi;
 
 /** Every Markdown file under `root`, as absolute paths. */
@@ -85,6 +92,43 @@ export function relativeLinks(text) {
   return links;
 }
 
+/** Line citations in `text` (`file.ts:12-30`), outside fenced code. */
+export function lineCitations(text) {
+  const found = [];
+  let fence = null;
+  text.split('\n').forEach((raw, i) => {
+    if (fence) {
+      const close = raw.match(FENCE);
+      if (close && close[1][0] === fence[0] && close[1].length >= fence.length && !raw.slice(close[0].length).trim()) fence = null;
+      return;
+    }
+    const open = raw.match(FENCE);
+    if (open) {
+      fence = open[1];
+      return;
+    }
+    for (const m of raw.matchAll(CITATION)) {
+      found.push({ line: i + 1, path: m[1], from: Number(m[2]), to: Number(m[3] ?? m[2]) });
+    }
+  });
+  return found;
+}
+
+/** The file a citation names: from the repo root, or the way the documents shorten it (`routes/x.ts`), or beside the document. */
+function citedFile(root, docDir, path) {
+  for (const base of [root, join(root, 'server', 'src'), join(root, 'web', 'src'), docDir]) {
+    const candidate = resolve(base, path);
+    try {
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // not there: try the next place
+    }
+  }
+  return null;
+}
+
+const lineCount = (text) => text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+
 /** Whether `path` exists under `root` with exactly this spelling, segment by segment. */
 function existsExactly(root, path, listings) {
   const rel = relative(root, path);
@@ -105,14 +149,30 @@ function existsExactly(root, path, listings) {
   return true;
 }
 
-/** Broken links under `root`, and how many links were checked. */
+/** Broken links and overrunning citations under `root`, and how many of each were checked. */
 export function checkLinks(root) {
   const listings = new Map();
   const broken = [];
+  const overrun = [];
   let checked = 0;
+  let cited = 0;
+  const lengths = new Map();
   const files = markdownFiles(root);
   for (const file of files) {
-    for (const { line, target } of relativeLinks(readFileSync(file, 'utf8'))) {
+    const text = readFileSync(file, 'utf8');
+    if (!CITATION_SKIP.has(file.split(sep).at(-1))) {
+      for (const c of lineCitations(text)) {
+        const target = citedFile(root, dirname(file), c.path);
+        if (!target) continue; // not a path of this repository: prose, or a file outside it
+        cited++;
+        if (!lengths.has(target)) lengths.set(target, lineCount(readFileSync(target, 'utf8')));
+        const last = lengths.get(target);
+        if (c.from < 1 || c.to < c.from || c.to > last) {
+          overrun.push(`${relative(root, file)}:${c.line}  ${c.path}:${c.from}${c.to === c.from ? '' : `-${c.to}`}  (the file has ${last} lines)`);
+        }
+      }
+    }
+    for (const { line, target } of relativeLinks(text)) {
       checked++;
       let path = target.split(/[#?]/)[0];
       try {
@@ -124,7 +184,7 @@ export function checkLinks(root) {
       if (!existsExactly(root, path, listings)) broken.push(`${relative(root, file)}:${line}  ${target}`);
     }
   }
-  return { files: files.length, checked, broken };
+  return { files: files.length, checked, broken, cited, overrun };
 }
 
 // Self-test of the extractor: each Markdown sample and the targets it must yield.
@@ -146,12 +206,28 @@ for (const [md, expected] of cases) {
   }
 }
 
+// Self-test of the citation reader.
+const citeCases = [
+  ['see `a/b.ts:12` and `c.mjs:3-9`, not `d.ts` or `e.ts:x`', [['a/b.ts', 12, 12], ['c.mjs', 3, 9]]],
+  ['```\n`in/fence.ts:4`\n```\n`after.ts:1`', [['after.ts', 1, 1]]],
+  ['`server/src/rateLimit.ts:22-35`.', [['server/src/rateLimit.ts', 22, 35]]],
+];
+for (const [md, expected] of citeCases) {
+  const found = lineCitations(md).map((c) => [c.path, c.from, c.to]);
+  if (JSON.stringify(found) !== JSON.stringify(expected)) {
+    console.error(`links.check citation self-test failed: expected ${JSON.stringify(expected)}, found ${JSON.stringify(found)} in:\n${md}`);
+    process.exit(1);
+  }
+}
+
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..'));
 if (!statSync(root).isDirectory()) throw new Error(`Not a directory: ${root}`);
-const { files, checked, broken } = checkLinks(root);
+const { files, checked, broken, cited, overrun } = checkLinks(root);
 for (const b of broken) console.error(b);
-if (broken.length) {
-  console.error(`\nlinks.check: ${broken.length} of ${checked} relative links in ${files} files do not resolve.`);
+for (const o of overrun) console.error(o);
+if (broken.length || overrun.length) {
+  if (broken.length) console.error(`\nlinks.check: ${broken.length} of ${checked} relative links in ${files} files do not resolve.`);
+  if (overrun.length) console.error(`links.check: ${overrun.length} of ${cited} line citations run past the end of their file.`);
   process.exit(1);
 }
-console.log(`links.check: ${checked} relative links in ${files} files, all resolve.`);
+console.log(`links.check: ${checked} relative links in ${files} files, all resolve; ${cited} line citations, none past the end of its file.`);

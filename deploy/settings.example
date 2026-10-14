@@ -44,6 +44,8 @@ HOST_NAME_PATTERN=
 # Links, alert noise and the availability report
 LINK_LOSS_WARN=2
 LINK_LOSS_CRIT=10
+# The Zabbix dashboard whose gauge widgets are the internet traffic meters (Dashboard, operator and admin).
+INTERNET_METERS_DASHBOARD=Global view
 NOISE_SHORT_SECONDS=300
 NOISE_MIN_COUNT=5
 AVAILABILITY_MIN_SEVERITY=2

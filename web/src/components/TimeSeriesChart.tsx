@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import {
@@ -14,12 +14,13 @@ import 'echarts/theme/v5.js';
 // The ESM build: Vite 8 hands a default import of the CommonJS lib/ build the
 // whole exports object in a "type": "module" package, not the component.
 import ReactEChartsCore from 'echarts-for-react/esm/core';
-import type { GraphRange, GraphResponse, GraphSeries } from '../types';
+import type { GraphPoint, GraphRange, GraphResponse, GraphSeries } from '../types';
 import { theme } from '../theme';
 import { formatAxis, formatValue } from '../lib/units';
 import { fmtTime } from '../lib/severity';
 import { formatDateTime } from '../lib/time';
-import { orNoData } from './NoData';
+import { chartTable } from '../lib/chartTable';
+import { NoData, orNoData } from './NoData';
 import { api } from '../api';
 import { useAsync } from '../hooks/useAsync';
 import { useThemeChange } from '../hooks/useThemeChange';
@@ -97,15 +98,29 @@ export default function TimeSeriesChart({
   from,
   to,
   height = 320,
+  dataOpen,
+  onDataOpenChange,
 }: {
   series: GraphSeries[];
   from: number;
   to: number;
   height?: number;
+  /**
+   * Whether the Show data table is open, when the parent holds that: the chart is remounted whenever the selection or range changes,
+   * so a panel only this component knew about would close itself. Left out, the chart keeps its own.
+   */
+  dataOpen?: boolean;
+  onDataOpenChange?: (open: boolean) => void;
 }) {
   const summaryId = useId();
   const dataId = useId();
-  const [showData, setShowData] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const showData = dataOpen ?? ownOpen;
+  const toggleData = () => {
+    const next = !showData;
+    if (dataOpen === undefined) setOwnOpen(next);
+    onDataOpenChange?.(next);
+  };
   const chartName = `Line chart of ${series.map((s) => seriesLabel(s, series)).join('; ')}, ${fmtTime(from)} to ${fmtTime(to)}`;
   // Up to two unit families get their own axis (e.g. bps left, % right).
   const unitAxes: string[] = [];
@@ -292,7 +307,7 @@ export default function TimeSeriesChart({
           className="btn ghost sm"
           aria-expanded={showData}
           aria-controls={dataId}
-          onClick={() => setShowData((on) => !on)}
+          onClick={toggleData}
         >
           {showData ? 'Hide data' : 'Show data'}
         </button>
@@ -302,41 +317,83 @@ export default function TimeSeriesChart({
   );
 }
 
-/** What the chart plots, as one plain table per series. Only built while the reader has it open. */
+/**
+ * What the chart plots as one plain table, a column group per selected item joined on time (lib/chartTable.ts), so it always matches the selection.
+ * Only built while the reader has it open.
+ */
 function ChartData({ series }: { series: GraphSeries[] }) {
+  const labels = series.map((s) => seriesLabel(s, series));
+  const { ranged, rows } = useMemo(() => chartTable(series), [series]);
+  const many = series.length > 1;
+  // The names of a series' columns: a trend series has three, any other one.
+  const subHeads = (isRange: boolean) => (isRange ? ['Average', 'Min', 'Max'] : ['Value']);
+  const value = (s: GraphSeries, p: GraphPoint | undefined, at: 1 | 2 | 3) =>
+    p === undefined ? <NoData label="No value at this time" /> : orNoData(formatValue(p[at], s.units));
+
   return (
     <div className="chart-data">
-      {series.map((s) => {
-        const label = seriesLabel(s, series);
-        // The same condition as the tooltip's range: a trend point carries its min and max, a step line does not.
-        const ranged = !s.step && s.points.some((p) => p[2] !== null && p[3] !== null);
-        return (
-          // A long table scrolls in its own box, which takes focus so the keyboard can scroll it.
-          <div key={s.itemid} className="table-wrap chart-data-scroll" role="region" aria-label={`Data of ${label}`} tabIndex={0}>
-            <table className="data compact">
-              <caption>{label}</caption>
-              <thead>
+      {/* A long table scrolls in its own box, which takes focus so the keyboard can scroll it. */}
+      <div className="table-wrap chart-data-scroll" role="region" aria-label={`Data of ${labels.join(', ')}`} tabIndex={0}>
+        <table className="data compact">
+          <caption>{labels.join('; ')}</caption>
+          <thead>
+            {many ? (
+              <>
                 <tr>
-                  <th>Time</th>
-                  <th>{ranged ? 'Average' : 'Value'}</th>
-                  {ranged && <th>Min</th>}
-                  {ranged && <th>Max</th>}
+                  <th className="chart-time" rowSpan={2} scope="col">
+                    Time
+                  </th>
+                  {series.map((s, i) => (
+                    <th key={s.itemid} colSpan={ranged[i] ? 3 : 1} scope="colgroup">
+                      {labels[i]}
+                    </th>
+                  ))}
                 </tr>
-              </thead>
-              <tbody>
-                {s.points.map((p) => (
-                  <tr key={p[0]}>
-                    <td className="nowrap">{formatDateTime(p[0])}</td>
-                    <td className="nowrap">{orNoData(formatValue(p[1], s.units))}</td>
-                    {ranged && <td className="nowrap">{orNoData(formatValue(p[2], s.units))}</td>}
-                    {ranged && <td className="nowrap">{orNoData(formatValue(p[3], s.units))}</td>}
-                  </tr>
+                <tr>
+                  {series.flatMap((s, i) => subHeads(ranged[i]).map((h) => <th key={`${s.itemid}:${h}`} scope="col">{h}</th>))}
+                </tr>
+              </>
+            ) : (
+              <tr>
+                <th className="chart-time" scope="col">
+                  Time
+                </th>
+                {subHeads(ranged[0]).map((h) => (
+                  <th key={h} scope="col">
+                    {h}
+                  </th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
+              </tr>
+            )}
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.at}>
+                <td className="nowrap chart-time">{formatDateTime(r.at)}</td>
+                {series.flatMap((s, i) => {
+                  const p = r.cells[i];
+                  const cells = [
+                    <td key={`${s.itemid}:1`} className="nowrap">
+                      {value(s, p, 1)}
+                    </td>,
+                  ];
+                  if (ranged[i]) {
+                    cells.push(
+                      <td key={`${s.itemid}:2`} className="nowrap">
+                        {value(s, p, 2)}
+                      </td>,
+                      <td key={`${s.itemid}:3`} className="nowrap">
+                        {value(s, p, 3)}
+                      </td>,
+                    );
+                  }
+                  return cells;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -380,6 +437,8 @@ export function GraphView({
   const idsKey = itemids.join(',');
   const rk = rangeKey(range);
   const live = isLiveRange(range);
+  // Held here, not in the chart, which is remounted on every change of selection or range and would close the table.
+  const [dataOpen, setDataOpen] = useState(false);
   // Poll at the items' own interval once it is known. useAsync only moves its
   // timer when the interval changes, so learning it doesn't refetch.
   const [pollMs, setPollMs] = useState(30_000);
@@ -417,7 +476,15 @@ export function GraphView({
           </div>
           <StaleNote from={g.from} to={g.to} series={g.series} latestClock={g.latestClock} />
           {g.series.some((s) => s.points.length) ? (
-            <TimeSeriesChart key={`${idsKey}|${rk}`} series={g.series} from={g.from} to={g.to} height={height} />
+            <TimeSeriesChart
+              key={`${idsKey}|${rk}`}
+              series={g.series}
+              from={g.from}
+              to={g.to}
+              height={height}
+              dataOpen={dataOpen}
+              onDataOpenChange={setDataOpen}
+            />
           ) : (
             <div className="state">{empty}</div>
           )}

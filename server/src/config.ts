@@ -236,6 +236,13 @@ export const config = {
     /** Regex a compliant host name must match. Empty = don't score naming. */
     namePattern: process.env.HOST_NAME_PATTERN ?? '',
   },
+  /**
+   * Internet traffic meters (routes/meters.ts): the gauge widgets of this Zabbix dashboard say which interfaces to show, each link's
+   * capacity and where its colour zones start. HCML's own is the built-in "Global view".
+   */
+  meters: {
+    dashboard: process.env.INTERNET_METERS_DASHBOARD?.trim() || 'Global view',
+  },
   /** Link & WAN health (§17, HCML Goal 3): packet-loss thresholds, in percent. */
   links: {
     lossWarn: envNum('LINK_LOSS_WARN', 2),

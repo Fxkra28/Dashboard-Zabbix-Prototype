@@ -321,7 +321,7 @@ direction, recorded as given; how each is built is checked against sections 1 to
 | Item | Decision |
 |---|---|
 | UX-12, the Dashboard's live list | Worst first: severity, then newest. The panel says "12 of N" and links to the full Problems list |
-| UX-15, the wall screen | A wall mode with all four parts: a fullscreen toggle that hides the chrome and enlarges the Dashboard; a short highlight on problems that appear or clear, off under reduced motion; a live clock and a large "data as of" stamp; and no sign-in timeout |
+| UX-15, the wall screen | A wall mode with all four parts: a fullscreen toggle that hides the chrome and enlarges the Dashboard; a short highlight on problems that appear or clear, off under reduced motion; a live clock and a large "data as of" stamp; and no sign-in timeout. For operators and admins it also turns by itself between the Overview and the internet meters (30 seconds each, a Pause button, or a view named in the address, stops it), and what is under the bar is drawn smaller until it fits a 1080p screen, as nobody scrolls a wall |
 | Wall sign-in | Any open portal renews its own sign-in before it expires, for every user. Accepted trade-off: an unattended, open portal also stays signed in |
 | UX-14, narrow screens | Not needed. The portal is used on desktops and the wall; section 6 stands as written |
 | UX-24, the sidebar | Keep the current groups. Each menu label matches the title of the page it opens |

@@ -8,6 +8,7 @@ import { AJV_OPTIONS } from './schemas.js';
 import { registerCompression } from './compress.js';
 import { setCacheLogger } from './cache.js';
 import { registerStaleHeaders } from './staleness.js';
+import { registerNoStore } from './noStore.js';
 import { serializeRequest } from './logging.js';
 import { assertUsers, setupAuth } from './auth.js';
 import { registerRateLimit } from './rateLimit.js';
@@ -15,9 +16,11 @@ import { registerHealth } from './health.js';
 import { registerHostCheck } from './hostCheck.js';
 import { installShutdown } from './shutdown.js';
 import { hostRoutes } from './routes/hosts.js';
+import { deviceRoutes } from './routes/devices.js';
 import { problemRoutes } from './routes/problems.js';
 import { historyRoutes } from './routes/history.js';
 import { netRoutes } from './routes/net.js';
+import { meterRoutes } from './routes/meters.js';
 import { streamRoutes } from './routes/stream.js';
 import { reportRoutes } from './routes/reports.js';
 import { mapRoutes } from './routes/maps.js';
@@ -70,7 +73,9 @@ registerHostCheck(app);
 // Security headers. `contentSecurityPolicy` is off because this process serves
 // JSON only: nginx serves the app, and a CSP here would describe a document
 // that never exists while doing nothing for the API.
-await app.register(helmet, { contentSecurityPolicy: false });
+// `hsts` is off: the portal is served over plain HTTP, and the header would claim a TLS that is not
+// there. Behind TLS the proxy sends it, on every reply (docs/operations/tls.md).
+await app.register(helmet, { contentSecurityPolicy: false, hsts: false });
 
 // One origin only. The session cookie's CSRF check (auth.ts) relies on this:
 // the answer names only WEB_ORIGIN, so another site's preflight for X-HCML-CSRF fails.
@@ -82,6 +87,9 @@ await registerRateLimit(app);
 // Brotli/gzip for JSON bodies (compress.ts). Before every route: a hook only
 // reaches the routes registered after it.
 registerCompression(app);
+
+// Cache-Control: no-store on every /api reply but the public health check (noStore.ts).
+registerNoStore(app);
 
 // X-Data-Stale / X-Data-Age-Seconds on an answer that is an old copy kept
 // because Zabbix failed (staleness.ts). Also before the routes.
@@ -96,9 +104,11 @@ registerErrorHandler(app);
 await setupAuth(app);
 
 await app.register(hostRoutes);
+await app.register(deviceRoutes);
 await app.register(problemRoutes);
 await app.register(historyRoutes);
 await app.register(netRoutes);
+await app.register(meterRoutes);
 await app.register(streamRoutes);
 await app.register(reportRoutes);
 await app.register(mapRoutes);

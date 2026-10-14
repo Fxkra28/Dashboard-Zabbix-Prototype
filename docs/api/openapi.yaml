@@ -506,6 +506,29 @@ paths:
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
 
+  /api/devices:
+    get:
+      summary: Every host as a device of one kind, for the Devices page
+      description: |
+        Cached 30 s. The same hosts, reachability and problem counts as `/api/hosts/overview`, which it
+        reads through the same cache entry, each with the kind of device it is and the monitoring
+        template that decided it. The kind is the one the derived SLA report uses (`naming.ts`
+        `deviceClass`: the template first, then the name), so the two count a switch the same way. The
+        templates are read once for five minutes. A host whose templates have not been read yet comes
+        back with category `Other`. `classes` lists every kind in the order the page shows them, with
+        its plural name.
+      operationId: getDevices
+      tags: [Hosts]
+      responses:
+        '200':
+          description: The kinds, and the devices.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DevicesResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
   /api/hostgroups:
     get:
       summary: Zabbix host groups
@@ -754,6 +777,44 @@ paths:
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/NetDevice' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/net/meters:
+    get:
+      summary: Internet traffic meters, read from the gauge widgets of a Zabbix dashboard
+      description: |
+        **operator.** Cached 30 s. The dashboard itself is kept for two minutes.
+
+        Reads the dashboard named by `INTERNET_METERS_DASHBOARD` (default `Global view`, HCML's own) with
+        `dashboard.get` and makes one meter of each gauge widget: the interface item it is bound to, the
+        capacity it was given as its maximum, and its colour zones. The meters come in the order a person
+        reads the pages, and a later page that repeats an item adds nothing. Nothing is created or changed
+        in Zabbix.
+
+        The value is the item's last value. Zabbix keeps that only for a day, so an item with none (silent
+        for longer, or collected by a copy of Zabbix that has stopped) is read from history, one newest
+        row each, and comes back as `stale` with its own time. A reading counts as current for three
+        update intervals, and at least ten minutes. When no dashboard of that name is visible to the
+        Zabbix token, `found` is false and `meters` is empty.
+
+        Two more things are read for each gauge, from the items beside its own on the same host and the same
+        interface (the same ifIndex): the interface's status item, and the item of the opposite direction.
+        They are searched for once in two minutes (`item.get` by key prefix) and their values asked for with
+        the gauge's own. Only a current value counts, and none is ever read from history: a status or a
+        traffic figure from days ago says nothing about the link today. `link` says whether the interface is
+        up or down, and `other` is the opposite direction on the gauge's own scale and zones, which assumes a
+        link that is the same size both ways.
+      operationId: getNetMeters
+      tags: [Network]
+      responses:
+        '200':
+          description: The meters.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetersResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '502': { $ref: '#/components/responses/ZabbixError' }
@@ -1860,6 +1921,38 @@ components:
           items: { type: object, additionalProperties: true }
       additionalProperties: true
 
+    Device:
+      allOf:
+        - $ref: '#/components/schemas/ZHost'
+        - type: object
+          required: [state, reason, problems, class, category, site]
+          properties:
+            state: { $ref: '#/components/schemas/HostState' }
+            reason: { $ref: '#/components/schemas/StateReason' }
+            problems: { $ref: '#/components/schemas/ProblemCounts' }
+            site:
+              oneOf: [{ $ref: '#/components/schemas/SiteRef' }, { type: 'null' }]
+            class:
+              type: string
+              enum: [switch, firewall, access-point, repeater, server, wan-link, web, other]
+            category:
+              type: string
+              description: The monitoring template the kind was judged by, such as `Cisco IOS by SNMP`, `ICMP Ping` for a host that is only pinged, or `Other`.
+
+    DevicesResponse:
+      type: object
+      required: [classes, devices]
+      properties:
+        classes:
+          type: array
+          items:
+            type: object
+            required: [key, label]
+            properties:
+              key: { type: string, enum: [switch, firewall, access-point, repeater, server, wan-link, web, other] }
+              label: { type: string, description: 'The plural name, such as "Switches".' }
+        devices: { type: array, items: { $ref: '#/components/schemas/Device' } }
+
     Item:
       type: object
       properties:
@@ -1960,6 +2053,92 @@ components:
                 latency: { type: number }
                 state: { type: string }
             - type: 'null'
+
+    MeterZone:
+      type: object
+      required: [from, level]
+      properties:
+        from:
+          type: number
+          description: Where the zone starts, in the item's units. It ends where the next one starts, or at the top of the scale.
+        level:
+          type: string
+          enum: [none, low, ok, warn, critical]
+          description: What the zone's colour in Zabbix means (red is `critical`, orange and yellow `warn`, green `ok`, blue `low`, grey or unset `none`).
+
+    MeterOther:
+      type: object
+      required: [direction, itemid, value, clock, fraction, zone]
+      properties:
+        direction: { type: string, enum: [in, out], description: The opposite of the gauge's own direction. }
+        itemid: { type: string }
+        value: { type: [number, 'null'], description: The item's current value. Null when it has none: it is never read from history. }
+        clock: { type: [integer, 'null'] }
+        fraction: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        zone: { type: [string, 'null'], enum: [none, low, ok, warn, critical, null] }
+
+    Meter:
+      type: object
+      required: [id, title, page, host, hostid, item, itemid, direction, link, other, units, value, clock, min, max, zones, fraction, zone, state]
+      properties:
+        id: { type: string, description: 'Stable for one item (`item-<id>`); a widget without an item is named after its title.' }
+        title: { type: string, description: The widget's own title, as HCML wrote it. }
+        page: { type: string, description: The dashboard page the widget sits on. }
+        host: { type: [string, 'null'] }
+        hostid: { type: [string, 'null'], description: The host's id in Zabbix, which the Graphs page needs. }
+        item: { type: [string, 'null'], description: 'The item''s name, such as "Interface wan1(): Bits received".' }
+        itemid: { type: [string, 'null'] }
+        direction: { type: [string, 'null'], enum: [in, out, null] }
+        link:
+          type: string
+          enum: [up, down, unknown]
+          description: |
+            What the interface says about itself, from its status item (IF-MIB ifOperStatus) when that has a
+            current value. `down` is 2 (down) or 7 (lowerLayerDown): a link that carries nothing, so a reading
+            of 0 is not an idle link. `up` is 1. `unknown` is no current status, or one that is neither
+            working nor dead (testing, dormant, not present).
+        other:
+          description: The opposite direction of the same interface, on the gauge's own scale and zones. Null for a gauge with no direction, or with no item of the opposite direction.
+          oneOf:
+            - $ref: '#/components/schemas/MeterOther'
+            - type: 'null'
+        units: { type: string, description: The item's units; every number below is in them. }
+        value: { type: [number, 'null'] }
+        clock: { type: [integer, 'null'], description: When the value was collected, epoch seconds. }
+        min: { type: number }
+        max: { type: [number, 'null'], description: The top of the scale, the link's capacity as the widget gives it. }
+        zones: { type: array, items: { $ref: '#/components/schemas/MeterZone' } }
+        fraction: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        zone: { type: [string, 'null'], enum: [none, low, ok, warn, critical, null] }
+        state:
+          type: string
+          enum: [ok, stale, nodata, unsupported, missing, invalid]
+          description: |
+            `ok` a current reading. `stale` an old one (value and time are given). `nodata` the item has
+            never held a value this portal can read. `unsupported` the item is disabled or Zabbix cannot
+            collect it. `missing` the widget points at an item that is gone. `invalid` the widget has no
+            usable scale (the value is still given).
+
+    MetersResponse:
+      type: object
+      required: [dashboard, found, generatedAt, meters, summary]
+      properties:
+        dashboard: { type: string, description: The dashboard that was looked for. }
+        found: { type: boolean }
+        generatedAt: { type: integer, description: Epoch seconds. }
+        meters: { type: array, items: { $ref: '#/components/schemas/Meter' } }
+        summary:
+          type: object
+          required: [total, current, critical, warn, stale, unavailable, down, otherHigh]
+          properties:
+            total: { type: integer }
+            current: { type: integer, description: With a current reading. }
+            critical: { type: integer, description: Of those, in a red zone. }
+            warn: { type: integer, description: Of those, in a yellow or orange zone. }
+            stale: { type: integer }
+            unavailable: { type: integer, description: 'No gauge to draw: no value, unsupported, missing, or a scale that cannot be read.' }
+            down: { type: integer, description: 'Links whose interface is down, whatever their reading says.' }
+            otherHigh: { type: integer, description: 'Links whose opposite direction is in a yellow, orange or red zone now.' }
 
     InterfaceRow:
       type: object

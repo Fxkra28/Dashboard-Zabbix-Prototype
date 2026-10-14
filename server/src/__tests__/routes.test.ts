@@ -296,7 +296,12 @@ describe('input validation and error shape', () => {
 
     const res = await app.inject({ url: '/api/hosts' });
     expect(res.statusCode).toBe(502);
-    expect(res.json()).toEqual({ error: 'zabbix_error', message: 'host.get: {"code":-32602}' });
+    // The method and Zabbix's own words stay in the log (source-down.test.ts); a reader gets one sentence.
+    expect(res.json()).toMatchObject({
+      error: 'zabbix_error',
+      message: expect.stringMatching(/^The data source is not answering\. Tell an administrator and quote reference \S+\.$/),
+    });
+    expect(res.body).not.toContain('host.get');
 
     const missing = await app.inject({ url: '/api/does-not-exist' });
     expect(missing.statusCode).toBe(404);

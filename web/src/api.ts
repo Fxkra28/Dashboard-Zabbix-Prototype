@@ -28,6 +28,8 @@ import type {
   TopTriggersReport,
   ScorecardResponse,
   LinksResponse,
+  MetersResponse,
+  DevicesResponse,
   AvailabilityReport,
   AgingReport,
   CapacityReport,
@@ -58,6 +60,8 @@ import {
   mapListGuard,
   meGuard,
   netDevicesGuard,
+  metersGuard,
+  devicesGuard,
   netInterfacesGuard,
   noiseGuard,
   problemListGuard,
@@ -426,6 +430,8 @@ export const api = {
     }>('/api/health'),
   hosts: () => request<Host[]>('/api/hosts', { guard: hostListGuard }),
   hostsOverview: () => request<HostOverview[]>('/api/hosts/overview', { guard: hostOverviewGuard }),
+  /** Every host as a device of one kind, for the Devices page. */
+  devices: () => request<DevicesResponse>('/api/devices', { guard: devicesGuard }),
   hostgroups: () => request<HostGroup[]>('/api/hostgroups', { guard: hostGroupListGuard }),
   items: (hostid: string, search?: string, opts: { graphable?: boolean } = {}) =>
     request<Item[]>(`/api/items${qs({ hostid, search, graphable: opts.graphable ? 1 : undefined })}`, { guard: itemListGuard }),
@@ -461,6 +467,8 @@ export const api = {
   }) => request<NetInterfacesResponse>(`/api/net/interfaces${qs(opts)}`, { guard: netInterfacesGuard }),
   problems: () => request<Problem[]>('/api/problems', { guard: problemListGuard }),
   netDevices: () => request<NetDevice[]>('/api/net/devices', { guard: netDevicesGuard }),
+  /** The internet traffic meters: the gauge widgets of a Zabbix dashboard, with a value each. Operator and admin. */
+  netMeters: () => request<MetersResponse>('/api/net/meters', { guard: metersGuard }),
   topTriggers: (days: number) =>
     request<TopTriggersReport>(`/api/reports/top-triggers${qs({ days })}`, { guard: topTriggersGuard }),
   stats: () => request<Stats>('/api/stats', { guard: statsGuard }),

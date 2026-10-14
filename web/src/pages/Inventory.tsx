@@ -6,6 +6,7 @@ import type { DimensionKey, ScorecardResponse } from '../types';
 import { Async, Empty } from '../components/states';
 import { downloadCsv } from '../lib/csv';
 import { NoData } from '../components/NoData';
+import { count } from '../lib/plural';
 
 /**
  * Inventory & ownership scorecard (HCML Goal 1).
@@ -162,9 +163,10 @@ export default function Inventory() {
 
           <div className="panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
-              <h2>Gap list: {gaps.length} hosts</h2>
+              <h2>Gap list: {count(gaps.length, 'host')}</h2>
               <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>
                 <select
+                  name="gap-type"
                   aria-label="Show gaps of type"
                   value={filter}
                   onChange={(e) => setFilter(e.target.value as DimensionKey | 'all')}

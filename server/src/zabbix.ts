@@ -8,8 +8,8 @@ let id = 0;
 
 /**
  * Raised when Zabbix rejects our credentials (expired/invalid/revoked token).
- * Distinguished from a generic failure so the UI can say "fix the token"
- * rather than showing an opaque 500 on every page.
+ * Distinguished from a generic failure so the log and the status code say "fix the token"
+ * (the reply to a browser stays the same sentence for every Zabbix failure, errors.ts).
  */
 export class ZabbixAuthError extends Error {
   readonly code = 'zabbix_auth';

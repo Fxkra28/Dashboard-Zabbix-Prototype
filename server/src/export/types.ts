@@ -120,13 +120,5 @@ export interface ReportDoc {
   notes: Note[];
 }
 
-/** A finished file and how to serve it. */
-export interface BuiltFile {
-  body: Buffer;
-  contentType: string;
-  /** Includes the extension, for example "HCML_SLA_Report_2026-08.pdf". */
-  fileName: string;
-}
-
 export const PDF_TYPE = 'application/pdf';
 export const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

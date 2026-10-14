@@ -74,6 +74,7 @@ const SAME_AS_CONFIG: Record<string, (c: Config) => unknown> = {
   CRITICALITY_TAG: (c) => c.inventory.criticalityTag,
   LINK_LOSS_WARN: (c) => c.links.lossWarn,
   LINK_LOSS_CRIT: (c) => c.links.lossCrit,
+  INTERNET_METERS_DASHBOARD: (c) => c.meters.dashboard,
   NOISE_SHORT_SECONDS: (c) => c.noise.shortSeconds,
   NOISE_MIN_COUNT: (c) => c.noise.minCount,
   AVAILABILITY_MIN_SEVERITY: (c) => c.reports.availabilityMinSeverity,

@@ -7,7 +7,7 @@ import type { Host, Item } from '../types';
 import { GraphView } from '../components/TimeSeriesChart';
 import ItemPicker from '../components/ItemPicker';
 import RangePicker, { useUrlRange } from '../components/RangePicker';
-import { Loading } from '../components/states';
+import { Empty, ErrorState, Loading } from '../components/states';
 import { Field, FieldGroup } from '../components/Field';
 import { groupBySite } from '../lib/sites';
 
@@ -43,6 +43,9 @@ export default function HostDetail() {
     [hostsQ.data],
   );
   const host = hostsQ.data?.find((h) => h.hostid === hostid);
+  // Without a host list no host can be chosen, so say so rather than wait for ever.
+  const hostsFailed = hostsQ.error !== null && hostsQ.data == null;
+  const hostsEmpty = !hostsQ.loading && !hostsFailed && groups.length === 0;
 
   // A deep link with items but no host: find the host from the first item.
   const resolving = useRef(false);
@@ -83,7 +86,11 @@ export default function HostDetail() {
             value={hostid}
             onChange={(e) => update({ hostid: e.target.value, itemid: null })}
           >
-            {!host && <option value={hostid}>{hostsQ.loading ? 'Loading hosts…' : 'Select a host'}</option>}
+            {!host && (
+              <option value={hostid}>
+                {hostsQ.loading ? 'Loading hosts…' : hostsFailed ? 'Hosts unavailable' : hostsEmpty ? 'No hosts' : 'Select a host'}
+              </option>
+            )}
             {groups.map((g) => (
               <optgroup key={g.key} label={g.label}>
                 {g.items.map((h) => (
@@ -111,6 +118,10 @@ export default function HostDetail() {
               onItems={onItems}
               onChange={(ids) => update({ itemid: ids.length ? ids.join(',') : null })}
             />
+          ) : hostsFailed ? (
+            <ErrorState message={hostsQ.error as string} />
+          ) : hostsEmpty ? (
+            <Empty>No hosts to show.</Empty>
           ) : (
             <Loading label="Loading hosts…" />
           )}

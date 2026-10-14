@@ -56,7 +56,7 @@ describe('Hosts', () => {
     expect(screen.getByLabelText('Search host')).toHaveValue('core');
     expect(screen.getByLabelText('With problems only')).toBeChecked();
     expect(names()).toEqual(['core-1']);
-    expect(screen.getByText('1 hosts')).toBeInTheDocument();
+    expect(screen.getByText('1 host')).toBeInTheDocument();
   });
 
   it('opens unfiltered when the address says nothing', async () => {
@@ -122,7 +122,7 @@ describe('Back from another page', () => {
     await screen.findByText('core-1');
     expect(screen.getByLabelText('Search host')).toHaveValue('core');
     expect(screen.getByLabelText('With problems only')).toBeChecked();
-    expect(screen.getByText('1 hosts')).toBeInTheDocument();
+    expect(screen.getByText('1 host')).toBeInTheDocument();
 
     window.history.forward();
     expect(await screen.findByText('The graph page')).toBeInTheDocument();

@@ -13,6 +13,7 @@ export const PAGE_API: Readonly<Record<string, string>> = {
   '/problems': '/api/problems',
   '/sites': '/api/sites',
   '/hosts': '/api/hosts',
+  '/devices': '/api/devices',
   '/latest': '/api/latest',
   '/graphs': '/api/graph',
   '/maps': '/api/maps',

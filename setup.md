@@ -4,7 +4,7 @@ A deep-dive into the architecture, data flow, and the Zabbix-native features thi
 re-implements. Read [README.md](README.md) first for installation and configuration; this document
 explains *how it all fits together* and *why*.
 
-It is the reference you grep, not the one you read front to back: 31 sections, one per subsystem.
+It is the reference you grep, not the one you read front to back: 34 sections, one per subsystem.
 Sections 14 to 26 are the only written record of why the derived figures are calculated the way they
 are, so they matter most when a number has to be defended.
 
@@ -91,10 +91,11 @@ portal view maps to Zabbix concepts and API methods:
 
 | Portal page (sidebar)      | Zabbix native equivalent        | BFF endpoint                      | Zabbix API methods used                     |
 |----------------------------|---------------------------------|-----------------------------------|---------------------------------------------|
-| Dashboard              | Monitoring → Dashboard          | `/api/stats`, `/api/reports/problems-by-group`, `/api/problems` | `host/item/trigger/hostgroup.get` (counts), `problem.get`, `trigger.get` |
+| Dashboard              | Monitoring → Dashboard          | `/api/stats`, `/api/reports/problems-by-group`, `/api/problems`; operators and admins also `/api/net/meters` | `host/item/trigger/hostgroup.get` (counts), `problem.get`, `trigger.get` |
 | Problems               | Monitoring → Problems           | `/api/problems`                   | `problem.get`, `trigger.get` (host names)   |
 | Sites                  | *(none: see [§14](#14-site-view))* | `/api/sites`                  | `host.get` (+ tags, inventory, groups), `problem.get` |
 | Hosts                  | Monitoring → Hosts              | `/api/hosts/overview`             | `host.get` (+ interface availability), `problem.get` |
+| Devices                | *(none: hosts grouped by kind, §3)* | `/api/devices`                | `host.get` (+ parent templates, interface availability), `problem.get` |
 | Latest data            | Monitoring → Latest data        | `/api/latest`                     | `item.get` (lastvalue/lastclock/prevvalue)  |
 | Graphs                 | Monitoring → Hosts → Graphs     | `/api/graph`, `/api/items`        | `item.get`, `history.get`, `trend.get`      |
 | Maps                   | Monitoring → Maps               | `/api/maps`, `/api/maps/detail`   | `map.get` (selements + links)               |
@@ -157,7 +158,10 @@ Location: [`server/src/`](server/src/). Stack: Node 24 + Fastify 5 + TypeScript 
 | [`cache.ts`](server/src/cache.ts) | TTL `Map` cache + in-flight coalescing (concurrent misses for the same key await one fetch, so polling can't stampede Zabbix), plus `invalidate(prefix)` used after a write-back. Bounded to 500 entries and about 64 MB, and closed SLA months can be pinned (§26). |
 | [`queries.ts`](server/src/queries.ts) | Shared `getProblems()` (host-enriched) and `getHostsWithMeta()` (tags + inventory + groups). Reused by REST, SSE, Sites and the scorecard. |
 | [`auth.ts`](server/src/auth.ts) | JWT login (10 attempts a minute per account) + RBAC (viewer / operator / admin) + `onRequest` guard, and `assertUsers()`, which stops an authenticated server starting with an empty or `admin` password. See [§19](#19-authentication--rbac). |
-| [`routes/hosts.ts`](server/src/routes/hosts.ts) | `/api/hosts`, `/api/hosts/overview`, `/api/hostgroups`, `/api/items`, `/api/latest`. |
+| [`routes/hosts.ts`](server/src/routes/hosts.ts) | `/api/hosts`, `/api/hosts/overview`, `/api/hostgroups`, `/api/items`, `/api/latest`. `getHostOverview()` is shared with the Devices route. |
+| [`routes/devices.ts`](server/src/routes/devices.ts) | `/api/devices`: every host as a device of one kind, from the overview and the templates (MT-01). |
+| [`routes/meters.ts`](server/src/routes/meters.ts), [`meters.ts`](server/src/meters.ts) | `/api/net/meters`: the gauge widgets of a Zabbix dashboard as internet traffic meters. The route does the reads; `meters.ts` reads the widgets, the scale and the zones, and decides what a reading is (MT-03, ADR-0012). |
+| [`gate.ts`](server/src/gate.ts), [`noStore.ts`](server/src/noStore.ts) | `createGate(n)`, which lets n jobs run at once and queues the rest (the heavy reports). `registerNoStore()`, `Cache-Control: no-store` on every `/api` reply but the health check. |
 | [`routes/problems.ts`](server/src/routes/problems.ts) | `/api/problems` (cached 5 s). |
 | [`routes/history.ts`](server/src/routes/history.ts) | `/api/graph`: chart-ready series for 1 to 4 items, from raw history up to a day and from hourly trends above it. `/api/history` and `/api/trend` were removed on 12 October 2026 (BK-11): the web app never called them. |
 | [`routes/net.ts`](server/src/routes/net.ts) | `/api/net/devices` (+ ICMP) and `/api/net/interfaces`. `/api/net/ports`, `/api/net/status` and `/api/net/map` were removed on 12 October 2026 (BK-11). |
@@ -181,8 +185,8 @@ Location: [`server/src/`](server/src/). Stack: Node 24 + Fastify 5 + TypeScript 
 | `health.ts` | `GET /api/health`: liveness, version, build, and `ready`, the cached answer to whether Zabbix (and a local model) respond. Public, and 200 even when Zabbix is down. |
 | `shutdown.ts` | Closes the BFF on `SIGTERM` and `SIGINT`: live streams end first, the process exits when `app.close()` finishes, and after 8 s at most, inside Docker's 10 s stop timeout. A second signal exits at once. |
 | `staleness.ts` | Adds `X-Data-Stale` and `X-Data-Age-Seconds` to an answer that is an old copy kept because Zabbix failed (§26). |
-| [`index.ts`](server/src/index.ts) | Builds the Fastify app and registers, in this order: helmet → CORS → rate limit → compression → stale headers → health → auth → the eighteen route plugins. Validates config before listening and exits rather than booting unsafely, and installs the `SIGTERM` handler once it listens. |
-| [`server/src/__tests__/`](server/src/__tests__/) | 1508 vitest tests. Zabbix is mocked at `zabbix.ts`, the one point all API traffic funnels through. See [§22](#22-testing). |
+| [`index.ts`](server/src/index.ts) | Builds the Fastify app and registers, in this order: helmet → CORS → rate limit → compression → no-store → stale headers → health → auth → the twenty route plugins. Validates config before listening and exits rather than booting unsafely, and installs the `SIGTERM` handler once it listens. |
+| [`server/src/__tests__/`](server/src/__tests__/) | 1622 vitest tests. Zabbix is mocked at `zabbix.ts`, the one point all API traffic funnels through. See [§22](#22-testing). |
 
 ### Endpoint reference (+ cache TTLs)
 
@@ -196,6 +200,8 @@ Location: [`server/src/`](server/src/). Stack: Node 24 + Fastify 5 + TypeScript 
 | `GET /api/latest?hostid=\|groupid=&search=` | items + last value/time/prev | 15 s |
 | `GET /api/problems` | enriched current problems | 5 s |
 | `GET /api/net/devices` | network hosts + ICMP up/loss/latency | 30 s |
+| `GET /api/net/meters` | the gauge widgets of a Zabbix dashboard as meters: item, capacity, colour zones, last value (operator) | 30 s, the dashboard 2 min |
+| `GET /api/devices` | every host with its kind of device and template, as the Hosts page lists it | 30 s |
 | `GET /api/reports/top-triggers?days=` | top 100 triggers by event count | 60 s |
 | `GET /api/stats` | monitored host, item, trigger and group counts + problem counts | 30 s |
 | `GET /api/freshness` | when Zabbix last collected a value: `{ lastCollectedAt, ageSeconds, stale, staleAfterSeconds }` | 30 s |
@@ -1193,7 +1199,7 @@ curl "localhost:4000/api/reports/noise?days=7" | jq '.concentration, .counts'
 
 ## 22. Testing
 
-`cd server && npm test`, 1508 tests in 66 files, no live Zabbix required.
+`cd server && npm test`, 1622 tests in 73 files, no live Zabbix required.
 
 The mock point. Every Zabbix call in the server funnels through one `fetch` in
 [`zabbix.ts`](server/src/zabbix.ts), exposed as `zbx()` and `zbxWrite()`. Mocking that single module
@@ -1298,10 +1304,13 @@ Fastify's reply object. helmet's headers still arrive, since helmet 13 sets them
 at `onRequest`, but the CORS headers do not. That is harmless: the stream is same-origin.
 
 The app's own headers come from nginx. helmet covers the BFF's replies only. `web/nginx.conf`
-adds `Content-Security-Policy-Report-Only`, `X-Frame-Options: SAMEORIGIN`,
+adds `Content-Security-Policy`, `X-Frame-Options: SAMEORIGIN`,
 `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` to the pages and files it
-serves, and hides its version. The CSP only reports for now: violations show in the browser console
-and nothing is blocked.
+serves, and hides its version. The CSP is enforced since 14 October (SC-24, [section 32](#32-what-changed-on-14-october-2026)):
+a script, image or connection to another site is blocked, and `style-src` keeps `'unsafe-inline'`
+because ECharts and React set inline styles. The BFF's own replies carry `Cache-Control: no-store`
+(except the public health check) and no `Strict-Transport-Security`, because the portal is served over
+plain HTTP: the proxy that adds TLS sends that one.
 
 
 ### Request ids and `/api/ready` (7 October 2026, tracker IN-09)
@@ -2174,3 +2183,208 @@ Left out on purpose: the SLA page, which prints each site's availability for the
 * IN-11. A smaller stream frame risks delaying frames past the 45 second watchdog that the Dashboard uses to notice a dead stream.
 * BK-13. Rounding explicit graph ranges to the minute gains nothing: the range picker already sends minute-aligned times.
 * IN-13 and IN-25. One repository with two deployment profiles is a structure decision, and the Linux compose file needs a Linux server to try it on.
+
+
+## 32. What changed on 14 October 2026
+
+*Batches A, B and C of the second audit in [`tracker.md`](tracker.md), done at your word (the code only, with the `.env` permissions included): SC-24 to SC-29, BK-15, BK-16, FR-19, UX-25 to UX-28, IN-29 and IN-32, 15 of the 21 rows. Both portals were then rebuilt from it at your word, as `ce3634d-dirty`, and it is not committed yet.*
+
+### The web container's headers (SC-24, SC-28)
+
+`web/nginx.conf` sends `Content-Security-Policy` where it sent `Content-Security-Policy-Report-Only`, in all five locations that set headers. The policy is the same one. Before enforcing it, every page was opened in headless Chrome behind a stand-in for nginx that enforced it (`myown/checks/enforcing-csp-server.mjs`): all 18 routes, in the light and dark themes and at 390 px, with no violation, and then the four downloads (the two CSV files, the SLA PDF and the Excel file), which a blob link could have lost. All four arrived.
+
+A new location answers 404 for a path with a dot-file segment (`/.env`, `/.git/config`, `/x/.hidden`), before the logo location because the first regex that matches wins, and it leaves `/bff` alone. The pattern is `^/(?!bff/)(.*/)?\.`. A throwaway nginx of the same image, with the new file mounted, answered 404 for those paths and for `/%2eenv`, 200 for the pages, the logo and the font, and 502 (no BFF behind it) for `/bff/.env`, so the BFF still gets that path. `nginx -t` passed.
+
+### The BFF's replies (SC-27, SC-29)
+
+`noStore.ts` puts `Cache-Control: no-store` on every `/api` reply unless the route already chose one (the SLA download, the two streams) or it is `/api/health`. helmet's `hsts` is off: the header over plain HTTP claimed a TLS that is not there, so [`docs/operations/tls.md`](docs/operations/tls.md) now says the proxy in front is the one that sends it.
+
+`errors.ts` answers a failed Zabbix read with one sentence, "The data source is not answering. Tell an administrator and quote reference <request id>.", for the three typed failures (a Zabbix error 502, a timeout and a rejected token 503). The method name, the setting to check and what Zabbix said went from the body to the log, and the log line now carries the same request id (`req.log`, where it was `app.log`). The live stream and the Assistant say the sentence without a reference. An administrator still sees the settings to check under it (`states.tsx`). The `error` codes did not change. The message of `zabbix_write_disabled` still names its setting: it is shown only to someone who pressed Acknowledge, and the write token is off.
+
+### Heavy reports (BK-15)
+
+`gate.ts` lets two jobs run at once and queues the rest in order. The noise, both availability and the capacity reports read Zabbix through it, so a new `days` or `severity` waits for one of two places instead of all reaching MySQL at once. A cached answer does not wait, and four requests for one query still share one read. Waiting changes no status code and no field. Not done: the second step of the row, rounding `days` to the values the page offers, which would change what the API accepts.
+
+### Graphs and Latest data (FR-19)
+
+When the host list cannot load, Graphs shows the error in its Items panel and "Hosts unavailable" in the menu, and says "No hosts to show." when the list loads empty. Latest data shows the error in place of the table when nothing is picked and a menu list failed, and a note above the table when the address names a host. The row said these error cards have a Retry button. They do not: `ErrorState` has none, and a page recovers on its next load. That was not added.
+
+### Small fixes (UX-25 to UX-28, BK-16, IN-29, IN-32)
+
+* UX-25: a `::placeholder` rule in the theme's `--muted`. In the dark theme it measured 3.78:1 and now passes; with the rule taken out the audit finds 3.78 again on the two pages tried. The Maps legend dots (1.5 to 3.6:1) are left alone: they are `aria-hidden` and the words beside them say the same.
+* UX-26: `MonthSelect` ties its label to the menu with `useId`; `MethodToggle` uses `FieldGroup`; 13 fields that had neither `id` nor `name` have a `name`, and a test reads every `input`, `select` and `textarea` in `web/src` for one.
+* UX-27: the port buttons, sort headers, Services arrows, the SLA list's summary and the chart chips reach 24 px, with negative margins so no row or chip grows. At 1440 px the audit found 57 targets under 24 px, and now finds 3: the check boxes, which are 16 px inside 38 px labels.
+* UX-28: `count(n, 'host')` in `lib/plural.ts`, in the nine places of the row and three more (Maps elements and links, the services count on the SLA page).
+* BK-16: `BuiltFile`, `PING` and `hoursToIntervals` are gone.
+* IN-29: `.nvmrc` holds `24`, both `package.json` files say `"node": ">=24 <25"`, and `docs.yml` reads `.nvmrc`. This Mac runs Node 25.9, so `npm install` still prints a warning here, and the tests pass.
+* IN-32: `docs/flow/README.md` cites `rateLimit.ts:22-35`, and `links.check.mjs` now fails on a line citation that runs past the end of its file. It proves the lines exist and no more. The three records of past code (`tracker.md`, `CHANGELOG.md`, `AUDIT_REPORT.md`) are left out of it.
+
+### Files and dependencies (SC-25, SC-26)
+
+The four `.env` files are mode 600 (`stat -f %Lp`): only their permissions were touched, and they were not opened. `docs/operations/backup-and-restore.md` says to check it. `npm audit fix` in both folders changed `fast-jwt` 6.3.3 to 6.3.4 and `source-map-js` 1.2.1 to 1.2.2, the lockfiles only, and `npm audit` reports 0 in both.
+
+### Checked
+
+Server 1,537 tests in 70 files, web 844 in 59 files, both typechecks, the lint, the build, the nine checkers and the BK-11 restore patch, in both copies. Each new test was tried against the old code: the heavy-report gate removed from one report fails all three of its tests, and the old Graphs and Latest data pages fail six of the nine FR-19 tests. `download-check.mjs` is new in `myown/checks/`.
+
+On the day of the rebuild all of it was run again on the final sources, which were fingerprinted before and after and had not changed: the suites, typechecks, lint, build, checkers, parity and the restore patch in both copies; 18 pages in headless Chrome under the enforced policy (light, dark and 390 px) with no console error, no failed request and no policy violation; the four downloads; and the three controls against the old code. The page audit still lists the three 16 px check boxes and the seven Maps legend dots, which are left as said above.
+
+Not checked: a signed-in pass on the rebuilt portals, anything on a phone, and the gate under real concurrent load (its tests use a stand-in for Zabbix, and the pages and downloads above ran one request at a time against HCML's restored data).
+
+### The rebuild
+
+Done at your word ("rebuild") on 14 October. The four images in use were tagged `rollback-14oct` first, then hosted and ollama were built in turn as `ce3634d-dirty` (hosted built at 05:24 UTC and started at 05:25, ollama built at 05:25 and started at 05:26):
+
+```sh
+cd /Users/muizfata/Intern/Proto1/myown
+for n in hcml-portal-portal-web hcml-portal-portal-bff hcml-portal-ollama-portal-web hcml-portal-ollama-portal-bff; do docker tag "${n}:latest" "${n}:rollback-14oct"; done
+cd hcml-portal && BUILD_COMMIT=ce3634d-dirty BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+cd ../hcml-portal-ollama && BUILD_COMMIT=ce3634d-dirty BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+```
+
+The first hosted attempt failed in the web image's `npm ci` with `ECONNRESET` after 12 minutes. The Docker network was slow (one registry request took 69 s from inside Docker), and nothing running was touched, because a build that fails stops before any container is recreated. The second attempt went through, and the ollama build reused the cached layers. If it happens again, run the same command again.
+
+Checked without signing in, on both portals: all four containers `healthy` with no restart, and the Zabbix stack untouched (the same start times as before); the new bundle `index-ClUUouEi.js` (it was `index-DIeBCwKH.js`), whose Graphs chunk holds "No hosts to show" and "Hosts unavailable"; `Content-Security-Policy` sent in place of the report-only header; 404 for `/.env`, `/.git/config`, `/a/.hidden`, `/%2eenv` and `/assets/.x`, and 200 for `/`, `/problems`, `/graphs`, the logo and the font (`font/woff2`, cached for 30 days), with `/bff/.env` still answered by the BFF; `/bff/api/health` 200 with `writeBack: false`, no `Cache-Control` and no `Strict-Transport-Security`; `/bff/api/problems` 401 with `Cache-Control: no-store`; and one warning in each BFF's log, that the write token is not set.
+
+Not checked, because it needs a sign-in on this build: the footer line (`Build ce3634d-dirty, 14/10/2026, 12.24.42 WIB` on :8081 and `12.25.58 WIB` on :8082), a report download through nginx's buffer, the live stream, the Problems page and a viewer's maps. `myown/checks/signedin_check.py` runs the first three, with `PORTAL_USER` and `PORTAL_PASSWORD` set. No secret changed in this round, so sessions stay valid, though an open tab needs a reload to get the new page.
+
+To go back: `docker tag <name>:rollback-14oct <name>:latest` for the four images, then `docker compose up -d --no-build` in each folder.
+
+### Left alone
+
+* SC-23 (the Zabbix tokens belong to a Super admin), IN-27, IN-28, IN-30, IN-31 and SC-30: batches D and E, which need you in Zabbix or your word.
+* SC-06, SC-01 and IN-08, as before.
+
+
+## 33. What changed on 14 October 2026, the mentor's requests
+
+*Three requests from your mentor, done at your word after you answered my questions: operators and admins only for the meters, a full Devices page for each kind, and a Show data table that follows the selection (MT-01 to MT-03 in [`tracker.md`](tracker.md)). Both portals were rebuilt from it at your word later the same day, so it is live (The rebuild, below).*
+
+### Show data follows the selection (MT-02)
+
+It did follow the selection, one table for each chosen item. What was wrong, found by driving the page in headless Chrome, is that the panel closed itself every time an item was added or removed or the range changed. `GraphView` keys the chart on the selection and the range, so the chart is remounted, and the open state lived inside it. The state is now held by `GraphView`, and `TimeSeriesChart` takes `dataOpen` and `onDataOpenChange` (left out, it keeps its own, as before).
+
+The tables became one. `lib/chartTable.ts` joins the points of all the chosen items on the exact time they carry: trend points sit on the hour, and a downsampled series falls on bucket centres the series share, so they line up. A raw series from an item polled separately may not, and then a row has an empty cell, which says "No value at this time", where a collection gap still says "No data". Nothing is moved or averaged. The table has the time on the left, kept in view when it scrolls sideways, a column group under each item's name, and Average, Min and Max for an item from trends. The header sticks as one block, so the second header row stays under the first. With four items of 1,500 points each, 6,000 rows, the join takes about a millisecond on the development laptop. Drawing that many rows is the larger cost, and the table is built only while it is open.
+
+### The Devices page (MT-01)
+
+`GET /api/devices` reads the Hosts page's overview through the same cache entry (so the host list is asked for once, whichever page asks first) and the templates of each host, kept five minutes, and gives each host the kind `deviceClass` gives it from the template and then the name. The SLA report decides the same way, so a switch is a switch on both. `classes` lists the kinds in the order the page shows them, and a test fails when a kind is added to `naming.ts` and left out of that list.
+
+The page, `/devices`, is a viewer page after Hosts in the menu: a tile for each kind with its count, how many have problems and how many are down, and under them the Hosts page's table with the site and the template added. The kind, the search (name, site or template) and the problems filter live in the address. The tile of a kind with no device is turned off. Operators and admins get a Ports link to the Network page with the device chosen, which keeps interface data with them (`viewerPolicy.ts`). The page offers no way to add or change a device: it is read-only, and a test says so.
+
+On the restored data, 142 hosts: Switches 52, WAN links 22, Firewalls 14, Radio repeaters 13, Access points 31, Servers 3, Web services 3, Other 4. The SLA report counts 138, so its Access points are 30 and its Other 1. "Ethernet" was read as ports, which are not a kind of device, so ports are one click away on the Network page and are not counted for each kind.
+
+### The internet traffic meters (MT-03, [ADR-0012](docs/architecture/adr/0012-internet-meters-from-the-zabbix-dashboard.md))
+
+**Where the facts come from.** HCML's Zabbix has a dashboard, "Global view", of gauge widgets: each is bound to one interface item and holds the capacity of the link as its maximum and the start of each colour zone. `GET /api/net/meters` reads that dashboard with `dashboard.get` (kept two minutes), so the portal shows the same links with the same scales and nobody keeps a second list. The name is `INTERNET_METERS_DASHBOARD` (default `Global view`; `.env.example`, `deploy/settings.example` and compose carry it). Nothing about HCML's links is written in the repository.
+
+**What a meter is.** One for each gauge widget, in the order a person reads the pages (a page at a time, each from the top row down and from the left), and one for each item, so a page that repeats an item adds nothing. The scale is the widget's minimum and maximum, read with the item's units and an optional K, M, G or T. The zones come from its thresholds, with only what a colour means kept: blue the low end, green normal, yellow or orange high, red critical, grey nothing. The page draws that meaning in its own palette and says it as a word.
+
+**The value.** The item's last value. Zabbix keeps that only for a day, and the copy on the development laptop stopped polling on 14 September, so items with none are read from history, one newest row each, eight at a time, and come back as old readings with their own time. A reading counts as current for three update intervals and at least ten minutes (`isFresh`, as for every other page).
+
+**The states.** `ok` is a current reading. `stale` is an old one: the dial is dimmed and the line under it says "Old reading, from Sep 14 14:01 (29 days ago)". `nodata` is an item that has never held a value. `unsupported` is an item that is disabled or that Zabbix cannot collect. `missing` is a widget that names no item or an item that is gone, which is the "No permissions to referred object" of the Zabbix picture. `invalid` is a widget with no usable maximum. Each says what is wrong in words under the title, and a meter in the red zone also counts in the sentence above the grid.
+
+**Who sees it.** Operators and admins. It is interface data, `/api/net` is an operator rule, and a viewer gets 403 from the route and sees no tabs on the Dashboard. A wall screen that signs in as a viewer shows the Overview alone.
+
+**On the Dashboard.** Two views, like the pages of a Zabbix dashboard, as tabs: Overview and Internet traffic, chosen by the tab and by the address (`/?view=internet`). The wall screen keeps the tabs, so a wall is sent to the meters by its address (`/?wall=1&view=internet`). 27 meters take about a screen and a tenth at 1080p, which is why the wall shows one view or the other, and not both. Since then the wall turns between them and each slide is drawn to fit (section 34). The section polls once a minute.
+
+**How it was checked.** The route and the reader against the shape of HCML's own widgets (`meters.test.ts`, `meters-route.test.ts`), the dial geometry and wording (`gauge.test.ts`), the component in every state (`Gauge.test.tsx`), and the Dashboard for each role (`dashboardViews.test.tsx`). On the restored Zabbix the route returns 27 meters from 34 widgets (21 old readings, 1 item with no sample, 2 items not collected, 3 widgets whose item is gone). In headless Chrome under the enforced policy, in the light theme, the dark theme and at 390 px, the new views have no console error, no failed request, no violation, no failing contrast and no stop without a focus ring. Fresh readings were drawn from a scratch server of made-up numbers, outside the repository, because the stored data is old; they showed the zones in full colour, the needle, the scale, and the zone words in their colours.
+
+**Not checked.** The meters against HCML's own, polling Zabbix. Whether the widgets' capacities are right: one link reads 113 percent of its capacity on the stored data. A phone: the meters were drawn at 390 px in Chrome and not on a device. The look of the wall at 1080p with real readings.
+
+### Left alone, and why
+
+* Direction. Each gauge counts one direction, as HCML set it, 21 inbound and 3 outbound. Since then the other direction shows when it is high or critical (section 34).
+* A link that is down and one that is idle both read 0 bps. Since then the interface status decides, and a link that is down says Down (section 34).
+* The three widgets that point at items that no longer exist, and two titles with a typo. Fixing them is a change in Zabbix.
+* A CSV download of the Show data table, and a count of ports for each kind of device.
+* SC-23. `dashboard.get` is now a thirteenth read method that a narrower Zabbix role has to allow.
+
+### The rebuild
+
+Done at your word ("rebuild kedua portal") on 14 October. The four images in use were tagged `rollback-14oct-2` first (`rollback-14oct` already holds the build from before the batches A to C), then hosted and ollama were built in turn as `ce3634d-dirty` (hosted built at 07:11 UTC, ollama at 07:12). `HEAD` has not moved since the first rebuild of the day, so the name is the same as the build before it, and the two are told apart by the time in the footer and by the bundle name:
+
+```sh
+cd /Users/muizfata/Intern/Proto1/myown
+for n in hcml-portal-portal-web hcml-portal-portal-bff hcml-portal-ollama-portal-web hcml-portal-ollama-portal-bff; do docker tag "${n}:latest" "${n}:rollback-14oct-2"; done
+cd hcml-portal && BUILD_COMMIT=ce3634d-dirty BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+cd ../hcml-portal-ollama && BUILD_COMMIT=ce3634d-dirty BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build
+```
+
+Nothing failed this time. No dependency changed, so the `npm ci` layers came from the cache, `tsc` and `vite build` ran in about five seconds, and the ollama build reused the layers of the hosted one. If the web image's `npm ci` fails with `ECONNRESET`, as it did on the first rebuild of the day, run the same command again. The sources were fingerprinted before the build (hosted 421 files, ollama 422) and again after it, with no difference. No source file in either copy changed after the last full run of the suites, at 13:34 WIB, and `server/` and `web/` are identical in the two copies.
+
+Checked without signing in, on both portals: all four containers `healthy` with no restart, and the Zabbix stack untouched (up five days, the same start times as before); the new bundle `index-B6Yb6YcJ.js` (it was `index-ClUUouEi.js`), whose files hold "Internet traffic", `api/net/meters` and `api/devices`; each BFF reports `INTERNET_METERS_DASHBOARD=Global view` and the build stamp; `Content-Security-Policy` sent, and 404 for `/.env`, `/.git/config` and `/assets/index.js.map`; `/bff/api/net/meters`, `/bff/api/devices` and `/bff/api/hosts/overview` refused with 401 (a 404 would mean the route is missing); `/bff/api/health` 200 with no `Cache-Control` and no `Strict-Transport-Security`; and one warning in each BFF's log, that the write token is not set.
+
+Not checked, because it needs a sign-in on this build: the Internet traffic view and the Devices page as an operator or an admin sees them, the 403 a viewer gets from the meters route (tested, not tried on the live build), the footer line (`Build ce3634d-dirty, 14/10/2026, 14.11.47 WIB` on :8081 and `14.12.52 WIB` on :8082), a report download, the live stream and the Problems page. `myown/checks/signedin_check.py` runs three of them, with `PORTAL_USER` and `PORTAL_PASSWORD` set. No secret changed, so sessions stay valid, though an open tab needs a reload to get the new page. On the restored data the meters show old readings, about 30 days old.
+
+To go back: `docker tag <name>:rollback-14oct-2 <name>:latest` for the four images, then `docker compose up -d --no-build` in each folder.
+
+## 34. What changed on 14 October 2026, the follow-ups to the meters
+
+*Three things you decided after the mentor round, and what I measured before building them: a link that is down says so, the other direction shows when it is high, and a wall that turns by itself and fits its screen (MT-04 to MT-07 in [`tracker.md`](tracker.md)). They are built and tested in both copies. They are not in the running portals, which have the build of section 33, until you ask for a rebuild.*
+
+### What the stored data said
+
+The Zabbix on the development laptop holds the hourly trends of every item. I read those for the 24 interfaces behind the meters, from 2 August to 14 September, with read calls only, so that the decisions rest on figures. I used hourly averages and not peaks: an hourly peak is often above the widget's capacity, in places by tens of times, which says something about the capacities (see the figure that reads 113 percent) and nothing reliable about load.
+
+* **Down.** 8 of the 24 interfaces had at least one sample that was not up. Two were down for long: one for all of the stored data, one for the last 18 days of it. In about one hour in six in which a gauge read under 1 percent of its capacity (1,377 of 8,642), the interface was down, and the meter called every one of them Low.
+* **The other direction.** For 19 links (one of them has no samples at all) it never reached a high or critical zone. For 5 it did in hours when the gauge's own direction was not high, and for one of them that was 563 of its 939 hours, with its gauge never above Normal. The other four: 32 hours, 5, 4 and 1.
+* **Where the status is.** All 24 interfaces have a status item, `net.if.status[ifOperStatus.N]`, on the same host and with the same number as the counters. The keys are the same on all 14 hosts.
+* **Open problems.** 18 are open at High on the restored data, which is why the wall does not stop turning while one is open.
+
+The names of the links are not here or anywhere in the repository.
+
+### A link that is down (MT-04)
+
+Each meter has a `link`: `up`, `down` or `unknown`. `meters.ts` `linkOf` reads the interface's own status, IF-MIB ifOperStatus: 1 is up, 2 (down) and 7 (lowerLayerDown) are down, as the Network page counts them, and anything else (testing, dormant, not present) or no current value is `unknown`, which claims nothing. The status item is found beside the widget's item: same host, same ifIndex (the number at the end of the key's first argument). `pairSiblings` does that from one `item.get` by key prefix (`net.if.in[`, `net.if.out[`, `net.if.status[`) for the widgets' hosts, kept two minutes with the dashboard. Its value is asked for with the gauges' own, and it is never read from history: a status from days ago says nothing about the link today. Where there are two candidates the operational status wins over an administrative one, then a counter of the same width, then the lowest id.
+
+On the page a link that is down writes the word Down in place of the value, in the red text colour, keeps the dial with its zones dimmed and no needle, says "Interface down, not an idle link." under it, drops `role="meter"` (there is no value to give), and counts first in the sentence over the grid ("27 links. 2 down. 5 critical, 2 high."). The reading it had stays in the answer.
+
+### The other direction (MT-05)
+
+Each meter also has `other`: the item of the opposite direction on the same interface, with its value on the gauge's own scale and zones, found as the status is. Only a current value counts and none is read from history. The page writes it under the dial when it is High or Critical, as "Out 41 Mbps · 82% of 50 Mbps · Critical", and `summary.otherHigh` counts it ("3 with the other direction high or critical"). It is not shown otherwise: a line on every tile would crowd 23 of them for one or two links.
+
+**It assumes a link that is the same size both ways**, because the widget gives one maximum. The capacity is written in the same line, so the assumption is in view. A broadband link, whose upload is a fraction of its download, would read too low in the direction the widget does not describe.
+
+### The wall (MT-06)
+
+For an operator or an admin `/?wall=1` shows the Overview and then the meters, 30 seconds each. `rotate=` in the address sets the seconds (10 to 600), `rotate=0` stops the turning, and `view=overview` or `view=internet` holds that view, as before. A Pause button in the wall's bar stops it where it is, and a click on a tab stops it on that view and writes it in the address; Resume starts it again from the Overview. Entering the wall again starts it turning. A viewer's wall has the Overview alone, and asks for nothing more. **A wall that is to turn has to be signed in as an operator or an admin** (docs/ux/README.md says what that costs).
+
+What is under the wall's bar is drawn smaller until it fits the screen (`lib/fit.ts`, `hooks/useFitHeight.ts`): the whole slide is laid out `1 / scale` times as wide and scaled down, by one factor from 1 to 0.8 in steps of 0.02, so that a smaller drawing also holds more tiles to a row. Measured in headless Chrome at 1920 by 1080:
+
+| What | Scale | Bottom of the slide |
+|---|---|---|
+| 27 quiet meters | 1 | 1,037 px |
+| 27 meters of mixed readings, with down links and other directions | 0.92 | 892 px |
+| 27 of the tallest tiles (every one with a line for the other direction, or an old reading's two lines) | 0.92 | 878 px |
+| 35 of the tallest tiles | 0.82 | 999 px |
+| 36 of them, on two slides of 18 | 1 | 957 px |
+| 60 quiet meters, on two slides of 30 | 1 | 1,037 px |
+| The Overview, on HCML's real problem names | 0.94 | 1,008 px |
+
+Past 35 meters they go on more slides, an even share each, with "Page 1 of 2" in the heading. It is sized for 1080p: on a 1366 by 768 screen 35 of the tallest tiles are still 1,182 px even at 0.8. The Overview alone was 1,185 px tall on the restored data, and about 1,130 px without the tab strip, which is 57 px, so the wall's promise that it fits 1080p did not hold for HCML's own names until now.
+
+### The card and the click-through (MT-07)
+
+The Overview has a fifth card in the problem row for operators and admins: how many links need a look (down, critical or high, or the other direction high, each link once) and which way. It is red when a link is down or critical and orange when the worst is high, and with no current reading it says "none with a current reading" and does not claim all is well. The meters are asked for once for both views, a minute apart (`hooks/useMeters.ts`), so the card, the tab and a wall that turns to them share one request. That is a change: the Overview used to ask for nothing until the second tab was chosen.
+
+The title of a meter is a link to the Graphs page with its item first and the other direction beside it, and an old reading opens the month it is from, as the last day would show nothing. A screen reader hears where it goes (`aria-describedby`), and the name of the meter stays its title.
+
+Two small changes were made on the way. The title of a meter wraps to a second line before it is cut, as "SITE TWO INTER…" could not tell the first link from the second. And the sentence over the grid says "None high or critical" with a capital.
+
+### Checked
+
+Server 1,622 tests in 73 files, web 1,026 in 70, both typechecks, the lint, the build, the nine checkers and the BK-11 restore patch, in both copies. 23 deliberate breakages (the status values, the pairing by host and by index, the freshness of a neighbour, the summary counts, the turning, Pause, the pin by address, the viewer's request, the fit's arithmetic and others) were each tried against the tests and each was caught. In headless Chrome under the enforced policy the Dashboard, the meters and the wall, in the light and dark themes, at 390 px and at 1920 by 1080, have no console error, no failed request, no violation, no failing contrast, no unnamed control and no small target, and the keyboard walk finds no stop without a focus ring, the title links included. The fresh readings were drawn from scratch servers of made-up numbers outside the repository: 27 of mixed readings, 27 quiet, 27, 35 and 36 of the tallest tiles, and 40 and 60 quiet.
+
+Not checked: the new states against HCML's own, polling Zabbix, which is the only place a link will read as down; a real wall screen; any screen smaller than 1080p; a phone as a device.
+
+### Left alone, and why
+
+* The tiles are not ordered by severity. The positions are what an operator learns, and the card and the sentence say what needs a look.
+* The wall does not stop turning while a High problem is open: 18 are open on the restored data, so it would never turn.
+* The scale of the wall can step by 0.02 when the lists change length. It is not smoothed.
+* A CSV download of the Show data table, and a count of ports for each kind of device, as before.
+
+### To make it live
+
+Only when you ask for it by name, for example "rebuild both portals". The recipe of section 33 applies, with one change: tag the images from before as `rollback-14oct-3`, because `rollback-14oct-2` already holds the build from before the mentor round.

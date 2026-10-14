@@ -87,7 +87,7 @@ cd ../web
 npm install && npm run dev           # Vite on :5173, proxying /bff to :4000
 ```
 
-You need Node 24 (22.22.2 or 24.15 at the oldest), npm, and a reachable Zabbix 7.0. You do not need a database: there isn't one
+You need Node 24 (`.nvmrc` names it, and `engines` in both `package.json` files allows 24 only: vitest and jsdom do not support 25, which npm reports as a warning and the tests still pass on; 24.15 is the oldest jsdom accepts without one), npm, and a reachable Zabbix 7.0. You do not need a database: there isn't one
 ([ADR-0003](architecture/adr/0003-no-database.md)), and you do not need a model endpoint unless you
 are working on the plain-language layer.
 

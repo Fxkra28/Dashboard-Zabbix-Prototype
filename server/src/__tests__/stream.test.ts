@@ -404,7 +404,9 @@ describe('shared ticker', () => {
     );
     await tick();
     expect(a.res.frames()[1]).toMatch(/^event: error\n/);
-    expect(a.res.frames()[1]).toContain('HTTP 500');
+    expect(a.res.frames()[1]).toContain('The data source is not answering.');
+    expect(a.res.frames()[1]).not.toContain('problem.get');
+    expect(a.res.frames()[1]).not.toContain('HTTP 500');
     expect(a.res.frames()[1]).not.toContain('zabbix.internal');
 
     getProblemsMock.mockRejectedValue(new TypeError("Cannot read properties of undefined (reading 'hosts')"));

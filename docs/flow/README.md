@@ -69,13 +69,13 @@ httpOnly session cookie like any same-origin request, and the BFF refuses `?toke
 ### 3 · Server: one request
 
 ```text
-request ──► helmet ──► CORS ──► rate limit ──► compression ──► stale headers ──► error handler ──► auth guard ──► route ──► cached() ──► zabbix.ts ──► JSON
+request ──► helmet ──► CORS ──► rate limit ──► compression ──► no-store ──► stale headers ──► error handler ──► auth guard ──► route ──► cached() ──► zabbix.ts ──► JSON
 ```
 
 That is `index.ts` registration order, and **the order is the design**: a Fastify hook only covers the
 routes registered after it. The rate limit sits ahead of the auth guard deliberately: a flood should
 be rejected before the server spends work verifying JWTs, and `POST /api/auth/login` would otherwise
-be an unthrottled password oracle. `server/src/index.ts:55-100`, `server/src/rateLimit.ts:22-37`.
+be an unthrottled password oracle. `server/src/index.ts:56-106`, `server/src/rateLimit.ts:22-35`.
 
 ### 4 · Server: the cache
 

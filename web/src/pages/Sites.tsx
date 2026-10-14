@@ -8,6 +8,7 @@ import { SeverityCounts } from '../components/StatusBadge';
 import { Async, Empty } from '../components/states';
 import { Field, FieldGroup, FieldSpacer } from '../components/Field';
 import { HostTable } from '../components/HostTable';
+import { count } from '../lib/plural';
 
 /**
  * Site view (HCML Goal 5). HCML's estate is organised by
@@ -49,7 +50,7 @@ function SiteCard({
     >
       <div className="site-card-head">
         <span className="site-name">{site.name}</span>
-        <span className="site-hosts">{site.total} hosts</span>
+        <span className="site-hosts">{count(site.total, 'host')}</span>
       </div>
 
       <div className="site-stat">
@@ -159,6 +160,7 @@ export default function Sites() {
             style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, cursor: 'pointer' }}
           >
             <input
+              name="problems-only"
               type="checkbox"
               checked={problemsOnly}
               onChange={(e) => setProblemsOnly(e.target.checked)}
@@ -168,7 +170,7 @@ export default function Sites() {
           </label>
         </FieldGroup>
         <FieldSpacer>
-          <span className="pill">{filtered.length} sites</span>
+          <span className="pill">{count(filtered.length, 'site')}</span>
         </FieldSpacer>
       </div>
 

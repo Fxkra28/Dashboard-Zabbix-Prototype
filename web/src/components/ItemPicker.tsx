@@ -157,6 +157,7 @@ export default function ItemPicker({
         )}
       </div>
       <input
+        name="item-search"
         type="text"
         aria-label="Search items"
         placeholder={`Search ${q.data?.length ?? ''} items… (e.g. Gi1/0/1 bits)`}

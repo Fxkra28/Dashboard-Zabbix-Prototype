@@ -50,6 +50,9 @@ Then:
 - Check a copy opens, without writing the plain file to disk or showing it. This prints the
   number of lines in it, and `bad decrypt` means a wrong passphrase or a damaged file:
   `openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in ~/hcml-backup/hcml-portal.env.2026-10-07.enc | wc -l`
+- Keep the plain files readable by you alone. On this Mac, `stat -f %Lp .env server/.env` prints
+  `600` for each; `chmod 600 .env server/.env` sets it (SC-25). Compose and `npm run dev` read them as
+  you, so nothing changes. Any other account on the machine can read a file that shows `644`.
 - Never send the plain file by email or chat, and never commit it. `.env.example` is the only
   file with this kind of name that git should hold, and it must never hold a real value.
 

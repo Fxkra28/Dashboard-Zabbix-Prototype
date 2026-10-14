@@ -9,16 +9,89 @@ A build is named by the commit it was made from. The sidebar footer shows it onc
 and so does a signed-in `/api/health`. A `-dirty` suffix means the build was made from a working tree
 with changes that were not committed. Nothing is tagged: the commit is the version.
 
-## Not yet committed (13 October 2026)
+## 14 October 2026, later still: the follow-ups to the meters (not committed, not yet in the running portals)
 
-- Screenshots. `docs/screenshots/` holds seven images of the main pages, and the README and the
-  getting-started guide show some of them. Every host name, address and interface description in them
-  is a stand-in, and each image was looked at before it was added.
+MT-04 to MT-07 of [`tracker.md`](tracker.md). The running portals have the build below this entry, so none
+of this is live until they are rebuilt, and that needs your word.
 
-## 13 October 2026 (cef91b3)
+- A link that is down says so (MT-04). Each meter reads the status item of its own interface. A link that
+  is `down` or `lowerLayerDown` shows the word Down in place of the value, with no needle and a line that
+  says it is not an idle link, and the sentence over the grid counts it first. A status that is old, or
+  neither working nor dead, claims nothing.
+- The other direction, when it matters (MT-05). Each meter also reads the item of the opposite direction
+  on the same interface, on its own scale. It is written under the dial only when it is High or Critical,
+  and counted in the summary. It assumes a link that is the same size both ways.
+- A wall that turns and fits (MT-06). For an operator or an admin the wall shows the Overview and then the
+  meters, 30 seconds each (`rotate=` changes the seconds, `rotate=0` stops it, `view=` holds a view), with
+  a Pause button, and a click on a tab stops it. What is under the bar is drawn smaller, by one factor and
+  never below 0.8, until it fits the screen. Past 35 meters they go on more slides. The Overview itself was
+  taller than 1080p on HCML's real problem names, and now fits.
+- A card and a link (MT-07). The Overview has a card for the internet links: how many need a look, and
+  which way. The title of a meter opens the Graphs page with both directions chosen.
+- Two small changes. The title of a meter wraps to a second line before it is cut, as "SITE TWO INTER…"
+  cannot tell the first link from the second. The sentence over the grid starts "None high or critical"
+  with a capital.
+- Tests: 1,622 in 73 files on the server and 1,026 in 70 on the web.
+
+## 14 October 2026, later: the mentor's three requests (not committed)
+
+MT-01 to MT-03 of [`tracker.md`](tracker.md). Both portals were rebuilt from this work at your word
+("rebuild kedua portal"), hosted at 07:11 UTC and ollama at 07:12, so all of it is live. The build is
+named `ce3634d-dirty` again, as the one below this entry is, because `HEAD` has not moved: the two are
+told apart by the time in the sidebar footer. The images from before are tagged `rollback-14oct-2`.
+
+- Devices (MT-01). A page `/devices`, after Hosts in the menu: a tile for each kind of device (switches,
+  firewalls, access points, radio repeaters, servers, WAN links, web services, other) with its count, how
+  many have problems and how many are down, and the list of the kind chosen with the site and the template.
+  The kind is the one the SLA report uses. `GET /api/devices`. Operators and admins get a Ports link to the
+  Network page. Read-only.
+- Show data (MT-02). One table for all the chosen items, a column group each, with the time kept in view,
+  and it stays open when the selection or the range changes. It used to close itself each time, and to
+  stack one table under another.
+- Internet traffic (MT-03). The Dashboard has a second view, for operators and admins: a gauge for each
+  gauge widget of HCML's Zabbix dashboard "Global view", with the capacity and the colour zones the widget
+  gives, the value, the zone as a word and the share of the capacity, and an old reading dimmed with its
+  age. `GET /api/net/meters`, which reads the dashboard with `dashboard.get`, a thirteenth read method.
+  A new setting, `INTERNET_METERS_DASHBOARD` (default `Global view`).
+  [ADR-0012](docs/architecture/adr/0012-internet-meters-from-the-zabbix-dashboard.md).
+- Tests: 1,590 in 73 files on the server and 944 in 67 on the web.
+
+## 14 October 2026 (not committed)
+
+The batches A, B and C of the second audit, 15 of its 21 rows. Both portals were rebuilt from this work
+at your word, as `ce3634d-dirty` (hosted built 05:24 UTC, ollama 05:25), so all of it is live. The images
+from before are tagged `rollback-14oct`. It is not committed yet.
+
+- Content-Security-Policy (SC-24). nginx enforces it. The header is `Content-Security-Policy` in all five
+  locations that send headers, where it was `Content-Security-Policy-Report-Only`. Chrome loaded all 18
+  pages under the enforced policy with no violation, and the four downloads (two CSV files, the SLA PDF
+  and the Excel file) still arrived.
+- Dot-files (SC-28). A path with a dot-file segment (`/.env`, `/.git/config`, `/x/.hidden`) answers 404
+  and not the home page. `/bff` is left to the BFF. Tried in a throwaway nginx, `%2e` spellings too.
+- Cache and HSTS (SC-27). Every `/api` reply except the public health check carries
+  `Cache-Control: no-store`, unless the route chose its own. The BFF no longer sends
+  `Strict-Transport-Security` over plain HTTP, so the TLS guide now says the proxy sends it.
+- Errors (SC-29). When Zabbix cannot be read, a reader is told "The data source is not answering." with
+  the request id, on the pages, the live stream and the Assistant. The method name, the setting and
+  Zabbix's own words are in the BFF log, on a line with the same id. The `error` codes did not change.
+- Heavy reports (BK-15). At most two of the noise, availability and capacity reports read Zabbix at once.
+  The others wait their turn, and a cached answer never waits. No status code or field changed.
+- Graphs and Latest data (FR-19). When the host list cannot load they say so, and Graphs says when the
+  list is empty. They kept "Loading hosts…" for good, or showed empty menus and no message.
+- Small things. A readable placeholder in the dark theme (UX-25). The Month label is tied to its menu, the
+  Method heading is plain text, and every field has an `id` or a `name` (UX-26). Controls reach 24 px
+  (UX-27: port buttons, sort headers, the Services arrows, the SLA list, the chart chips). "1 host" and
+  not "1 hosts" in twelve places (UX-28). Three unused exports gone (BK-16). `.nvmrc` and `engines`
+  (IN-29). A line citation that ran past its file, and a check in `links.check.mjs` so none can (IN-32).
+- Dependencies (SC-26). `npm audit fix` in both folders moved `fast-jwt` to 6.3.4 and `source-map-js` to
+  1.2.2. Only the lockfiles changed, and `npm audit` reports 0.
+- Files (SC-25). The four `.env` files are mode 600, and the backup guide says to check it.
+- Tests: 1,537 in 70 files on the server and 844 in 59 on the web.
+
+## 13 October 2026 (cef91b3, ce3634d)
 
 The running portals were built from this work a few hours before it was committed, so they report
-`748136c-dirty` until they are rebuilt.
+`748136c-dirty` until they are rebuilt. The screenshots came in the second commit.
 
 - Narrow screens (UX-14). The Dashboard and the Inventory report no longer run past the window at 390
   and 320 px: the two-column grid lets its columns shrink, the host-group table scrolls inside its card,
@@ -38,6 +111,9 @@ The running portals were built from this work a few hours before it was committe
 - Diagrams (IN-18). Each `.mmd` ends with a `%% source-hash:` stamp, and the new
   `web/scripts/diagrams.check.mjs` fails, in CI too, when a source was edited after its stamp.
   `web/scripts/diagrams.stamp.mjs` sets the stamp after a re-render.
+- Screenshots. `docs/screenshots/` holds seven images of the main pages, and the README and the
+  getting-started guide show some of them. Every host name, address and interface description in them
+  is a stand-in, and each image was looked at before it was added.
 - Tests: 1,508 in 66 files on the server and 822 in 57 on the web.
 - Documents: the wording and code-comment passes of 12 and 13 October, `ayoyo_1.1.md` renamed
   `tracker.md`, and this file.
