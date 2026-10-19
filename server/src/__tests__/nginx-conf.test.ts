@@ -71,7 +71,7 @@ function splice(nodes: Node[]): Node[] {
 }
 
 const source = file('nginx.conf');
-const apiSource = file('src/api.ts');
+const apiSource = file('src/api/client.ts');
 const configSource = readFileSync(fileURLToPath(new URL('../core/config.ts', import.meta.url)), 'utf8');
 const conf = splice(parse(source));
 const server = conf.find((n) => n.name === 'server') as Node;

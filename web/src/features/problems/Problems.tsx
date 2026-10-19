@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../../api';
+import { api, streamUrl } from '../../api';
+import { problemListGuard } from '../../guards';
 import { useAsync } from '../../shared/hooks/useAsync';
+import { STREAM_SILENT_MS, useSSE } from '../../shared/hooks/useSSE';
 import { useCapabilities } from '../assistant/useAi';
 import { useAuth, roleAllows } from '../../shared/hooks/useAuth';
 import { useUrlState } from '../../shared/hooks/useUrlState';
@@ -10,6 +12,7 @@ import { SEVERITIES } from '../../theme';
 import { SeverityBadge } from '../../shared/components/StatusBadge';
 import { Async } from '../../shared/components/states';
 import { AckPill } from './AckPill';
+import { changeKey } from './liveChange';
 import { Field, FieldSpacer } from '../../shared/components/Field';
 import { ProblemExplainPanel } from '../assistant/ExplainPanel';
 import AckDialog from './AckDialog';
@@ -48,9 +51,21 @@ const applied = (p: Problem, sent: Sent) =>
 export default function Problems() {
   // What was sent to Zabbix and is not yet on screen, by event id.
   const [sent, setSent] = useState<Record<string, Sent>>({});
-  // Every 30 s: the Dashboard's live stream is the fast path; this page is a working list.
-  // Quicker while a change is awaited, so the row stops saying "waiting" soon after Zabbix applies it.
+  // Every 30 s, and at once when the live stream says the list changed (below). Quicker while a change is awaited,
+  // so the row stops saying "waiting" soon after Zabbix applies it.
   const q = useAsync<Problem[]>(() => api.problems(), [], Object.values(sent).some((s) => !s.late) ? POLL_WAITING_MS : 30_000);
+  // The stream's frames leave out what this page also shows (tags, the live value), so they only say that something changed: a problem
+  // opened, resolved, acknowledged or re-graded. The full list is then read at once, and the poll above stays as the fallback.
+  const live = useSSE<Problem[]>(streamUrl(), 'problems', STREAM_SILENT_MS, problemListGuard);
+  const seen = useRef<string | null>(null);
+  const { reload } = q;
+  useEffect(() => {
+    if (!live.data) return;
+    const key = changeKey(live.data);
+    const before = seen.current;
+    seen.current = key;
+    if (before !== null && before !== key) reload();
+  }, [live.data, reload]);
   const [minSev, setMinSev] = useUrlState<number>('severity', 0, { options: [0, 1, 2, 3, 4, 5] });
   const [search, setSearch] = useUrlState<string>('q', '', { debounceMs: 400 });
   const [ackFilter, setAckFilter] = useUrlState<(typeof ACK_FILTERS)[number]>('ack', 'all', {

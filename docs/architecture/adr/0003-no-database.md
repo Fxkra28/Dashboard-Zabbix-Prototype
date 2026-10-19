@@ -58,7 +58,7 @@ headers (`X-Data-Stale`, `X-Data-Age-Seconds`); problem and acknowledgement stat
 * The 24-hour TTL is a ceiling, not a floor. Keys are parameterised: `graph:<ids>:<from>:<to>`,
   `net:interfaces:<hostid>` across 139 hosts, against a 500-entry cap, so ordinary browsing can evict a
   fresh SLA report within minutes. **Nobody has measured the real hit rate.**
-* Portal-side state has nowhere to live. `auth.ts:178` says it outright: *"Users come from env:
+* Portal-side state has nowhere to live. `security/auth.ts:178` says it outright: *"Users come from env:
   there is no database yet (that phase was deferred)."* Consequences: a password may still sit in
   plain text in the `.env` file (an scrypt hash is accepted since 7 October 2026), adding a user needs
   a restart, there are no saved views, and, because the single write uses one shared Zabbix token,

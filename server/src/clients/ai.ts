@@ -17,16 +17,16 @@ import { estimatedTokens } from './limits.js';
  * schema-shaped JSON: `callAnthropic`, `callOpenAiCompatible`, `callOllamaNative`.
  */
 
-/** Raised when the AI layer is asked to work without a key. Mapped to 503. */
+/** Raised when the AI layer is asked to work without a key. Mapped to 503. The reader is told to ask; `detail` names the setting, for the log. */
 export class AiDisabledError extends Error {
   readonly code = 'ai_disabled';
+  readonly detail: string;
   constructor() {
-    super(
+    super('AI explanations are not switched on for this portal. Tell an administrator.');
+    this.detail =
       config.ai.provider === 'anthropic'
-        ? 'AI explanations are not configured. Set ANTHROPIC_API_KEY in server/.env.'
-        : 'AI explanations are not configured. Set AI_BASE_URL in server/.env, ' +
-            'e.g. http://localhost:11434/v1 for a local Ollama.',
-    );
+        ? 'Set ANTHROPIC_API_KEY in server/.env.'
+        : 'Set AI_BASE_URL in server/.env, e.g. http://localhost:11434/v1 for a local Ollama.';
   }
 }
 

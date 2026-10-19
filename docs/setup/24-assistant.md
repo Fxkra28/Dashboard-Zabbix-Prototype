@@ -8,7 +8,7 @@ the one feature with no Zabbix equivalent, and it is deliberately not an agent.
 
 ## What the model is given
 
-For every message the BFF builds a snapshot, [`services/assistant.ts`](../../server/src/services/assistant.ts)
+For every message the BFF builds a snapshot, [`services/assistantSnapshot.ts`](../../server/src/services/assistantSnapshot.ts)
 `buildSnapshot()`, from the same cached queries the pages use, under the same cache keys
 (`problems`, `sites`, `sla`, `sli:*`, `services:tree`), so a busy conversation costs Zabbix nothing
 the pages were not already paying:
@@ -32,7 +32,7 @@ Host, site, problem, service and SLA names are text typed into devices and Zabbi
 enter the prompt each one is cut to a single line (control characters and line breaks become
 spaces), capped at 80 characters for a host or site and 200 for the rest, and the snapshot and the
 focused-site block sit between `~~~ BEGIN` and `~~~ END` lines that the system prompt calls data,
-never instructions (`promptText()` in `services/assistant.ts`).
+never instructions (`promptText()` in `services/assistantLines.ts`).
 
 ## What the model may do
 
@@ -54,7 +54,7 @@ Browser ──POST /bff/api/chat {messages} ──► BFF ──► buildSnapsho
 [`routes/chat.ts`](../../server/src/routes/chat.ts) has [`services/chat.ts`](../../server/src/services/chat.ts) validate the body (the last 12 turns, each at most
 2 000 characters, ending with a user turn), then hijacks the reply and writes SSE frames as
 `streamAnswer()` yields text. `EventSource` cannot POST, so the browser reads the stream with `fetch`
-+ `ReadableStream` in [`api.ts`](../../web/src/api.ts) `chatStream()`. A reader who navigates away closes
++ `ReadableStream` in [`api/assistant.ts`](../../web/src/api/assistant.ts) `chatStream()`. A reader who navigates away closes
 the socket; the route aborts the upstream request so the model stops generating for nobody.
 
 Nothing is kept server-side between messages: the page holds the conversation and sends it back

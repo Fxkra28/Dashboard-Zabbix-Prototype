@@ -18,7 +18,7 @@ vi.mock('../features/assistant/useAi', async (original) => ({
   useAiEnabled: () => caps.ai,
 }));
 const sse = { data: [] as unknown[], connected: true, updatedAt: Date.now(), error: null as string | null };
-vi.mock('../features/dashboard/useSSE', () => ({ useSSE: () => sse }));
+vi.mock('../shared/hooks/useSSE', () => ({ STREAM_SILENT_MS: 45_000, useSSE: () => sse }));
 const { default: Assistant } = await import('../features/assistant/Assistant');
 const { default: Network } = await import('../features/network/Network');
 const { default: Overview } = await import('../features/dashboard/Overview');

@@ -11,7 +11,7 @@ import { devicesResponse, topHostsResponse, webMonitoringResponse } from '../../
 /** The Dashboard's two views: the Overview and, for operators and admins (interface data), the internet traffic meters. */
 
 const stream = vi.hoisted(() => ({ current: { data: null, updatedAt: null, connected: false, error: null } as Record<string, unknown> }));
-vi.mock('./useSSE', () => ({ useSSE: () => stream.current }));
+vi.mock('../../shared/hooks/useSSE', () => ({ STREAM_SILENT_MS: 45_000, useSSE: () => stream.current }));
 const { default: Overview } = await import('./Overview');
 
 const never = () => new Promise<never>(() => undefined);

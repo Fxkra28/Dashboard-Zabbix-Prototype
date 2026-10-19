@@ -15,7 +15,7 @@ const json = (status: number, body: unknown) =>
 let fetchMock: ReturnType<typeof vi.fn>;
 let where: { pathname: string; search: string; href: string; origin: string };
 
-/** A fresh api.ts for each test: its session state lives at module level. */
+/** A fresh api/ for each test: its session state lives at module level (api/session.ts). */
 async function load() {
   vi.resetModules();
   return import('./api');
@@ -33,7 +33,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const headersOf = (call: number) => new Headers((fetchMock.mock.calls[call][1] as RequestInit).headers);
 
-describe('api.ts requests', () => {
+describe('api/ requests', () => {
   it('sends the CSRF header with a POST, which the BFF needs with the session cookie', async () => {
     const { api } = await load();
     fetchMock.mockResolvedValue(json(200, { ok: true, eventids: ['1'], action: 2 }));

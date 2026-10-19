@@ -198,10 +198,11 @@ paths:
                 required: [ok, ts, ai, aiProvider, aiExternal, writeBack, defaults]
                 properties:
                   ok: { type: boolean, const: true }
-                  ts: { type: integer, description: Server time, milliseconds since epoch. }
+                  ts: { type: integer, description: 'Server time, milliseconds since epoch.' }
                   ai: { type: boolean, description: Whether the plain-language layer is configured. }
                   aiProvider:
-                    type: [string, 'null']
+                    type: string
+                    enum: [anthropic, openai-compatible]
                     description: Which backend answers, `AI_PROVIDER`. The page uses it to name the service in the notice below.
                   aiExternal:
                     type: boolean
@@ -244,7 +245,7 @@ paths:
                         type: string
                         enum: [ok, down, off, not_checked]
                         description: '`off` is no model configured, `not_checked` is the hosted Anthropic model, which a probe would bill.'
-                      checkedAt: { type: integer, description: When these answers were read, milliseconds since epoch. }
+                      checkedAt: { type: integer, description: 'When these answers were read, milliseconds since epoch.' }
                   streams: { type: integer, minimum: 0, description: Signed-in callers only. Screens connected to `/api/stream` right now. }
 
   /api/ready:
@@ -544,6 +545,7 @@ paths:
                 type: array
                 items:
                   type: object
+                  required: [groupid, name]
                   properties:
                     groupid: { type: string }
                     name: { type: string }
@@ -628,7 +630,7 @@ paths:
                 type: object
                 required: [items, truncated]
                 properties:
-                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  items: { type: array, items: { $ref: '#/components/schemas/LatestItem' } }
                   truncated: { type: boolean }
                   total: { type: integer }
                   page: { type: integer }
@@ -685,6 +687,10 @@ paths:
         | `event: error` | `{ "message": string }` |
         | `event: ping` | after 15 s with nothing else sent, so a client can tell a quiet line from a dead one: `{ "ageMs": n }`, the age of the last good read of the list, when known, and `{}` otherwise |
 
+        A client that sends `Accept-Encoding: gzip` (every browser does) gets the stream gzip-compressed,
+        flushed after every frame and keep-alive, with `Content-Encoding: gzip` and `Vary: Accept-Encoding`;
+        on HCML's list the first frame goes from 166 kB to 19 kB.
+
         The stream ends when the session token it was opened with expires, so the browser reconnects
         with the renewed cookie or is sent to sign in, and when the BFF shuts down on `SIGTERM`.
 
@@ -735,10 +741,11 @@ paths:
           schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
         - name: from
           in: query
-          description: Unix seconds. Must be paired with `to`. Range may not exceed 400 days.
+          description: Unix seconds. Must be paired with `to`. Range may not exceed 400 days, as asked.
           schema: { type: integer }
         - name: to
           in: query
+          description: Unix seconds. The range is widened to whole minutes (`from` down, `to` up), and the response says the range it used, so requests seconds apart share one cached read.
           schema: { type: integer }
         - name: hours
           in: query
@@ -1497,6 +1504,7 @@ paths:
                 type: array
                 items:
                   type: object
+                  required: [sysmapid, name, width, height]
                   properties:
                     sysmapid: { type: string }
                     name: { type: string }
@@ -1511,9 +1519,10 @@ paths:
     get:
       summary: One map with its elements resolved
       description: |
-        Cached 30 s. **Returns an array, not a single object.** Each element is the raw Zabbix
-        selement spread with a macro-expanded `labelText`, and for host elements also `hostid`,
-        `hostName`, `problems` and `maxSeverity`.
+        Cached 30 s. **Returns an array, not a single object**: the maps `map.get` found for `mapid`, which
+        is one. Each has the map's own fields, its `links`, and its `selements`, the elements drawn on it.
+        Each element is the raw Zabbix element with a macro-expanded `labelText` and, for a host element, also
+        `hostid`, `hostName`, `problems` and `maxSeverity`.
 
         The shape is open by construction: the handler spreads whatever Zabbix returns.
       operationId: getMapDetail
@@ -1530,7 +1539,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { type: object, additionalProperties: true }
+                items: { $ref: '#/components/schemas/MapDetail' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
@@ -1915,7 +1924,7 @@ components:
           type: string
           enum: [ok, down, off, not_checked]
           description: '`off` is no model configured, `not_checked` is the hosted Anthropic model, which a probe would bill.'
-        checkedAt: { type: integer, description: When these answers were read, milliseconds since epoch. }
+        checkedAt: { type: integer, description: 'When these answers were read, milliseconds since epoch.' }
         version: { type: string, description: The server package version. }
         startedAt: { type: string, format: date-time, description: When this process started. }
         build:
@@ -1945,8 +1954,9 @@ components:
     SiteRef:
       type: object
       description: A resolved site. No Zabbix entity corresponds to this.
+      required: [code, name]
       properties:
-        code: { type: string }
+        code: { type: integer, description: 'The site number, 1 to 14.' }
         name: { type: string }
       additionalProperties: true
 
@@ -1969,14 +1979,22 @@ components:
 
     ZHost:
       type: object
+      required: [hostid, name, status]
       properties:
         hostid: { type: string }
         name: { type: string }
-        status: { type: string }
-        maintenance_status: { type: string }
+        status: { type: string, description: '`0` is monitored, `1` is not monitored.' }
+        maintenance_status: { type: string, description: '`1` while the host is in maintenance.' }
         interfaces:
           type: array
-          items: { type: object, additionalProperties: true }
+          items:
+            type: object
+            required: [ip]
+            properties:
+              ip: { type: string }
+              type: { type: string, description: '`1` agent, `2` SNMP, `3` IPMI, `4` JMX.' }
+              available: { type: string, description: '`0` unknown, `1` available, `2` unavailable.' }
+            additionalProperties: true
       additionalProperties: true
 
     Device:
@@ -2013,20 +2031,38 @@ components:
 
     Item:
       type: object
+      required: [itemid, name, key_, value_type]
       properties:
         itemid: { type: string }
         hostid: { type: string }
         name: { type: string }
         key_: { type: string }
-        value_type: { type: string }
+        value_type: { type: string, description: '`0` float, `1` character, `2` log, `3` unsigned integer, `4` text.' }
         units: { type: string }
         delay: { type: string }
-        status: { type: string }
-        state: { type: string }
+        status: { type: string, description: '`0` enabled, `1` disabled.' }
+        state: { type: string, description: '`0` normal, `1` not supported.' }
+        flags: { type: string }
         lastvalue: { type: string }
         lastclock: { type: string }
         tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+        hosts:
+          type: array
+          description: The host the item belongs to. Present when `itemids` is given, and always on the latest data.
+          items:
+            type: object
+            required: [hostid, name]
+            properties:
+              hostid: { type: string }
+              name: { type: string }
       additionalProperties: true
+
+    LatestItem:
+      allOf:
+        - $ref: '#/components/schemas/Item'
+        - type: object
+          properties:
+            prevvalue: { type: string, description: The value before `lastvalue`. }
 
     Tag:
       type: object
@@ -2060,7 +2096,7 @@ components:
 
     GraphResponse:
       type: object
-      required: [series, from, to, source]
+      required: [from, to, source, series, latestClock, downsampled]
       properties:
         from: { type: integer }
         to: { type: integer }
@@ -2070,28 +2106,65 @@ components:
           description: Which store answered. `trend+history` means trends stalled and raw filled the tail.
         series:
           type: array
-          items:
-            type: object
-            required: [itemid, name, points]
-            properties:
-              itemid: { type: string }
-              name: { type: string }
-              units: { type: string }
-              host: { type: string }
-              step: { type: boolean, description: Render as a step line, ICMP and other 0/1 series. }
-              points:
-                type: array
-                description: '`[clock, avg, min, max]`. A null `avg` is an explicit collection gap.'
-                items:
-                  type: array
-                  items:
-                    oneOf: [{ type: number }, { type: 'null' }]
-              stats:
-                oneOf:
-                  - type: object
-                    additionalProperties: true
-                  - type: 'null'
-              coverage: { type: number }
+          items: { $ref: '#/components/schemas/GraphSeries' }
+        latestClock:
+          oneOf: [{ type: integer }, { type: 'null' }]
+          description: The newest sample of any series, in epoch seconds. Null when no series has a sample.
+        downsampled:
+          type: boolean
+          description: True when a series had more samples than `points` and was folded into equal time buckets.
+
+    GraphSeries:
+      type: object
+      required: [itemid, name, host, units, value_type, delaySeconds, step, points, stats, coverage]
+      properties:
+        itemid: { type: string }
+        name: { type: string }
+        host: { type: string, description: 'The item''s first host. An empty string when Zabbix names none.' }
+        units: { type: string, description: 'An empty string when the item has none.' }
+        value_type: { type: string, description: 'The Zabbix value type of the item, `0` float or `3` unsigned integer here.' }
+        delaySeconds:
+          type: number
+          description: |
+            Seconds between the item's values: its own interval, or for a dependent item the spacing
+            of its history, or `3600` with trends and `60` without when neither is known.
+        step: { type: boolean, description: 'Render as a step line, ICMP and other 0/1 series.' }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/GraphPoint' }
+        stats:
+          description: Over the samples the series holds. Null when it holds none.
+          oneOf:
+            - type: object
+              required: [min, avg, max, last, lastClock]
+              properties:
+                min: { type: number }
+                avg: { type: number }
+                max: { type: number }
+                last: { type: number }
+                lastClock: { type: integer, description: 'Epoch seconds of the newest sample.' }
+            - type: 'null'
+        coverage:
+          type: object
+          required: [coveredSeconds, firstClock, lastClock]
+          description: How much of the window the samples cover. The two clocks are epoch seconds, null with no sample.
+          properties:
+            coveredSeconds: { type: integer }
+            firstClock: { oneOf: [{ type: integer }, { type: 'null' }] }
+            lastClock: { oneOf: [{ type: integer }, { type: 'null' }] }
+
+    GraphPoint:
+      type: array
+      description: |
+        `[ms, avg, min, max]`: the time in epoch milliseconds, then the average, the minimum and the
+        maximum. A null `avg` is an explicit collection gap. `min` and `max` are null for raw history.
+      prefixItems:
+        - { type: number }
+        - oneOf: [{ type: number }, { type: 'null' }]
+        - oneOf: [{ type: number }, { type: 'null' }]
+        - oneOf: [{ type: number }, { type: 'null' }]
+      minItems: 4
+      maxItems: 4
 
     NetDevice:
       type: object
@@ -2103,13 +2176,15 @@ components:
         site:
           oneOf: [{ $ref: '#/components/schemas/SiteRef' }, { type: 'null' }]
         icmp:
+          description: Null when the host has no ICMP items. `up`, `loss` and `latency` are there only when a fresh value exists.
           oneOf:
             - type: object
+              required: [state]
               properties:
                 up: { type: boolean }
                 loss: { type: number }
                 latency: { type: number }
-                state: { type: string }
+                state: { type: string, enum: [up, down, unknown] }
             - type: 'null'
 
     TopHostsResponse:
@@ -2126,7 +2201,7 @@ components:
               key: { type: string, enum: [cpu, memory] }
               label: { type: string }
               considered: { type: integer, description: Hosts that have such an item. }
-              current: { type: integer, description: Of those, with a current value. }
+              current: { type: integer, description: 'Of those, with a current value.' }
               rows:
                 type: array
                 items:
@@ -2137,14 +2212,14 @@ components:
                     host: { type: string }
                     itemid: { type: string }
                     value: { type: number, description: Percent. }
-                    clock: { type: integer, description: When the value was collected, epoch seconds. }
+                    clock: { type: integer, description: 'When the value was collected, epoch seconds.' }
 
     WebMonitoringResponse:
       type: object
       required: [generatedAt, total, ok, failed, unknown, failures]
       properties:
         generatedAt: { type: integer, description: Epoch seconds. }
-        total: { type: integer, description: Enabled scenarios on monitored hosts. It is `ok`, `failed` and `unknown` added up. }
+        total: { type: integer, description: 'Enabled scenarios on monitored hosts. It is `ok`, `failed` and `unknown` added up.' }
         ok: { type: integer }
         failed: { type: integer }
         unknown: { type: integer, description: Scenarios with no current result. }
@@ -2158,8 +2233,8 @@ components:
               host: { type: string }
               name: { type: string, description: The scenario's name. }
               itemid: { type: string }
-              step: { type: integer, description: The step that failed, counting from 1. }
-              clock: { type: integer, description: When the result was collected, epoch seconds. }
+              step: { type: integer, description: 'The step that failed, counting from 1.' }
+              clock: { type: integer, description: 'When the result was collected, epoch seconds.' }
 
     MeterZone:
       type: object
@@ -2179,7 +2254,7 @@ components:
       properties:
         direction: { type: string, enum: [in, out], description: The opposite of the gauge's own direction. }
         itemid: { type: string }
-        value: { type: [number, 'null'], description: The item's current value. Null when it has none: it is never read from history. }
+        value: { type: [number, 'null'], description: 'The item''s current value. Null when it has none: it is never read from history.' }
         clock: { type: [integer, 'null'] }
         fraction: { type: [number, 'null'], minimum: 0, maximum: 1 }
         zone: { type: [string, 'null'], enum: [none, low, ok, warn, critical, null] }
@@ -2189,10 +2264,10 @@ components:
       required: [id, title, page, host, hostid, item, itemid, direction, link, other, units, value, clock, min, max, zones, fraction, zone, state]
       properties:
         id: { type: string, description: 'Stable for one item (`item-<id>`); a widget without an item is named after its title.' }
-        title: { type: string, description: The widget's own title, as HCML wrote it. }
+        title: { type: string, description: 'The widget''s own title, as HCML wrote it.' }
         page: { type: string, description: The dashboard page the widget sits on. }
         host: { type: [string, 'null'] }
-        hostid: { type: [string, 'null'], description: The host's id in Zabbix, which the Graphs page needs. }
+        hostid: { type: [string, 'null'], description: 'The host''s id in Zabbix, which the Graphs page needs.' }
         item: { type: [string, 'null'], description: 'The item''s name, such as "Interface wan1(): Bits received".' }
         itemid: { type: [string, 'null'] }
         direction: { type: [string, 'null'], enum: [in, out, null] }
@@ -2211,9 +2286,9 @@ components:
             - type: 'null'
         units: { type: string, description: The item's units; every number below is in them. }
         value: { type: [number, 'null'] }
-        clock: { type: [integer, 'null'], description: When the value was collected, epoch seconds. }
+        clock: { type: [integer, 'null'], description: 'When the value was collected, epoch seconds.' }
         min: { type: number }
-        max: { type: [number, 'null'], description: The top of the scale, the link's capacity as the widget gives it. }
+        max: { type: [number, 'null'], description: 'The top of the scale, the link''s capacity as the widget gives it.' }
         zones: { type: array, items: { $ref: '#/components/schemas/MeterZone' } }
         fraction: { type: [number, 'null'], minimum: 0, maximum: 1 }
         zone: { type: [string, 'null'], enum: [none, low, ok, warn, critical, null] }
@@ -2240,8 +2315,8 @@ components:
           properties:
             total: { type: integer }
             current: { type: integer, description: With a current reading. }
-            critical: { type: integer, description: Of those, in a red zone. }
-            warn: { type: integer, description: Of those, in a yellow or orange zone. }
+            critical: { type: integer, description: 'Of those, in a red zone.' }
+            warn: { type: integer, description: 'Of those, in a yellow or orange zone.' }
             stale: { type: integer }
             unavailable: { type: integer, description: 'No gauge to draw: no value, unsupported, missing, or a scale that cannot be read.' }
             down: { type: integer, description: 'Links whose interface is down, whatever their reading says.' }
@@ -2249,15 +2324,37 @@ components:
 
     InterfaceRow:
       type: object
-      required: [name, oper]
+      description: One interface, with the `net.if.*` items Zabbix discovers for its SNMP index folded together.
+      required:
+        [index, name, alias, operStatus, speed, inBps, outBps, utilisation, inErrors, outErrors, inDiscards,
+         outDiscards, lastclock, itemids]
       properties:
+        index: { type: integer, description: The SNMP interface index. }
         name: { type: string }
         alias: { type: string }
-        oper: { type: string, enum: [up, down, other] }
-        speed: { type: number }
-        inOctets: { type: number }
-        outOctets: { type: number }
-      additionalProperties: true
+        operStatus:
+          type: string
+          enum: [up, down, testing, unknown, dormant, notPresent, lowerLayerDown]
+          description: IF-MIB `ifOperStatus`.
+        speed: { oneOf: [{ type: number }, { type: 'null' }], description: 'Null when no speed is reported or it is zero.' }
+        inBps: { oneOf: [{ type: number }, { type: 'null' }] }
+        outBps: { oneOf: [{ type: number }, { type: 'null' }] }
+        utilisation: { oneOf: [{ type: number }, { type: 'null' }], description: 'Percent of `speed` the busier direction uses, to two decimals. Null without a speed or a reading.' }
+        inErrors: { oneOf: [{ type: number }, { type: 'null' }] }
+        outErrors: { oneOf: [{ type: number }, { type: 'null' }] }
+        inDiscards: { oneOf: [{ type: number }, { type: 'null' }] }
+        outDiscards: { oneOf: [{ type: number }, { type: 'null' }] }
+        lastclock: { oneOf: [{ type: integer }, { type: 'null' }], description: 'Epoch seconds of the newest fresh value of any of its items. Null when none is fresh.' }
+        itemids:
+          type: object
+          description: The item behind each figure, for a link to its graph.
+          properties:
+            in: { type: string }
+            out: { type: string }
+            status: { type: string }
+            speed: { type: string }
+            inErrors: { type: string }
+            outErrors: { type: string }
 
     LinksResponse:
       type: object
@@ -2306,7 +2403,7 @@ components:
         up: { type: boolean }
         loss: { type: number, description: Percent. }
         latency: { type: number, description: Milliseconds. Zabbix stores seconds. }
-        jitter: { type: number, description: Max minus min RTT, milliseconds. }
+        jitter: { type: number, description: 'Max minus min RTT, milliseconds.' }
         state: { $ref: '#/components/schemas/LinkState' }
         group: { type: string, description: From the `link_group` item tag. }
         role: { type: string, description: From the `link_role` item tag. }
@@ -2336,7 +2433,7 @@ components:
       properties:
         name: { type: string }
         total: { type: integer }
-        available: { type: integer, description: By interface flags, as before `state` existed. }
+        available: { type: integer, description: 'By interface flags, as before `state` existed.' }
         unavailable: { type: integer }
         unknown: { type: integer }
         up: { type: integer, description: By derived `state`. Disabled hosts count only in `disabled`. }
@@ -2398,6 +2495,7 @@ components:
           type: array
           items:
             type: object
+            required: [eventid, name, severity]
             properties:
               eventid: { type: string }
               name: { type: string }
@@ -2420,7 +2518,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServicesResponse'
         - type: object
-          required: [source, label, month, profile, target, closed, gaps]
+          required: [tree, source, label, month, profile, target, closed, gaps]
           properties:
             source: { type: string, const: derived }
             label: { type: string }
@@ -2429,19 +2527,22 @@ components:
             target: { type: number }
             closed: { type: boolean }
             gaps: { type: array, items: { $ref: '#/components/schemas/Interval' } }
-            tree:
-              type: array
-              items:
-                allOf:
-                  - $ref: '#/components/schemas/ServiceNode'
-                  - type: object
-                    properties:
-                      kind:
-                        type: string
-                        enum: [root, business, site, class, wan-path, host, web]
-                      hostid: { type: string }
-                      dataStatus: { type: string }
-                      coverage: { oneOf: [{ type: number }, { type: 'null' }] }
+            tree: { type: array, items: { $ref: '#/components/schemas/DerivedServiceNode' } }
+
+    DerivedServiceNode:
+      description: A `ServiceNode` of the tree derived from the estate, whose children are of the same kind.
+      allOf:
+        - $ref: '#/components/schemas/ServiceNode'
+        - type: object
+          required: [kind, dataStatus, coverage, children]
+          properties:
+            kind:
+              type: string
+              enum: [root, business, site, class, wan-path, host, web]
+            hostid: { type: string }
+            dataStatus: { type: string, enum: [ok, partial, nodata] }
+            coverage: { oneOf: [{ type: number }, { type: 'null' }] }
+            children: { type: array, items: { $ref: '#/components/schemas/DerivedServiceNode' } }
 
     Interval:
       type: object
@@ -2452,14 +2553,15 @@ components:
 
     ZbxSla:
       type: object
+      required: [slaid, name, slo, period, status]
       properties:
         slaid: { type: string }
         name: { type: string }
-        period: { type: string }
-        slo: { type: string }
-        effective_date: { type: string }
+        period: { type: string, description: '`0` daily, `1` weekly, `2` monthly, `3` quarterly, `4` annually.' }
+        slo: { type: string, description: 'The promised availability target in percent, such as `99.9`.' }
         timezone: { type: string }
-        status: { type: string }
+        description: { type: string }
+        status: { type: string, description: '`0` disabled, `1` enabled.' }
       additionalProperties: true
 
     SlaSli:
@@ -2468,7 +2570,7 @@ components:
       properties:
         serviceid: { type: string }
         name: { type: string }
-        sli: { type: number, description: Achieved availability, percent. }
+        sli: { type: number, description: 'Achieved availability, percent.' }
         uptime: { type: integer, description: Seconds. }
         downtime: { type: integer, description: Seconds. }
         error_budget: { type: integer, description: Seconds left before the SLO is missed. }
@@ -2510,14 +2612,15 @@ components:
         sites: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
         classes: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
         hosts: { type: array, items: { $ref: '#/components/schemas/SliHost' } }
-        wanPaths: { type: array, items: { type: object, additionalProperties: true } }
-        web: { type: array, items: { type: object, additionalProperties: true } }
+        wanPaths: { type: array, items: { $ref: '#/components/schemas/SliPath' } }
+        web: { type: array, items: { $ref: '#/components/schemas/SliWeb' } }
         gaps:
           type: array
           description: Estate-wide spans in which almost nothing was collected.
           items: { $ref: '#/components/schemas/Interval' }
         stats:
           type: object
+          required: [zabbixCalls, triggers, events, trendRows, ms]
           description: |
             `zabbixCalls` under-counts: sliced `event.get` recursion is counted once, so the true
             figure is higher whenever a window exceeds 5,000 events.
@@ -2531,32 +2634,110 @@ components:
 
     SliGroup:
       type: object
-      required: [name, availability]
+      description: One roll-up row, for the whole estate or for one category, site or kind of device.
+      required: [key, name, hosts, withData, sli, downtime, meeting, belowTarget]
       properties:
+        key: { type: string }
         name: { type: string }
-        availability: { type: number }
-        downtime: { type: number }
-        incidents: { type: integer }
-        hosts: { type: integer }
-      additionalProperties: true
+        hosts: { type: integer, description: 'Hosts in the group.' }
+        withData: { type: integer, description: 'Hosts with enough collected data to have a figure.' }
+        sli:
+          oneOf: [{ type: number }, { type: 'null' }]
+          description: Percent. The plain mean of the figures of the hosts that have one, HCML's own rule for every total. Null when none has.
+        downtime: { type: number, description: 'Seconds, summed over the hosts.' }
+        meeting:
+          oneOf: [{ type: boolean }, { type: 'null' }]
+          description: Whether `sli` reaches the target. Null when there is no figure.
+        belowTarget: { type: integer, description: 'Hosts whose own figure is below the target.' }
 
     SliHost:
       type: object
-      required: [hostid, host, availability, measured]
+      description: One device in the derived monthly report.
+      required:
+        [hostid, name, hostStatus, site, category, deviceClass, triggerids, sli, downtime, window, covered,
+         maintenance, coverage, incidents, longest, dataStatus, measured, meeting, errorBudget]
+      properties:
+        hostid: { type: string }
+        name: { type: string }
+        hostStatus: { type: string, description: 'The Zabbix host status, `0` monitored and `1` not.' }
+        site:
+          oneOf: [{ $ref: '#/components/schemas/SiteRef' }, { type: 'null' }]
+        category: { type: string, description: 'The monitoring template the kind was judged by, or `Other`.' }
+        deviceClass: { type: string, description: 'The kind of device, as `class` on `/api/devices`.' }
+        triggerids: { type: array, items: { type: string }, description: 'The trigger ids the figure is read from.' }
+        sli: { oneOf: [{ type: number }, { type: 'null' }], description: 'Percent. Null when too little data was collected to say.' }
+        downtime: { type: number, description: 'Seconds down inside the measured time.' }
+        window: { type: number, description: 'Seconds in the window, from its start to now or to its end.' }
+        covered: { type: number, description: 'Seconds actually measured: the window minus hours with no data and planned maintenance.' }
+        maintenance: { type: number, description: 'Seconds of the window inside planned maintenance, left out of the figure.' }
+        coverage: { type: number, description: 'The share of the measurable time that was measured, 0 to 1.' }
+        incidents: { type: integer }
+        longest: { type: number, description: 'Seconds of the longest outage.' }
+        dataStatus: { type: string, enum: [ok, partial, nodata] }
+        measured:
+          type: boolean
+          description: |
+            False when the ICMP of this host has never been collected. HCML's method still counts such a
+            host as 100 percent. The figures do not change, this only says so.
+        meeting: { oneOf: [{ type: boolean }, { type: 'null' }], description: 'Whether `sli` reaches the target.' }
+        errorBudget: { oneOf: [{ type: number }, { type: 'null' }], description: 'Seconds of downtime the target still allows. Negative when missed.' }
+
+    SliPath:
+      type: object
+      description: A redundant pair of WAN links. It is down only while every leg is down.
+      required: [key, name, site, legs, sli, downtime, coverage, dataStatus]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        site:
+          oneOf: [{ $ref: '#/components/schemas/SiteRef' }, { type: 'null' }]
+        legs:
+          type: array
+          items:
+            type: object
+            required: [hostid, name, leg, sli, dataStatus]
+            properties:
+              hostid: { type: string }
+              name: { type: string }
+              leg: { type: string }
+              sli: { oneOf: [{ type: number }, { type: 'null' }] }
+              dataStatus: { type: string, enum: [ok, partial, nodata] }
+        sli: { oneOf: [{ type: number }, { type: 'null' }], description: Percent. }
+        downtime: { type: number, description: 'Seconds.' }
+        coverage: { type: number, description: '0 to 1.' }
+        dataStatus: { type: string, enum: [ok, partial, nodata] }
+
+    SliWeb:
+      type: object
+      description: One web scenario in the derived monthly report.
+      required: [itemid, name, sli, downtime, coverage, dataStatus]
+      properties:
+        itemid: { type: string }
+        name: { type: string }
+        sli: { oneOf: [{ type: number }, { type: 'null' }], description: Percent. }
+        downtime: { type: number, description: 'Seconds.' }
+        coverage: { type: number, description: '0 to 1.' }
+        dataStatus: { type: string, enum: [ok, partial, nodata] }
+
+    HostAvailability:
+      type: object
+      description: One host of the availability report.
+      required: [hostid, host, availability, downtime, incidents, longest]
       properties:
         hostid: { type: string }
         host: { type: string }
-        availability: { type: number }
-        downtime: { type: number }
+        availability:
+          oneOf: [{ type: number }, { type: 'null' }]
+          description: Percent of the measured time with no qualifying problem open. Null means no data.
+        downtime: { type: number, description: 'Seconds spent in a problem state, with overlaps merged.' }
         incidents: { type: integer }
-        longest: { type: number }
-        measured: { type: boolean, description: Always present. `web/src/types.ts` wrongly marks it optional. }
-        coverage: { oneOf: [{ type: number }, { type: 'null' }] }
-        maintenance: { type: number, description: Seconds of the window inside planned maintenance, left out of the figure. }
-        dataStatus: { type: string }
-        category: { type: string }
-        site: { type: string }
-      additionalProperties: true
+        longest: { type: number, description: 'Seconds of the longest outage.' }
+        coverage: { type: number, description: 'The share of the measurable time that was measured, 0 to 1. Only with `basis=availability`.' }
+        dataStatus: { type: string, enum: [ok, partial, nodata], description: 'Only with `basis=availability`.' }
+        category: { type: string, description: 'Only with `basis=availability`.' }
+        site:
+          oneOf: [{ $ref: '#/components/schemas/SiteRef' }, { type: 'null' }]
+          description: Only with `basis=availability`.
 
     AvailabilityReport:
       type: object
@@ -2571,7 +2752,7 @@ components:
         to: { type: integer }
         windowSeconds: { type: integer }
         minSeverity: { type: integer }
-        hosts: { type: array, items: { $ref: '#/components/schemas/SliHost' } }
+        hosts: { type: array, items: { $ref: '#/components/schemas/HostAvailability' } }
         truncated: { type: boolean }
         basis: { type: string, enum: [availability, all-problems] }
         profile: { type: string, enum: [availability, hcml-report] }
@@ -2597,27 +2778,52 @@ components:
         distinctTriggers: { type: integer }
         concentration:
           type: object
+          required: [topN, percentOfEvents]
           description: 'The Pareto line: N triggers produced X percent of all alerts.'
           properties:
             topN: { type: integer }
             percentOfEvents: { type: number }
         counts:
           type: object
+          required: [flapping, unactioned, chronic]
           properties:
             flapping: { type: integer }
             unactioned: { type: integer }
             chronic: { type: integer }
         thresholds:
           type: object
+          required: [shortSeconds, minCount]
           properties:
             shortSeconds: { type: integer }
             minCount: { type: integer }
         total: { type: integer, description: Triggers before `top` cut the list. Aggregates cover all. }
-        triggers: { type: array, items: { type: object, additionalProperties: true } }
+        triggers: { type: array, items: { $ref: '#/components/schemas/NoisyTrigger' } }
+
+    NoisyTrigger:
+      type: object
+      required:
+        [objectid, name, host, hostid, severity, count, medianDuration, shortLived, ackRate, totalDuration, longest,
+         stillOpen, flags]
+      properties:
+        objectid: { type: string, description: 'The trigger id.' }
+        name: { type: string }
+        host: { type: string }
+        hostid: { type: string }
+        severity: { type: string, enum: ['0', '1', '2', '3', '4', '5'] }
+        count: { type: integer, description: 'How many times it fired in the window.' }
+        medianDuration: { type: number, description: 'Seconds. The median, so that one long outlier does not hide many short firings.' }
+        shortLived: { type: integer, description: 'Firings that cleared before anyone could realistically act.' }
+        ackRate: { type: number, description: '0 to 1. Zero across many firings means the team has learned to ignore it.' }
+        totalDuration: { type: number, description: 'Seconds.' }
+        longest: { type: number, description: 'Seconds.' }
+        stillOpen: { type: boolean }
+        flags:
+          type: array
+          items: { type: string, enum: [flapping, unactioned, chronic] }
 
     AgingReport:
       type: object
-      required: [buckets]
+      required: [buckets, unacknowledged, total, oldest]
       properties:
         buckets:
           type: array
@@ -2626,9 +2832,25 @@ components:
           description: Always exactly four, `Under 1h`, `1–4h`, `4–24h`, `Over 24h`.
           items:
             type: object
+            required: [label, count]
             properties:
               label: { type: string, enum: ['Under 1h', '1–4h', '4–24h', 'Over 24h'] }
               count: { type: integer }
+        unacknowledged: { type: integer, description: 'Open problems nobody has acknowledged. The buckets count these.' }
+        total: { type: integer, description: 'Open problems, acknowledged or not.' }
+        oldest:
+          type: array
+          description: The unacknowledged problems that have waited longest, at most 20, oldest first.
+          items:
+            type: object
+            required: [eventid, name, host, severity, clock, ageSeconds]
+            properties:
+              eventid: { type: string }
+              name: { type: string }
+              host: { type: string, description: 'An empty string when the problem has no host.' }
+              severity: { type: string, enum: ['0', '1', '2', '3', '4', '5'] }
+              clock: { type: string, description: 'Epoch seconds the problem began, as Zabbix writes it.' }
+              ageSeconds: { type: integer }
       additionalProperties: true
 
     CapacityReport:
@@ -2678,13 +2900,14 @@ components:
             properties:
               key: { type: string, enum: [naming, site, owner, criticality] }
               label: { type: string }
-              hint: { type: string, description: Interpolated from env, so not an enumerable constant. }
+              hint: { type: string, description: 'Interpolated from env, so not an enumerable constant.' }
               present: { type: integer }
               total: { type: integer }
               pct: { type: number }
               scored: { type: boolean, description: False when this deployment has not configured the check. }
         overall:
           type: object
+          required: [hosts, complete, pct]
           properties:
             hosts: { type: integer }
             complete: { type: integer }
@@ -2693,6 +2916,7 @@ components:
           type: array
           items:
             type: object
+            required: [name, hosts, complete, pct]
             properties:
               name: { type: string }
               hosts: { type: integer }
@@ -2702,6 +2926,7 @@ components:
           type: array
           items:
             type: object
+            required: [hostid, name, site, groups, missing]
             properties:
               hostid: { type: string }
               name: { type: string }
@@ -2710,6 +2935,45 @@ components:
               missing:
                 type: array
                 items: { type: string, enum: [naming, site, owner, criticality] }
+
+    MapDetail:
+      type: object
+      description: A Zabbix map as `map.get` returns it, with its elements and links.
+      required: [sysmapid, name, width, height, selements, links]
+      properties:
+        sysmapid: { type: string }
+        name: { type: string }
+        width: { type: string }
+        height: { type: string }
+        selements: { type: array, items: { $ref: '#/components/schemas/MapSelement' } }
+        links: { type: array, items: { $ref: '#/components/schemas/MapLink' } }
+      additionalProperties: true
+
+    MapSelement:
+      type: object
+      required: [selementid, label, x, y, elementtype, labelText]
+      properties:
+        selementid: { type: string }
+        label: { type: string, description: 'As written in Zabbix, with its macros.' }
+        x: { type: string }
+        y: { type: string }
+        elementtype: { type: string, description: '`0` host, `1` map, `2` trigger, `3` host group, `4` image.' }
+        labelText: { type: string, description: 'The label with the host macros expanded.' }
+        hostid: { type: string, description: 'Host elements only.' }
+        hostName: { type: string, description: 'Host elements only.' }
+        problems: { type: integer, description: 'Host elements only. Open problems of the host.' }
+        maxSeverity: { type: integer, description: 'Host elements only. The worst open severity, -1 when there is none.' }
+      additionalProperties: true
+
+    MapLink:
+      type: object
+      required: [linkid, selementid1, selementid2]
+      properties:
+        linkid: { type: string }
+        selementid1: { type: string }
+        selementid2: { type: string }
+        color: { type: string, description: 'Hex without the `#`, as Zabbix stores it.' }
+      additionalProperties: true
 
     ProblemExplanation:
       type: object

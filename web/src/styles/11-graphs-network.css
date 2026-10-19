@@ -218,6 +218,9 @@ button.btn[aria-disabled='true'] {
   margin-right: 3px;
 }
 .chart-data-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
   margin-top: var(--s-2);
 }
 /* A long series scrolls inside its own box, with the column names kept in view. */

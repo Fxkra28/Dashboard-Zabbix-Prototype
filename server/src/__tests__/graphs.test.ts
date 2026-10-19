@@ -373,6 +373,33 @@ describe('/api/graph', () => {
     await app.close();
   });
 
+  it('widens an explicit range to whole minutes, so requests seconds apart share one read (BK-13)', async () => {
+    zabbix({ 'item.get': [numericItem({ itemid: '70001' })], 'history.get': [] });
+    const app = await graphApp();
+    const from = NOW - 9000;
+    const to = NOW - 5400;
+    const first = await app.inject({ url: `/api/graph?itemids=70001&from=${from + 17}&to=${to + 41}` });
+    expect(first.json()).toMatchObject({ from, to: to + 60 });
+    const second = await app.inject({ url: `/api/graph?itemids=70001&from=${from + 3}&to=${to + 59}` });
+    expect(second.json()).toMatchObject({ from, to: to + 60 });
+    expect(callsOf('item.get')).toHaveLength(1);
+    // Already on the minute: left as asked, and a different minute is a different read.
+    const exact = await app.inject({ url: `/api/graph?itemids=70001&from=${from}&to=${to}` });
+    expect(exact.json()).toMatchObject({ from, to });
+    expect(callsOf('item.get')).toHaveLength(2);
+    await app.close();
+  });
+
+  it('checks an explicit range as it was asked and widens it after, so a request that was valid stays valid', async () => {
+    zabbix({ 'item.get': [numericItem({ itemid: '70002' })], 'trend.get': [], 'history.get': [] });
+    const app = await graphApp();
+    // Exactly 400 days to the second, off the minute: widening makes it a minute longer, and it is still accepted.
+    const res = await app.inject({ url: `/api/graph?itemids=70002&from=${NOW - 400 * 86_400 + 30}&to=${NOW + 30}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ from: NOW - 400 * 86_400, to: NOW + 60 });
+    await app.close();
+  });
+
   it('rejects text items and unknown ids with 400', async () => {
     zabbix({ 'item.get': [numericItem({ itemid: '9', value_type: '4' }), numericItem()] });
     const app = await graphApp();

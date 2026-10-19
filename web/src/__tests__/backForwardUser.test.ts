@@ -16,7 +16,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-// Its own file, like backForward.test.ts: each api.ts instance adds a window listener.
+// Its own file, like backForward.test.ts: each fresh api/ adds a window listener (api/index.ts).
 describe('a page Back restores after another user signed in', () => {
   it('redraws the menus for a new user or a new role, and leaves them alone for the same one', async () => {
     const fetchMock = vi.fn(async () => me('ana', 'viewer'));

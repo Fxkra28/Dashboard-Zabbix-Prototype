@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { mergedSeconds, severitiesAtLeast } from '../services/analytics.js';
+import { mergedSeconds } from '../sli/intervals.js';
+import { severitiesAtLeast } from '../services/incidents.js';
 
 /**
  * Availability is computed by merging problem intervals. Getting this wrong

@@ -1,6 +1,7 @@
 import { promisify } from 'node:util';
 import { brotliCompress, constants, gzip } from 'node:zlib';
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { codingWeight } from '../core/acceptEncoding.js';
 
 /**
  * Compression for the JSON API, without a dependency. /api/problems alone is ~446 KB, polled every
@@ -8,9 +9,9 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
  * level 6 (for clients without brotli) to ~28 KB in ~3 ms. Quality 4 on purpose: Node's default of
  * 11 took 612 ms on the same body, all of it on the event loop every other request waits behind.
  *
- * An onSend hook, so it only sees bodies sent through `reply.send()`. /api/stream and /api/chat
- * write server-sent events straight to the socket and are untouched: compressing them would hold
- * each event back in a buffer.
+ * An onSend hook, so it only sees bodies sent through `reply.send()`. /api/chat writes server-sent
+ * events straight to the socket and is untouched. /api/stream does too, and compresses itself
+ * (services/stream.ts): a hook here would hold each event back in a buffer.
  */
 
 const brotli = promisify(brotliCompress);
@@ -27,17 +28,8 @@ export type Encoding = 'br' | 'gzip';
  * "not this one"; `*` stands for anything not listed.
  */
 export function pickEncoding(header: string | string[] | undefined): Encoding | null {
-  const weights = new Map<string, number>();
-  for (const part of (Array.isArray(header) ? header.join(',') : header ?? '').split(',')) {
-    const [name, ...params] = part.split(';').map((s) => s.trim().toLowerCase());
-    if (!name) continue;
-    const q = params.find((p) => p.startsWith('q='));
-    const weight = q === undefined ? 1 : Number(q.slice(2));
-    weights.set(name, Number.isFinite(weight) ? weight : 0);
-  }
-  const weight = (name: string) => weights.get(name) ?? weights.get('*') ?? 0;
-  const br = weight('br');
-  const gz = weight('gzip');
+  const br = codingWeight(header, 'br');
+  const gz = codingWeight(header, 'gzip');
   if (br <= 0 && gz <= 0) return null;
   return br >= gz ? 'br' : 'gzip';
 }

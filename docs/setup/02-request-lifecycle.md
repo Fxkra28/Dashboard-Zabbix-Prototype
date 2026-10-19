@@ -13,6 +13,6 @@ What happens when the Problems page loads:
    - collects the trigger ids, calls `trigger.get` with `selectHosts` once,
    - stitches `hostid` + host `name` onto every problem.
 5. The enriched JSON is cached and returned to the browser.
-6. React renders the table; a timer re-polls every 30 s.
+6. React renders the table; a timer re-polls every 30 s, and the live stream makes the page read again at once when the list changes (§7).
 
 This "call Zabbix, enrich, cache, serve a clean shape" pattern is the same for every endpoint.

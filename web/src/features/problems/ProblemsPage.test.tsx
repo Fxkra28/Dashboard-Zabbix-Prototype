@@ -43,6 +43,95 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** An EventSource the test drives: a frame arrives when it says so. */
+class FakeEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
+  static all: FakeEventSource[] = [];
+  readyState = FakeEventSource.OPEN;
+  onopen: (() => void) | null = null;
+  onerror: ((e: unknown) => void) | null = null;
+  private listeners = new Map<string, ((e: { data: string }) => void)[]>();
+  constructor(readonly url: string) {
+    FakeEventSource.all.push(this);
+  }
+  addEventListener(type: string, fn: (e: { data: string }) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+  }
+  close() {
+    this.readyState = FakeEventSource.CLOSED;
+  }
+  frame(type: string, data: unknown) {
+    for (const fn of this.listeners.get(type) ?? []) fn({ data: JSON.stringify(data) });
+  }
+}
+
+describe('the live stream tells the page when to read the list again (IN-11)', () => {
+  const send = (list: unknown) => act(() => FakeEventSource.all[FakeEventSource.all.length - 1].frame('problems', list));
+  const reads = () => vi.mocked(api.problems).mock.calls.length;
+
+  beforeEach(() => {
+    FakeEventSource.all = [];
+    vi.stubGlobal('EventSource', FakeEventSource);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('listens to the stream the Dashboard listens to', async () => {
+    open('/problems');
+    await screen.findByRole('row', { name: /Problem 2/ });
+    expect(FakeEventSource.all).toHaveLength(1);
+    expect(FakeEventSource.all[0].url).toBe('/bff/api/stream');
+  });
+
+  it('reads the full list when a frame says a problem opened, and shows it, without waiting for the 30 s poll', async () => {
+    open('/problems');
+    await screen.findByRole('row', { name: /Problem 2/ });
+    expect(reads()).toBe(1);
+
+    send(three); // the first frame only says where things stand
+    expect(reads()).toBe(1);
+
+    const four = [...three, problem(4, 5, 10)];
+    vi.mocked(api.problems).mockResolvedValue(four);
+    send(four);
+    expect(await screen.findByRole('row', { name: /Problem 4/ })).toBeInTheDocument();
+    expect(reads()).toBe(2);
+  });
+
+  it('reads again for a problem resolved or acknowledged, and not for a frame that repeats or only renames', async () => {
+    open('/problems');
+    await screen.findByRole('row', { name: /Problem 2/ });
+    send(three);
+
+    send(three);
+    send([{ ...three[0], name: 'Renamed', host: 'moved-host', opdata: '91 %' }, three[1], three[2]]);
+    expect(reads()).toBe(1);
+
+    send([{ ...three[0], acknowledged: '1' }, three[1], three[2]]);
+    expect(reads()).toBe(2);
+    send([{ ...three[0], acknowledged: '1' }, { ...three[1], r_eventid: '900' }, three[2]]);
+    expect(reads()).toBe(3);
+  });
+
+  it('keeps polling, so a page whose stream never connects behaves as it did', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    open('/problems');
+    await act(() => vi.advanceTimersByTimeAsync(10));
+    expect(reads()).toBe(1);
+    await act(() => vi.advanceTimersByTimeAsync(30_000));
+    expect(reads()).toBe(2);
+  });
+
+  it('works where there is no EventSource at all: no error, and the poll alone', async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('EventSource', undefined);
+    open('/problems');
+    expect(await screen.findByRole('row', { name: /Problem 2/ })).toBeInTheDocument();
+    expect(reads()).toBe(1);
+  });
+});
+
 describe('a link to one problem (UX-11)', () => {
   it('marks the row the eventid names, in words as well as by the bar', async () => {
     open('/problems?eventid=2');

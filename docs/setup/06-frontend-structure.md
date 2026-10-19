@@ -9,12 +9,14 @@ plain CSS (primary `#2B5584`, Inter and IBM Plex Mono, one set of CSS variables 
 ```
 web/src/
 ├── main.tsx, App.tsx    # the entry, and the router: 18 pages, each loaded on demand (lazy)
-├── api.ts               # typed fetch client → /bff/api/*, token handling, streamUrl()
-├── types.ts, guards.ts  # shared Zabbix-shaped TypeScript types, and the checks that read a reply defensively
+├── api/                 # the typed fetch client → /bff/api/*, one file per feature (sla.ts, problems.ts, ...), client.ts (request, the 401 and the failure message), session.ts (when the session ends, renewal, sign-in), index.ts (the one `api` object)
+├── types/               # the Zabbix-shaped TypeScript types, one file per feature behind index.ts (held to docs/api/openapi.yaml by a test)
+├── guards/              # the checks that read a reply defensively, one file per feature behind index.ts, shape.ts holding the shared checks and misfit.ts what a page says when one fails
 ├── theme.ts             # HCML palette + Zabbix SEVERITIES
+├── generated/           # openapi.ts, made from docs/api/openapi.yaml by `npm run gen:api` (openapi-typescript); never edited by hand
 ├── styles/              # the whole theme (sidebar, cards, tables, chips, map svg): 18 numbered parts and index.css
 ├── features/            # one folder per part of the portal: its pages, components, hooks, logic and their tests
-│   ├── dashboard/       # Overview.tsx (/), the Hosts view (HostsView.tsx, Tabs.tsx), useSSE.ts, the wall's rotation and fit
+│   ├── dashboard/       # Overview.tsx (/), the Hosts view (HostsView.tsx, Tabs.tsx), the wall's rotation and fit
 │   ├── problems/        # Problems.tsx (/problems) + per-row "Explain", ProblemsTable.tsx, AckDialog.tsx (the only write)
 │   ├── hosts/           # Hosts.tsx (/hosts), Devices.tsx (/devices), LatestData.tsx (/latest)
 │   ├── graphs/          # HostDetail.tsx (/graphs?hostid=), the item and range pickers, TimeSeriesChart.tsx (ECharts)
@@ -27,12 +29,16 @@ web/src/
 │   └── shell/           # Layout.tsx, Sidebar.tsx (grouped, collapsible menu), ErrorBoundary.tsx, session renewal, UI prefs
 ├── shared/              # what two or more features use
 │   ├── components/      # KpiCard.tsx, StatusBadge.tsx, Pager.tsx, Field.tsx, states.tsx (loading/error/empty), icons.tsx (inline SVG)
-│   ├── hooks/           # useAsync.ts (fetch + loading/error + optional polling), useAuth.ts (one shared /api/auth/me probe), useUrlState.ts, ...
+│   ├── hooks/           # useAsync.ts (fetch + loading/error + optional polling), useAuth.ts (one shared /api/auth/me probe), useSSE.ts (the live stream, for the Dashboard and the Problems page), useUrlState.ts, ...
 │   └── lib/             # the "logics": severity.ts, time.ts, units.ts, plural.ts, freshness.ts, sites.ts, wall.ts, chatStore.ts
 └── __tests__/           # the tests that cut across features (routes, back/forward, narrow screens, markup) and the layering and stylesheet tests
 ```
 
 A test sits beside the file it tests (`Sidebar.tsx`, `Sidebar.test.tsx`).
+
+`api/`, `types/` and `guards/` are folders of one file per feature, and each has an `index.ts` that re-exports its public names, so a page still
+writes `import { api } from '../../api'` and `import type { Host } from '../../types'`. A test mocks `'../../api'` and still replaces the one module
+the page imports. They stayed at the root, not inside the features, because the root may import no feature and a page of any feature may call any of them.
 
 The direction is one way. Files at the root (but `App.tsx` and `main.tsx`) and files in `shared/` import no
 feature, and a feature imports another only where a table in

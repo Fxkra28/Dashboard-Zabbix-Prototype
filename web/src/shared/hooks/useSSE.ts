@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { noteMisfit, unreadableMessage, type Guard } from '../../guards';
 
+/** The BFF writes at least every 15 s, a `ping` when nothing else (stream.ts); three missed means the line is dead. */
+export const STREAM_SILENT_MS = 45_000;
+
 /** The `ageMs` a keep-alive carries, when it carries one. */
 function ageOf(raw: unknown): number | null {
   if (typeof raw !== 'string') return null;
@@ -80,6 +83,8 @@ export function useSSE<T>(url: string, event: string, silentMs?: number, guard?:
     };
 
     const open = () => {
+      // A browser that has no EventSource is never connected, and the page polls.
+      if (typeof EventSource === 'undefined') return;
       const source = new EventSource(url);
       es = source;
       haveList = false; // this connection has not sent one yet

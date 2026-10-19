@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/** The tabs' channel is not under test here; api.ts only needs one to exist. */
+/** The tabs' channel is not under test here; api/ only needs one to exist. */
 class FakeChannel {
   postMessage() {}
   addEventListener() {}
@@ -16,7 +16,7 @@ const STATS = { hosts: 24, items: 1000, triggers: 300, groups: 8, problems: 3, u
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
-/** A fresh api.ts for each test: its session state lives at module level. */
+/** A fresh api/ for each test: its session state lives at module level (api/session.ts). */
 async function load() {
   vi.resetModules();
   return import('../api');

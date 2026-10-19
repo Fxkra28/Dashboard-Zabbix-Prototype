@@ -3,13 +3,10 @@ import { BadRequestError, intParam } from '../core/validate.js';
 import { config } from '../core/config.js';
 import { parseMonth } from '../sli/time.js';
 import { parseProfile } from '../services/sli.js';
-import {
-  getAgingReport,
-  getAllProblemsAvailabilityReport,
-  getCapacityReport,
-  getDerivedAvailabilityReport,
-  getNoiseReport,
-} from '../services/analytics.js';
+import { getAgingReport } from '../services/aging.js';
+import { getAllProblemsAvailabilityReport, getDerivedAvailabilityReport } from '../services/availability.js';
+import { getCapacityReport } from '../services/capacity.js';
+import { getNoiseReport } from '../services/noise.js';
 
 export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
   // intParam, not Math.min/Math.max around Number(): `days=abc` is NaN, NaN

@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     // Vite 5's default browser floor. Vite 8 raised its own to Chrome 111 and
-    // Safari 16.4, which would drop the older wall screens api.ts still allows for.
+    // Safari 16.4, which would drop the older wall screens api/ still allows for.
     build: { target: ['es2020', 'edge88', 'firefox78', 'chrome87', 'safari14'] },
     server: {
       port: Number(env.VITE_PORT) || 5173,

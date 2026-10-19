@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../../types';
 
-/** Where this tab keeps the Assistant conversation; api.ts clears it when a session ends or begins. */
+/** Where this tab keeps the Assistant conversation; api/session.ts clears it when a session ends or begins. */
 export const CHAT_STORAGE_KEY = 'hcml_chat';
 
 /** The saved conversation, or none when storage is blocked or holds something else. */

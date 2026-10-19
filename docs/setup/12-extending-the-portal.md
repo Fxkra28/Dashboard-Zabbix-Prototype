@@ -12,8 +12,10 @@ To add a new Zabbix-backed view:
    services and never another route; `layering.test.ts` fails if it does. Add the path to
    [`docs/api/openapi.yaml`](../api/openapi.yaml): `npm run check:api` fails on a route that is registered and undocumented. A page
    of the menu also goes in `pageAccess.ts`, so that the sidebar and the guard agree on who may open it.
-3. Types: add the response shape to `web/src/types.ts`.
-4. API client: add a method to `web/src/api.ts`.
+3. Types: add the response shape to the file of its feature in `web/src/types/` and export it from `types/index.ts`, and describe the same answer in
+   `openapi.yaml` (step 2), then run `npm run gen:api` in `web/`. `npm run typecheck` fails where the file promises less than the type needs.
+4. API client: add a method to the file of its feature in `web/src/api/` (`api/index.ts` spreads each file's calls into the one `api` object), and add its path with its type to the table at the top of
+   `web/src/__tests__/openapiTypes.test.ts`; that test fails for a data call that is not in it.
 5. Page: put it in the feature folder it belongs to, `web/src/features/<feature>/` (a new feature is a new folder
    and a line in the table of `web/src/__tests__/layering.test.ts`), with its test beside it. Build it with
    `useAsync` + `<Async>`, and reuse what is in `shared/`: `SeverityBadge`, `SeverityCounts`, `KpiCard`, the tables. A

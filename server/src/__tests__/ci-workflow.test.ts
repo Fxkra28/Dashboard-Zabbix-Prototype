@@ -146,7 +146,7 @@ describe('.github/workflows/ci.yml', () => {
     const job = text.slice(text.indexOf('\n  secrets:'), text.indexOf('\n  images:'));
 
     it('runs on pushes and pull requests, and not on a manual run, which has no commit range and would read all history', () => {
-      expect(job).toMatch(/\n    if: github\.event_name != 'workflow_dispatch'\n/);
+      expect(job).toMatch(/\n {4}if: github\.event_name != 'workflow_dispatch'\n/);
     });
 
     it('checks out the whole history, which is what a scan of a range of commits needs', () => {
@@ -172,8 +172,9 @@ describe('.github/workflows/ci.yml', () => {
       expect(runs(steps, 'npm test', dir)).toBe(true);
     });
 
-    it('builds the server and the web app, and lints the web app; the build also typechecks vite.config.ts', () => {
+    it('builds the server and the web app, and lints both; the web build also typechecks vite.config.ts', () => {
       expect(runs(serverSteps, 'npm run build', 'server')).toBe(true);
+      expect(runs(serverSteps, 'npm run lint', 'server')).toBe(true);
       expect(runs(webSteps, 'npm run lint', 'web')).toBe(true);
       expect(runs(webSteps, 'npm run build', 'web')).toBe(true);
     });

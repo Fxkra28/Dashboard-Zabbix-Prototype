@@ -49,6 +49,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
       return reply.code(503).send({ error: 'zabbix_timeout', message: sourceDown(req.id) });
     }
     if (err instanceof ZabbixWriteDisabledError) {
+      req.log.warn({ detail: err.detail }, 'zabbix write-back is not switched on');
       return reply.code(503).send({ error: 'zabbix_write_disabled', message: err.message });
     }
     if (err instanceof ZabbixApiError) {
@@ -58,6 +59,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
     // The AI layer is optional garnish: when it fails, say so plainly and
     // leave the rest of the portal alone.
     if (err instanceof AiDisabledError) {
+      req.log.warn({ detail: err.detail }, 'AI is not switched on');
       return reply.code(503).send({ error: 'ai_disabled', message: err.message });
     }
     if (err instanceof AiBusyError) {
@@ -84,10 +86,10 @@ export function registerErrorHandler(app: FastifyInstance): void {
         message: e.message,
       });
     }
-    app.log.error(err);
+    req.log.error(err);
     return reply
       .code(500)
-      .send({ error: 'internal', message: 'The portal hit an unexpected error. Details are in the BFF log.' });
+      .send({ error: 'internal', message: `The portal hit an unexpected error. Tell an administrator and quote reference ${req.id}.` });
   });
 
   app.setNotFoundHandler((req, reply) =>

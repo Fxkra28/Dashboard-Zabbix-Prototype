@@ -3,7 +3,7 @@ import { Link, useLocation, useOutletContext } from 'react-router-dom';
 import { api, streamUrl } from '../../api';
 import { useAsync } from '../../shared/hooks/useAsync';
 import { useNow } from '../../shared/hooks/useNow';
-import { useSSE } from './useSSE';
+import { STREAM_SILENT_MS, useSSE } from '../../shared/hooks/useSSE';
 import { useSearchPatch, useUrlState } from '../../shared/hooks/useUrlState';
 import { useMeters } from '../meters/useMeters';
 import { useHostsView } from './useHostsView';
@@ -35,8 +35,6 @@ import { TableWrap } from '../../shared/components/TableWrap';
  */
 const isOpen = (p: Problem) => (!p.r_eventid || p.r_eventid === '0') && p.suppressed !== '1';
 
-/** The BFF writes at least every 15 s, a `ping` when nothing else (stream.ts); three missed means the line is dead. */
-const STREAM_SILENT_MS = 45_000;
 /** Past this the numbers on screen are old enough that a wall screen must say so. */
 const DATA_LATE_MS = 90_000;
 

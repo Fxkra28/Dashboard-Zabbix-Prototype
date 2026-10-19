@@ -220,7 +220,8 @@ export function parseRange(q: Record<string, string | undefined>, now: number): 
     }
     if (from >= to) throw new BadRequestError('from must be before to.');
     if (to - from > MAX_RANGE) throw new BadRequestError('The range may not exceed 400 days.');
-    return { from, to };
+    // Widened to whole minutes, so requests seconds apart share a cache entry and none loses a sample.
+    return { from: Math.floor(from / 60) * 60, to: Math.ceil(to / 60) * 60 };
   }
   const hours = intParam(q.hours, 24, 1, 8760);
   // Pinned to the next whole minute: every request within that minute shares a cache entry.
@@ -286,7 +287,7 @@ export function getGraph({ ids, from, to, points, now }: { ids: string[]; from: 
       ordered.map(async (item) => {
         const delay = parseDelay(item.delay);
         const vt = Number(item.value_type);
-        let samples: Sample[] = [];
+        let samples: Sample[];
 
         if (!useTrends) {
           const rows = await fetchHistory(item.itemid, vt, from, to - 1);

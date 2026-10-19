@@ -12,7 +12,7 @@ import type { Freshness, HostOverview, Me, Problem, Stats } from '../types';
 import { problem } from './problems';
 
 /**
- * The answers that drive the Dashboard, the Problems page and the Hosts page are checked in api.ts.
+ * The answers that drive the Dashboard, the Problems page and the Hosts page are checked in api/.
  * An answer of the wrong shape (a list that was an object has no `.filter`) becomes the page's
  * ordinary error, in plain words, instead of crashing it.
  */
@@ -61,7 +61,7 @@ const WHAT = {
   me: 'your sign-in details',
 } as const;
 
-describe('api.ts reads', () => {
+describe('api/ reads', () => {
   it('hand a whole answer to the page unchanged', async () => {
     await expect(api.problems()).resolves.toEqual(problems);
     await expect(api.hostsOverview()).resolves.toEqual([host]);

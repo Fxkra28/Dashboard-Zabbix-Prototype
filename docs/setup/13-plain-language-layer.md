@@ -66,7 +66,7 @@ One problem endpoint covers both tags and notification wording, because the trig
   `502 {error:'ai_error'}` on the explain routes only; every monitoring endpoint keeps serving 200.
   The message is one fixed sentence for the cause (could not be reached, took too long, returned an
   error, stopped early, gave an unusable answer, or refused the portal's key, which is the one that says
-  trying again will not help). The model's address and what it sent back go to
+  trying again will not help). A model that is not switched on says to tell an administrator; the setting to change goes to the log (UX-20). The model's address and what it sent back go to
   the BFF log only, never to the viewer; the Assistant's `error` frame follows the same rule.
 
 ## Configuration

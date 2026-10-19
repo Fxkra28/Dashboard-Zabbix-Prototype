@@ -1660,7 +1660,6 @@ describe('WinAnsi mapping, cutting and wrapping', () => {
           continue;
         }
         if (line) lines.push(line);
-        line = '';
         let rest = word;
         while (measure(rest, face, size) > max && rest.length > 1) {
           let end = rest.length - 1;

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { MIN_BYTES, pickEncoding, registerCompression } from '../http/compress.js';
+import { acceptsGzip, codingWeight } from '../core/acceptEncoding.js';
 
 /**
  * Compression as a browser sees it, through `app.inject()`: decoded bodies
@@ -118,5 +119,30 @@ describe('registerCompression', () => {
     expect(res.headers['content-encoding']).toBeUndefined();
     expect(res.headers['vary']).toBeUndefined();
     expect(res.body).toBe(`event: problems\ndata: ${json}\n\n`);
+  });
+});
+
+describe('acceptsGzip (the live stream, IN-11)', () => {
+  it('is true when gzip is named or the wildcard allows it, and for the header a browser sends over plain HTTP', () => {
+    expect(acceptsGzip('gzip, deflate')).toBe(true);
+    expect(acceptsGzip('GZIP')).toBe(true);
+    expect(acceptsGzip('identity, *')).toBe(true);
+    expect(acceptsGzip(['deflate', 'gzip;q=0.5'])).toBe(true);
+  });
+
+  it('is false when gzip is refused, not offered, or the header is missing', () => {
+    expect(acceptsGzip(undefined)).toBe(false);
+    expect(acceptsGzip('')).toBe(false);
+    expect(acceptsGzip('br')).toBe(false);
+    expect(acceptsGzip('gzip;q=0, br')).toBe(false);
+    expect(acceptsGzip('*;q=0, br')).toBe(false);
+    expect(acceptsGzip('identity')).toBe(false);
+  });
+
+  it('reads a weight the way pickEncoding does: its own q, else the wildcard, else 0, and a broken q as 0', () => {
+    expect(codingWeight('gzip;q=0.3, *;q=0.1', 'gzip')).toBe(0.3);
+    expect(codingWeight('gzip;q=0.3, *;q=0.1', 'br')).toBe(0.1);
+    expect(codingWeight('gzip;q=oops', 'gzip')).toBe(0);
+    expect(codingWeight(undefined, 'gzip')).toBe(0);
   });
 });

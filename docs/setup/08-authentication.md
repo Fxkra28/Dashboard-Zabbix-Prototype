@@ -12,7 +12,7 @@ No script on the page can read the token. The cookie is named by `SESSION_COOKIE
 `hcml_session`; hcml-portal-ollama's compose sets `hcml_session_ollama`, because cookies ignore ports)
 and is `HttpOnly`, `SameSite=Strict`, `Path=/`, with a `Max-Age` of the session length (12 h by default), and `Secure` when the request
 came over HTTPS. The browser sends it with every same-origin request, the SSE stream included.
-[`api.ts`](../../web/src/api.ts) keeps only when the session ends, from the `expiresIn` that sign-in,
+[`api/session.ts`](../../web/src/api/session.ts) keeps only when the session ends, from the `expiresIn` that sign-in,
 renewal and `/api/auth/me` return, and redirects to `/login` on a 401, keeping the page to return to
 after sign-in.
 

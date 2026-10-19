@@ -31,7 +31,7 @@ flowchart TB
 
     %%  Note also that stage 2's "signed in?" diamond is not implemented
     %%  as a route guard. No component reads the role and redirects; the
-    %%  automatic paths to /login are api.ts reacting to a 401, to a
+    %%  automatic paths to /login are the api client reacting to a 401, to a
     %%  sign-out in another tab, or to a page Back restores after one, so
     %%  an unauthenticated visitor sees the chrome for one round trip.
 
@@ -63,7 +63,7 @@ flowchart TB
         ASYNC["<b>useAsync(fn, deps, intervalMs)</b><br>loading &middot; error &middot; stale &middot; updatedAt"]
         GUARD["only the newest run may write state:<br>a slow answer for an old selection<br>is aborted, not painted"]
         POLL["<b>sequential polling</b><br>the next poll is scheduled only once<br>the last has settled &middot; paused while<br>the tab is hidden"]
-        APICALL["<b>api.ts request()</b><br>fetch /bff/api/&hellip;<br>the cookie rides along<br>POST: X-HCML-CSRF: 1"]
+        APICALL["<b>api/client.ts request()</b><br>fetch /bff/api/&hellip;<br>the cookie rides along<br>POST: X-HCML-CSRF: 1"]
 
         PAGE --> ASYNC
         ASYNC --> GUARD
@@ -136,4 +136,4 @@ flowchart TB
     class ACK written
     class BFF server
     class HASROLE,R401,GUARD,HIDDEN choice
-%% source-hash: db409db3a3ba
+%% source-hash: f8df566f97af

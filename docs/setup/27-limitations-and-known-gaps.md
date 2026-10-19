@@ -77,7 +77,7 @@ not discovered by a reader.
   placeholders. Availability figures cover the 93 that do.
 - Hourly averages are integer-truncated for unsigned items by Zabbix itself, in `trends_uint`.
   Nothing downstream can recover the precision.
-- `web/src/types.ts` is a hand-maintained mirror of the server's types, and in six places it is
+- `web/src/types/` is a hand-maintained mirror of the server's types, and in six places it is
   looser than the server. Nothing checks it. The server is authoritative.
 
 ## Documentation

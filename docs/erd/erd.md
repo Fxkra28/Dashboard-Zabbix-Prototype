@@ -485,7 +485,7 @@ Where each derived entity is built, and from what.
 |---|---|---|
 | `Site`, `SiteHost` | `getSites()`, [`services/sites.ts`](../../server/src/services/sites.ts) | `getHostsWithMeta()` + `getProblems()` |
 | `Link`, `LinkPath` | `getLinks()`, [`services/links.ts`](../../server/src/services/links.ts) | `item.get` on `icmpping*`, plus item tags |
-| `Incident` | `fetchIncidents()`, [`services/analytics.ts`](../../server/src/services/analytics.ts) | `event.get` problems + a batched recovery lookup |
+| `Incident` | `fetchIncidents()`, [`services/incidents.ts`](../../server/src/services/incidents.ts) | `event.get` problems + a batched recovery lookup |
 | `HostAvailability` | `getAvailability()` | `Incident[]` grouped by host, intervals merged |
 | `NoisyTrigger` | `getNoise()` | `Incident[]` grouped by trigger |
 | `AgingReport` | `getAging()` | `getProblems()`, unacknowledged only |
@@ -495,7 +495,7 @@ Where each derived entity is built, and from what.
 | `ServiceNode` | `getServiceTree()`, [`services/services.ts`](../../server/src/services/services.ts) | `service.get` + one `sla.getsli` per SLA |
 | `SlaSli` | `getSli()`, [`services/sla.ts`](../../server/src/services/sla.ts) | `sla.getsli` flattened, names from `service.get` |
 | `ProblemExplanation` | `humanize()`: [`server/src/clients/ai.ts`](../../server/src/clients/ai.ts) | one problem, reshaped and sent to an LLM |
-| `ChatSnapshot` | `buildSnapshot()`: [`server/src/services/assistant.ts`](../../server/src/services/assistant.ts) | problems + sites + SLA + services, capped and rendered as plain text |
+| `ChatSnapshot` | `buildSnapshot()`: [`server/src/services/assistantSnapshot.ts`](../../server/src/services/assistantSnapshot.ts) | problems + sites + SLA + services, capped and rendered as plain text |
 
 ### How a site is resolved
 
@@ -639,7 +639,7 @@ Things a reader would otherwise get wrong.
 - **Explain only works on a current problem.** It looks the event up inside the cached live-problems
   list, so a historical `eventid` returns 404 rather than an explanation.
 
-- **The type definitions exist twice.** `web/src/types.ts` and the server-side interfaces are
+- **The type definitions exist twice.** `web/src/types/` and the server-side interfaces are
   hand-maintained mirrors with no code generation and no shared module. Nothing checks them against
   each other. There is already one concrete drift: `NetDevice` extends `Host`, so it advertises
   `maintenance_status` and interface `available`, but `/api/net/devices` requests neither: those

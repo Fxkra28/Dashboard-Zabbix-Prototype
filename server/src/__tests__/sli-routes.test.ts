@@ -18,6 +18,8 @@ vi.mock('../clients/ai.js', async (importOriginal) => {
   return { ...actual, humanize: humanizeMock };
 });
 
+// The parameters of a Zabbix call, which the fixture reads by whatever names the call used.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Params = Record<string, any>;
 const AUG = { from: 1785517200, to: 1788195600 };
 /** The fake clock set in beforeEach: 2026-09-17T03:00:00Z. */
@@ -311,7 +313,7 @@ describe('analytics fixes', () => {
   });
 
   it('recognises the SNMP capacity keys HCML’s devices actually use', async () => {
-    const { capacityMetricFor } = await import('../services/analytics.js');
+    const { capacityMetricFor } = await import('../services/capacity.js');
     expect(capacityMetricFor('system.cpu.util[cpmCPUTotal5minRev.19]')).toBe('cpu');
     expect(capacityMetricFor('system.cpu.util[fgSysCpuUsage.0]')).toBe('cpu');
     expect(capacityMetricFor('system.cpu.util')).toBe('cpu');

@@ -36,6 +36,16 @@ function importsOf(file: string): string[] {
   return out;
 }
 
+/** What a file loads when it runs: `import type` and `export type` are erased by the compiler, so they are not an edge. */
+function runtimeImportsOf(file: string): string[] {
+  const text = readFileSync(file, 'utf8');
+  const specs = [
+    ...[...text.matchAll(/^(?:import|export)\s+(type\s+)?[^;]*?\bfrom\s*['"](\.{1,2}\/[^'"]+)['"]/gm)].filter((m) => !m[1]).map((m) => m[2]),
+    ...[...text.matchAll(/\bimport\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g)].map((m) => m[1]),
+  ];
+  return specs.map((spec) => path.resolve(path.dirname(file), spec.replace(/\.js$/, '')));
+}
+
 const inDir = (target: string, dir: string) => path.dirname(target) === path.join(SRC, dir);
 /** The folders of files the services share. */
 const SHARED = ['core', 'clients', 'domain', 'security', 'http'];
@@ -99,6 +109,34 @@ describe('the layers of server/src', () => {
       .filter((f) => !inDir(f, 'http') && !(path.basename(f) === 'index.ts' && path.dirname(f) === SRC))
       .flatMap((f) => importsOf(f).filter((t) => inDir(t, 'http')).map((t) => `${path.relative(SRC, f)} imports ${path.relative(SRC, t)}`))
       .filter((edge) => !allowed.includes(edge));
+    expect(offenders).toEqual([]);
+  });
+
+  it('has no import cycle among the files of services/', () => {
+    const services = files.filter((f) => inDir(f, 'services'));
+    const known = new Set(services.map((f) => f.replace(/\.ts$/, '')));
+    const edges = new Map(services.map((f) => [f.replace(/\.ts$/, ''), runtimeImportsOf(f).filter((t) => known.has(t))]));
+    const cycles: string[] = [];
+    const state = new Map<string, 'open' | 'done'>();
+    const walk = (node: string, trail: string[]) => {
+      state.set(node, 'open');
+      for (const next of edges.get(node) ?? []) {
+        if (state.get(next) === 'open') cycles.push([...trail.slice(trail.indexOf(next)), node, next].map((n) => path.basename(n)).join(' -> '));
+        else if (!state.has(next)) walk(next, [...trail, node]);
+      }
+      state.set(node, 'done');
+    };
+    for (const node of edges.keys()) if (!state.has(node)) walk(node, []);
+    expect(cycles).toEqual([]);
+  });
+
+  it('keeps the pieces of the assistant from importing its entry file, which tests replace', () => {
+    // assistant.ts is what the route and the tests import. A piece that imported it would get the replacement too, and make a cycle.
+    const entry = path.join(SRC, 'services', 'assistant');
+    const offenders = files
+      .filter((f) => inDir(f, 'services') && /assistant[A-Z]\w*\.ts$/.test(f))
+      .filter((f) => importsOf(f).includes(entry))
+      .map((f) => path.relative(SRC, f));
     expect(offenders).toEqual([]);
   });
 

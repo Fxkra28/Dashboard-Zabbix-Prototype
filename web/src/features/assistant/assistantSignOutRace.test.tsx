@@ -44,7 +44,7 @@ describe('an answer that lands while signing out', () => {
         }),
     );
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
-    // A fresh api.ts and chat store: the sign-out state is module-level.
+    // A fresh api/ and chat store: the sign-out state is module-level.
     vi.resetModules();
     const { default: Assistant } = await import('./Assistant');
     const { logout } = await import('../../api');

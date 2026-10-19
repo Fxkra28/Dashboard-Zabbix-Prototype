@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { returnPath } from './Login';
 
-/** returnPath reads ?next= the way goToSignIn (api.ts) writes it: URI-encoded. */
+/** returnPath reads ?next= the way goToSignIn (api/session.ts) writes it: URI-encoded. */
 const after = (next: string) => returnPath(`?next=${encodeURIComponent(next)}`);
 
 describe('returnPath: where sign-in goes next', () => {

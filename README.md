@@ -73,7 +73,7 @@ pipeline, the cache, sign-in, where a number comes from, both AI paths and the o
 
 ## Tech stack
 
-35 direct dependencies in total, 13 in the BFF and 22 in the web app, of which 13 ship: the
+40 direct dependencies in total, 17 in the BFF and 23 in the web app, of which 13 ship: the
 rest are build, test and lint tools. The two heaviest categories
 of dependency a project like this usually carries are deliberately absent: there is no ORM or
 database driver (the portal owns no data: everything comes from Zabbix over the API) and no
@@ -94,8 +94,9 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | `dotenv` | ^16.4 | `.env` in dev. In Docker, Compose passes the environment directly |
 | `@anthropic-ai/sdk` | ^0.124 | The `anthropic` backend of the AI layer, and nothing else. The OpenAI-compatible backend is hand-rolled on `fetch`: one response shape to maintain instead of a second SDK to keep current |
 | Report writers | not a package | `src/export/` writes the monthly SLA report as a PDF and as an Excel workbook, on request, with Node's built-in `zlib` and `crypto` modules and no PDF or spreadsheet library. ADR-0011 (`docs/architecture/adr/0011-build-the-sla-report-files-in-the-bff.md`) has the trade-off |
-| Vitest | ^5.0 | 1670 tests in 77 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
+| Vitest | ^5.0 | 1687 tests in 78 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
 | tsx | ^4.16 | `npm run dev` watch mode only. Production runs plain `node dist/index.js` |
+| ESLint (with `@eslint/js`, `typescript-eslint` and `globals`) | ^10.13 | Dev only, never shipped. `npm run lint` in `server/`: the recommended rules of ESLint and of typescript-eslint, and no warning allowed. The first run, on 19 October 2026, found 22 findings; the eight `eslint-disable` lines left each say why |
 
 ### Web: `web/`
 
@@ -106,9 +107,10 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | `react-router-dom` | ^7.18 | All 19 pages are `lazy()`. The initial bundle is 210 kB JS + 37 kB CSS; a page after that costs between 2 and 17 kB |
 | ECharts + `echarts-for-react` | ^6.1 / ^3.0 | Registered selectively (line chart, grid, tooltip, legend, data zoom, canvas renderer) instead of the barrel, which pulls in roughly a megabyte of chart types nothing draws. Drawn with the `v5` theme ECharts 6 ships, so the parts the portal does not colour itself look as they did on 5.x. Imported only by `TimeSeriesChart`, so its 608 kB chunk loads on Graphs and Network and nowhere else |
 | Custom CSS | not a package | One stylesheet in 18 numbered parts (`web/src/styles/`). HCML blue `#2B5584`, measured from the company logo, with Inter for text and IBM Plex Mono for IDs and figures. Light and dark come from one set of CSS variables, per [`DESIGN.md`](DESIGN.md). `web/scripts/tokens.check.mjs` computes the contrast of every pair in both themes and fails on a raw value used where a token exists |
-| Hand-rolled, on purpose | not a package | `features/dashboard/useSSE.ts` over native `EventSource`; `shared/hooks/useAsync.ts` for server state, in place of a query library; `features/assistant/parseMarkdown.ts` in 141 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
-| Vitest + Testing Library | ^5.0 / ^16.3 | 1132 tests in 78 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api.ts`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
+| Hand-rolled, on purpose | not a package | `shared/hooks/useSSE.ts` over native `EventSource`; `shared/hooks/useAsync.ts` for server state, in place of a query library; `features/assistant/parseMarkdown.ts` in 141 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
+| Vitest + Testing Library | ^5.0 / ^16.3 | 1173 tests in 81 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api/`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
 | ESLint | ^9.39 | `npm run lint` in `web/`: typescript-eslint, the two classic react-hooks rules and jsx-a11y's recommended set. On 9 because jsx-a11y does not support ESLint 10 yet |
+| `openapi-typescript` | ^7.13 | Dev only, never shipped. `npm run gen:api` in `web/` turns `docs/api/openapi.yaml` into `web/src/generated/openapi.ts`. A test holds the app's hand-written types (`types/`) to those: a response schema that promises less than a page needs, or a kind the page cannot hold, fails `npm run typecheck` and names the place, such as `/api/hosts[].status` |
 
 ### Around it
 
@@ -157,15 +159,16 @@ hcml-portal/
 │   │   ├── index.ts             # the composition root: plugins, hooks, route registration
 │   │   ├── routes/              # HTTP only: one registrar for each module (read the request, call a service, reply); 22 files, 39 of the 45 endpoints (sign-in is in security/auth.ts, health and ready in http/health.ts)
 │   │   ├── services/            # what the routes call: the Zabbix reads and the work done on them, one module for each route,
-│   │   │                        #   with the assistant (assistant.ts, chat.ts) and the live-stream hub (stream.ts)
+│   │   │                        #   the reports in six files, the assistant in seven (assistant.ts is its entry) beside chat.ts,
+│   │   │                        #   and the live-stream hub (stream.ts)
 │   │   ├── sli/                 # derived SLA: engine, events, intervals, summary, time, tree
 │   │   ├── export/              # SLA report files: one document model, a PDF writer, an Excel writer
-│   │   ├── core/                # env config + startup validation, the TTL cache, the gate, query parsing, the body schemas; imports nothing else
+│   │   ├── core/                # env config + startup validation, the TTL cache, the gate, query parsing, the body schemas, the Accept-Encoding weights; imports nothing else
 │   │   ├── clients/             # Zabbix JSON-RPC (read/write token split), the model client, the caps on its use
 │   │   ├── domain/              # what a host, a site and a problem are: naming rules, reachability, the shared reads
 │   │   ├── security/            # cookie sign-in + 3-tier RBAC guard, password hashes, the page table, the viewer policy
 │   │   ├── http/                # what index.ts wires in: rate limit, request id, compression, error mapping, health, shutdown
-│   │   └── __tests__/           # vitest: 77 files, 1670 tests; layering.test.ts keeps the direction (routes → services → the shared folders)
+│   │   └── __tests__/           # vitest: 78 files, 1687 tests; layering.test.ts keeps the direction (routes → services → the shared folders)
 │   └── scripts/                 # validate-sli.ts (HCML's published figures), hash-password.ts
 ├── web/                         # React + TypeScript + Vite, its own package.json, lockfile and Dockerfile
 │   ├── src/
@@ -173,8 +176,10 @@ hcml-portal/
 │   │   │                        #   assistant, auth, dashboard, graphs, hosts, meters, network, problems, reports, shell, sla
 │   │   ├── shared/              # what two or more features use: components/, hooks/, lib/
 │   │   ├── styles/              # the stylesheet in numbered parts; index.css imports them in cascade order
-│   │   ├── __tests__/           # tests that cross features (routes, layering, wording), the fixtures, and the setup; the other tests sit beside their code: 78 files, 1132 tests in all
-│   │   └── App.tsx, main.tsx, api.ts, types.ts, guards.ts, theme.ts
+│   │   ├── generated/           # openapi.ts, made from docs/api/openapi.yaml by `npm run gen:api`; never edited by hand
+│   │   ├── __tests__/           # tests that cross features (routes, layering, wording), the fixtures, and the setup; the other tests sit beside their code: 81 files, 1173 tests in all
+│   │   ├── api/, types/, guards/ # the client, the shapes it returns and the checks that read them: one file for each feature behind an index.ts
+│   │   └── App.tsx, main.tsx, theme.ts
 │   ├── scripts/                 # css.check.mjs, tokens.check.mjs, markdown.check.ts, units.check.ts
 │   ├── public/                  # logo.png · logo-mark.png · logo-icon.png (served at /), the fonts
 │   ├── brand/                   # the supplied original, kept for provenance, not served
@@ -187,7 +192,7 @@ hcml-portal/
 │   ├── getting-started.md       # clone → running portal
 │   ├── contributing.md          # the house rules, and why each one exists
 │   ├── setup/                   # how each subsystem works and why: 35 parts, indexed by setup.md
-│   ├── api/openapi.yaml         # all 45 endpoints; checked by tools/check/openapi.check.ts
+│   ├── api/openapi.yaml         # all 45 endpoints; checked by tools/check/openapi.check.ts, and the web's types against it by a web test
 │   ├── architecture/adr/        # 13 Architecture Decision Records (MADR)
 │   ├── schema/                  # the data model on three pages: CDM · ERD · PDM (start here)
 │   ├── flow/                    # how it runs: WebFlow · ServerFlow · DataFlow, and nine one-line flows
@@ -234,7 +239,7 @@ cd server
 cp .env.example .env          # set ZBX_URL + ZABBIX_API_TOKEN; auth needs JWT_SECRET + PORTAL_PASS
 npm install
 npm run dev                   # http://localhost:4000
-npm test                      # 1670 tests, no live Zabbix needed
+npm test                      # 1687 tests, no live Zabbix needed
 
 curl localhost:4000/api/health   # { ok, ts, ai, writeBack, defaults, version, startedAt, build, ready, streams }
 ```
@@ -313,7 +318,7 @@ successful login gives the browser a JWT valid for 12 hours by default (`SESSION
 (`SESSION_COOKIE`). The cookie is httpOnly, so no script on the page can read it, and `SameSite=Strict`,
 so other sites cannot make the browser send it. The browser sends it with every request to the
 portal, so it survives a page refresh and stays until you sign out or it expires; the page itself
-keeps only when the session ends (`web/src/api.ts`). Signing out (`POST /api/auth/logout`)
+keeps only when the session ends (`web/src/api/session.ts`). Signing out (`POST /api/auth/logout`)
 clears the cookie and sends every other open tab to the sign-in page. Sign-in allows 10 attempts a
 minute per account from one address.
 [ADR-0010](docs/architecture/adr/0010-session-cookie.md) has the trade-off.
@@ -610,11 +615,12 @@ Ollama. Either way the snapshot is capped (20 problems, a budget per section) an
 
 ```bash
 cd server
-npm test          # 1670 tests
+npm test          # 1687 tests
+npm run lint      # eslint
 npm run typecheck # app and tests
 
 cd ../web
-npm test          # 1132 tests, in jsdom
+npm test          # 1173 tests, in jsdom
 npm run lint      # eslint
 npm run typecheck # app and tests
 ```
@@ -757,7 +763,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | CSP | Content Security Policy: a header that limits what a web page may load. It is off in the BFF because the BFF only returns data; nginx serves the pages |
 | CSRF | Cross-site request forgery: another website making your browser send a request to the portal, cookie included. The BFF refuses a `POST` sent with the cookie unless it carries the `X-HCML-CSRF: 1` header, which another site cannot add |
 | DNS | Domain Name System: turns a name such as `host.docker.internal` into a network address |
-| ESLint | A linter: it reads the web code for mistakes, broken hook rules and accessibility problems without running it (`npm run lint` in `web/`) |
+| ESLint | A linter: it reads the code for mistakes without running it, and in the web also for broken hook rules and accessibility problems (`npm run lint` in `server/` and in `web/`) |
 | `.env` file | A text file of settings and secrets that the BFF reads when it starts. It is never committed to git. `.env.example` shows the same settings with no real values in them |
 | EventSource | The browser's built-in way to open an SSE connection. It cannot add a header, but it sends the session cookie like any request to the portal, which is how the live stream knows who you are |
 | Gitignored | Listed in `.gitignore`, so git never records the file |
@@ -807,7 +813,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Cache, TTL | A cache keeps a recent answer so the same question is not sent to Zabbix again. TTL, time to live, is how long an answer is kept |
 | CI | Continuous integration: checks that run automatically on every push. Here they are in `.github/workflows/ci.yml` |
 | CSS, CSS variables | CSS is the styling language of web pages. CSS variables hold each colour and size in one place, which is what lets light and dark mode share one stylesheet |
-| Dependency | An outside library the project relies on. There are 35 direct ones, 13 of them shipped, and adding more is avoided on purpose |
+| Dependency | An outside library the project relies on. There are 40 direct ones, 13 of them shipped, and adding more is avoided on purpose |
 | `diff -r` | A command that compares two folders file by file. It is how the two copies are proved to share one source tree |
 | Docker, image, container | Docker packages an app with everything it needs into an image. A running copy of an image is a container. Docker Desktop is the app that runs Docker on a Mac |
 | Docker Compose | Starts several containers together from `docker-compose.yml`. Here there are two: `portal-bff` and `portal-web` |
@@ -832,7 +838,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Typecheck | Running the TypeScript checker (`npm run typecheck`) to catch mistakes, without building anything |
 | TypeScript | JavaScript with types that are checked before the code runs. Both `server/` and `web/` are written in it |
 | Vite | The tool that serves the web app during development and builds it for production |
-| Vitest | The test runner. `npm test` runs 1670 tests in `server/` with Zabbix faked, so no live system is needed, and 1132 in `web/` |
+| Vitest | The test runner. `npm test` runs 1687 tests in `server/` with Zabbix faked, so no live system is needed, and 1173 in `web/` |
 | zlib, crypto | Two modules that come with Node itself: zlib compresses and unpacks data, and crypto does hashing. The SLA report's PDF and Excel writers are built on them, in place of a PDF or spreadsheet library |
 
 ### Documents

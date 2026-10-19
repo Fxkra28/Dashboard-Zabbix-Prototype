@@ -13,7 +13,9 @@ vi.mock('../clients/zabbix.js', async (importOriginal) => {
   return { ...actual, zbx: zbxMock };
 });
 
-const { getAvailability, getNoise, OPEN_AT_START_LOOKBACK, LONG_OUTAGE_LOOKUPS } = await import('../services/analytics.js');
+const { getAvailability } = await import('../services/availability.js');
+const { getNoise } = await import('../services/noise.js');
+const { OPEN_AT_START_LOOKBACK, LONG_OUTAGE_LOOKUPS } = await import('../services/incidents.js');
 
 const DAY = 86_400;
 const NOW = Math.floor(Date.parse('2026-09-17T03:00:00Z') / 1000);

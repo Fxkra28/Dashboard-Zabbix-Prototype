@@ -57,7 +57,7 @@ page's, not that page's own table. Both pages keep the buttons off until the fig
 loaded. A press calls `GET /api/sli/export` and saves the answer under the name the BFF sends, such
 as `HCML_SLA_Report_2026-08.pdf`. While a file is being prepared the button reads *Preparing PDF…*
 and a second press does nothing. A failure appears next to the buttons and names the format that
-failed. The code is `web/src/features/sla/ReportDownload.tsx` and `api.sliExport` in `web/src/api.ts`.
+failed. The code is `web/src/features/sla/ReportDownload.tsx` and `api.sliExport` in `web/src/api/sla.ts`.
 
 What is in the file. Both formats are made from one document, so they say the same thing.
 

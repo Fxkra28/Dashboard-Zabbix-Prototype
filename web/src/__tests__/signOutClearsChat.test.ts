@@ -38,7 +38,7 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-// One import for the file: each api.ts instance adds a window listener, and jsdom's window lasts the whole file.
+// One import for the file: each fresh api/ adds a window listener (api/index.ts), and jsdom's window lasts the whole file.
 const loadApi = () => import('../api');
 
 describe('the Assistant conversation and the end of a session', () => {

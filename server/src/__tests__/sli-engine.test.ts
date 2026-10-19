@@ -143,6 +143,8 @@ describe('aggregate and helpers', () => {
 
 // Against a mocked Zabbix
 
+// The parameters of a Zabbix call, which the fixture reads by whatever names the call used.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Params = Record<string, any>;
 
 interface Fixture {

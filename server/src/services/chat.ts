@@ -90,7 +90,7 @@ export function publicMessage(err: unknown): string {
     return SOURCE_DOWN;
   }
   const typed = err instanceof AiUpstreamError || err instanceof AiDisabledError;
-  return typed ? err.message : 'The assistant hit an unexpected error. Details are in the BFF log.';
+  return typed ? err.message : 'The assistant hit an unexpected error. Tell an administrator.';
 }
 
 export function parseTurns(body: unknown): ChatTurn[] | null {

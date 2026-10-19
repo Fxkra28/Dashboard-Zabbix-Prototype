@@ -1,6 +1,6 @@
 # API documentation
 
-[`openapi.yaml`](openapi.yaml) is the contract for the BFF: 41 endpoints (36 GET and 5 POST), with
+[`openapi.yaml`](openapi.yaml) is the contract for the BFF: 45 endpoints (40 GET and 5 POST), with
 every query parameter, both security schemes, every status code and every response schema.
 Fastify's own client errors can come back from any POST and are not repeated per route: 400
 `fst_err_ctp_invalid_json_body` for malformed JSON, and 415 for a content type Fastify has no
@@ -40,15 +40,17 @@ that matter more than the schemas do.
 npm run check:api    # at the repository root; the same as ./server/node_modules/.bin/tsx tools/check/openapi.check.ts
 ```
 
-Zero dependencies. It extracts every `app.get(`/`app.post(` from `server/src`, extracts every path key
-from the spec, and fails if either side has one the other lacks, or if the spec lists a path twice.
-It self-tests against fixtures before reading a real file, so a broken checker fails loudly instead of
+Zero dependencies. It extracts every `app.get(`/`app.post(` from `server/src` and every operation from the spec, and fails if either
+side has one the other lacks (path, method or path parameter), if the spec lists a path twice, if a guarded route does not document 401,
+or if a route that can answer 403 or 400 does not say so. It also fails on a description YAML would cut at a comma: in a one-line
+`{ type: string, description: Seconds, summed }` the sentence ends at the comma and the rest becomes a key with no value, silently.
+Quote the whole description. It does not parse YAML, so a real syntax error is not its job: the web tests read the file with the generator and fail on one, which the file as committed on 19 October had in two places. It self-tests against fixtures before reading a real file, so a broken checker fails loudly instead of
 passing everything.
 
 Expected output:
 
 ```
-openapi.check: 41 endpoints (36 GET + 5 POST), all documented, none extra.
+openapi.check: 45 endpoints (40 GET + 5 POST), all documented, none extra. Methods and path parameters agree; ...
 ```
 
 **Run it after adding a route, and after editing the spec.** It is the reason this document will not
@@ -56,6 +58,13 @@ become the next stale endpoint table.
 
 One formatting contract it depends on: inside the `paths:` block, a path key is a two-space-indented
 line ending in a colon. Keep that shape, or teach the checker the new one.
+
+The response schemas are held to the web app as well. `web/src/generated/openapi.ts` is made from this file by
+`npm run gen:api` in `web/` (the dev dependency `openapi-typescript`), and `web/src/__tests__/openapiTypes.test.ts` checks, when the
+web is typechecked, that what each schema says an answer can be is something the app's own type accepts. So a field the app needs must
+be in `required` here, with the kind the app expects. The test fails while the generated file is out of date. It holds the file to the
+app, not the server to the file: nothing yet compares the server's real answers with the schemas, so when a type in `server/src` changes,
+change its schema in the same commit.
 
 ## Things the spec says that are easy to get wrong
 

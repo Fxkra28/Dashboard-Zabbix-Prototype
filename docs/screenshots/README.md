@@ -55,7 +55,8 @@ the top says is a guess.
 
 One item over a calendar month, read from hourly trends. Under the chart are its minimum, average,
 maximum and last values, and Show data opens every plotted point as a table, which the tooltip otherwise
-gives one point at a time.
+gives one point at a time. Download CSV beside it saves the same table as a file, one column for each
+selected item, with the unit in the column heading.
 
 ### Network
 

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import http, { type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { PassThrough } from 'node:stream';
+import { createGunzip } from 'node:zlib';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { ZbxProblem } from '../domain/queries.js';
 import { invalidate } from '../core/cache.js';
@@ -9,7 +11,7 @@ import { config } from '../core/config.js';
 import { ZabbixApiError } from '../clients/zabbix.js';
 import { genReqId, registerRequestId } from '../http/requestId.js';
 import { streamRoutes } from '../routes/stream.js';
-import { MAX_QUIET_MS, TICK_MS, connectedClients, endStreams, fingerprint, frameJson, notifyProblemsChanged, pingFrame, refusalFor, shouldSend, subscribe } from '../services/stream.js';
+import { MAX_QUIET_MS, TICK_MS, connectedClients, endStreamOf, endStreams, fingerprint, frameJson, notifyProblemsChanged, pingFrame, refusalFor, shouldSend, subscribe } from '../services/stream.js';
 
 /**
  * The shared SSE ticker: one read per tick however many screens listen, a frame only when something
@@ -465,6 +467,139 @@ describe('GET /api/stream', () => {
     made.req.destroy();
     await vi.waitFor(() => expect(connectedClients()).toBe(0));
     await app.close();
+  });
+});
+
+describe('GET /api/stream compressed (IN-11)', () => {
+  /** One screen over a real socket: the bytes off the wire, and the text they decode to (itself, when it asked for no gzip). */
+  function openScreen(port: number, headers: Record<string, string> = {}) {
+    const screen = { headers: {} as http.IncomingHttpHeaders, wire: 0, text: '', failure: null as Error | null, ended: false, req: undefined as unknown as http.ClientRequest };
+    const answered = new Promise<void>((resolve, reject) => {
+      screen.req = http.get({ host: '127.0.0.1', port, path: '/api/stream', headers }, (res) => {
+        screen.headers = res.headers;
+        res.on('data', (chunk: Buffer) => (screen.wire += chunk.length));
+        const decoded = res.headers['content-encoding'] === 'gzip' ? res.pipe(createGunzip()) : res;
+        decoded.setEncoding('utf8');
+        decoded.on('data', (chunk: string) => (screen.text += chunk));
+        decoded.on('error', (err: Error) => (screen.failure = err));
+        decoded.on('end', () => (screen.ended = true));
+        resolve();
+      });
+      screen.req.on('error', reject);
+    });
+    return { screen, answered };
+  }
+  const frameCount = (text: string) => text.split('event: problems').length - 1;
+
+  async function appWith(list: ZbxProblem[]) {
+    invalidate('');
+    getProblemsMock.mockReset().mockResolvedValue(list);
+    const app = Fastify({ logger: false });
+    await app.register(streamRoutes);
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    return { app, port: (app.server.address() as AddressInfo).port };
+  }
+  const many = (n: number, name = 'High ICMP ping loss') =>
+    Array.from({ length: n }, (_, i) => problem({ eventid: String(1000 + i), name: `${name} on host ${i}`, host: `site-${i % 30}-core-${i}`, hostid: String(20000 + i) }));
+
+  it('sends frames compressed to a screen that accepts gzip, each one readable as soon as it is written', async () => {
+    const { app, port } = await appWith(many(400));
+    const { screen, answered } = openScreen(port, { 'accept-encoding': 'gzip, deflate' });
+    await answered;
+    expect(screen.headers['content-encoding']).toBe('gzip');
+    expect(screen.headers['content-type']).toBe('text/event-stream');
+    expect(String(screen.headers.vary)).toMatch(/accept-encoding/i);
+
+    // The first frame decodes while the stream is still open: it was flushed, not held for more.
+    await vi.waitFor(() => expect(frameCount(screen.text)).toBe(1));
+    expect(screen.ended).toBe(false);
+
+    // And so does a later one, pushed after a write.
+    getProblemsMock.mockResolvedValue(many(401));
+    invalidate('');
+    await notifyProblemsChanged();
+    await vi.waitFor(() => expect(frameCount(screen.text)).toBe(2));
+    expect(screen.ended).toBe(false);
+    expect(screen.failure).toBeNull();
+
+    // The bytes that crossed are a fraction of the text they carry.
+    expect(screen.wire).toBeLessThan(screen.text.length * 0.25);
+
+    screen.req.destroy();
+    await vi.waitFor(() => expect(connectedClients()).toBe(0));
+    await app.close();
+  });
+
+  it('decodes to exactly the text a screen with no gzip is sent', async () => {
+    const { app, port } = await appWith(many(60));
+    const packed = openScreen(port, { 'accept-encoding': 'gzip' });
+    const plain = openScreen(port);
+    await Promise.all([packed.answered, plain.answered]);
+    await vi.waitFor(() => expect(frameCount(packed.screen.text)).toBe(1));
+    await vi.waitFor(() => expect(frameCount(plain.screen.text)).toBe(1));
+    expect(plain.screen.headers['content-encoding']).toBeUndefined();
+    expect(String(plain.screen.headers.vary)).toMatch(/accept-encoding/i);
+    expect(packed.screen.text).toBe(plain.screen.text);
+
+    packed.screen.req.destroy();
+    plain.screen.req.destroy();
+    await vi.waitFor(() => expect(connectedClients()).toBe(0));
+    await app.close();
+  });
+
+  it('sends plain text to a screen that refuses gzip, or asks only for another coding', async () => {
+    const { app, port } = await appWith(many(5));
+    const refused = openScreen(port, { 'accept-encoding': 'gzip;q=0, identity' });
+    const brotli = openScreen(port, { 'accept-encoding': 'br' });
+    await Promise.all([refused.answered, brotli.answered]);
+    expect(refused.screen.headers['content-encoding']).toBeUndefined();
+    expect(brotli.screen.headers['content-encoding']).toBeUndefined();
+    await vi.waitFor(() => expect(frameCount(refused.screen.text)).toBe(1));
+
+    refused.screen.req.destroy();
+    brotli.screen.req.destroy();
+    await vi.waitFor(() => expect(connectedClients()).toBe(0));
+    await app.close();
+  });
+
+  it('ends a compressed stream with its trailer when the server shuts it, so the screen sees a clean end', async () => {
+    const { app, port } = await appWith(many(20));
+    const { screen, answered } = openScreen(port, { 'accept-encoding': 'gzip' });
+    await answered;
+    await vi.waitFor(() => expect(frameCount(screen.text)).toBe(1));
+
+    expect(endStreams()).toBe(1);
+    await vi.waitFor(() => expect(screen.ended).toBe(true));
+    expect(screen.failure).toBeNull();
+    expect(connectedClients()).toBe(0);
+    await app.close();
+  });
+
+  it('endStreamOf() ends a compressed screen cleanly, and a plain response that was never subscribed', async () => {
+    const dest = new PassThrough();
+    const chunks: Buffer[] = [];
+    dest.on('data', (c: Buffer) => chunks.push(c));
+    const gone = subscribe(dest as unknown as ServerResponse, 'user:ana', { gzip: true });
+    expect(connectedClients()).toBe(1);
+
+    const decoded = new Promise<string>((resolve, reject) => {
+      const gunzip = createGunzip();
+      let text = '';
+      gunzip.setEncoding('utf8');
+      gunzip.on('data', (d: string) => (text += d));
+      gunzip.on('error', reject);
+      gunzip.on('end', () => resolve(text));
+      dest.on('end', () => gunzip.end(Buffer.concat(chunks)));
+    });
+    endStreamOf(dest as unknown as ServerResponse);
+    // The response ends once the compressor has written its trailer; the route's close handler then removes the screen.
+    await expect(decoded).resolves.toBe('');
+    gone();
+    expect(connectedClients()).toBe(0);
+
+    const stranger = new PassThrough();
+    endStreamOf(stranger as unknown as ServerResponse);
+    expect(stranger.writableEnded).toBe(true);
   });
 });
 

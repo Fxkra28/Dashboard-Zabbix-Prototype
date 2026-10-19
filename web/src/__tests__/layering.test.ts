@@ -47,6 +47,16 @@ function importsOf(file: string): string[] {
   return [...raw[`../${file}`].matchAll(/(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g)].map((m) => resolve(file, m[1]));
 }
 
+/** What a file loads when it runs: `import type` and `export type` are erased by the compiler, so they are not an edge. */
+function runtimeImportsOf(file: string): string[] {
+  const text = raw[`../${file}`];
+  const specs = [
+    ...[...text.matchAll(/^(?:import|export)\s+(type\s+)?[^;]*?\bfrom\s*['"](\.{1,2}\/[^'"]+)['"]/gm)].filter((m) => !m[1]).map((m) => m[2]),
+    ...[...text.matchAll(/\bimport\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g)].map((m) => m[1]),
+  ];
+  return specs.map((spec) => resolve(file, spec));
+}
+
 /** The feature's name, 'shared', or 'root'. */
 function unitOf(path: string): string {
   const [first, second] = path.split('/');
@@ -97,6 +107,26 @@ describe('the layers of web/src', () => {
       done.add(unit);
     };
     expect(() => Object.keys(MAY_IMPORT).forEach((unit) => visit(unit, []))).not.toThrow();
+  });
+
+  it('has no import cycle among the shipped files, a type-only import not counting', () => {
+    // api/ is a folder of files that import one another (the calls, the transport, the session); a cycle there would make what a test
+    // that replaces `api` sees depend on which file loaded first.
+    const stem = (f: string) => f.replace(/\.(ts|tsx)$/, '').replace(/\/index$/, '');
+    const byStem = new Map(files.map((f) => [stem(f), f]));
+    const edges = new Map(files.map((f) => [f, runtimeImportsOf(f).map((t) => byStem.get(stem(t))).filter((t): t is string => t !== undefined)]));
+    const cycles: string[] = [];
+    const state = new Map<string, 'open' | 'done'>();
+    const walk = (node: string, trail: string[]) => {
+      state.set(node, 'open');
+      for (const next of edges.get(node) ?? []) {
+        if (state.get(next) === 'open') cycles.push([...trail.slice(trail.indexOf(next)), node, next].join(' -> '));
+        else if (!state.has(next)) walk(next, [...trail, node]);
+      }
+      state.set(node, 'done');
+    };
+    for (const node of edges.keys()) if (!state.has(node)) walk(node, []);
+    expect(cycles).toEqual([]);
   });
 
   it('has no shipped file that imports a test or a fixture', () => {

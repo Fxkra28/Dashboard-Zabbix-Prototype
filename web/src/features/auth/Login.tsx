@@ -5,7 +5,7 @@ import { resetAuthProbe } from '../../shared/hooks/useAuth';
 import BrandMark from '../../shared/components/BrandMark';
 
 /**
- * Where to go after signing in: the page the session ended on (api.ts
+ * Where to go after signing in: the page the session ended on (api/session.ts
  * goToSignIn), but only a path on this site, never another origin.
  */
 export function returnPath(search: string): string {

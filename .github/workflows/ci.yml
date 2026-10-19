@@ -2,7 +2,7 @@
 # against itself, a secret scan, and the two Docker builds. Nothing here pushes, comments or deploys.
 #
 # Five jobs, run side by side so a failure names its package:
-#   server   install from the lockfile, audit, typecheck, test, build
+#   server   install from the lockfile, audit, typecheck, lint, test, build
 #   web      install from the lockfile, audit, typecheck, lint, test, build
 #   checks   what tools/check and the package scripts verify: the API contract, the ERD, the stylesheet and its tokens,
 #            the assistant's markdown parser, the unit formatters, the links, the diagrams
@@ -10,8 +10,8 @@
 #   images   both Dockerfiles build, and nginx accepts its config
 # Locally, `npm run verify` (package.json) runs every step but the install, the audit, the secret scan and the image builds.
 #
-# The server has no linter: its typecheck is the closest check it has. server/scripts/validate-sli.ts is deliberately
-# absent: it reads HCML's real Availability Report spreadsheets and needs a running BFF, and must not run here.
+# server/scripts/validate-sli.ts is deliberately absent: it reads HCML's real Availability Report spreadsheets and needs a
+# running BFF, and must not run here.
 #
 # Where it runs: hcml-portal is the git repository, so CI runs from it. hcml-portal-ollama is not under git and has
 # no CI of its own. The file is kept in both trees so that they stay identical, and tools/check/parity.check.mjs is how
@@ -69,6 +69,10 @@ jobs:
 
       - name: Typecheck the server
         run: npm run typecheck
+        working-directory: server
+
+      - name: Lint the server
+        run: npm run lint # eslint: typescript-eslint
         working-directory: server
 
       - name: Test the server

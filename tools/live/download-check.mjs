@@ -1,7 +1,9 @@
 // Clicks the download buttons of a running portal in headless Chrome and says whether each file arrived, with the page's
 // Content-Security-Policy violations. Read-only: the BFF builds the files from what Zabbix already holds.
 //
-//   node download-check.mjs --base http://127.0.0.1:5199 [--month 2026-09]
+//   node download-check.mjs --base http://127.0.0.1:5199 [--month 2026-09] [--graph '/graphs?hostid=10084&itemid=23296,23297']
+//
+// `--graph` is a Graphs address with items in it, and adds the CSV under its Show data table. It is not guessed: which items exist is the portal's to say.
 //
 // Why: an enforcing policy can block what a blob link or a fetch does, and page-audit.mjs never clicks anything.
 import { spawn } from 'node:child_process';
@@ -14,6 +16,7 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
 const arg = (n) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : undefined; };
 const BASE = (arg('base') || '').replace(/\/$/, '');
 const MONTH = arg('month');
+const GRAPH = arg('graph');
 if (!BASE) { console.error('Needs --base'); process.exit(2); }
 
 const profile = mkdtempSync(join(tmpdir(), 'hcml-dl-'));
@@ -62,17 +65,29 @@ async function click(what, route, selectorJs) {
   csp = []; problems = []; started = []; done = [];
   const before = new Set(readdirSync(downloads));
   await open(route);
-  const found = await ev(`(() => { const el = ${selectorJs}; if (!el) return false; el.click(); return true; })()`);
+  // A page may still be drawing when it reports ready, so the button is looked for for a few seconds before it counts as missing.
+  let found = false;
+  for (let i = 0; i < 40 && !found; i++) {
+    found = await ev(`(() => { const el = ${selectorJs}; if (!el || el.disabled) return false; el.click(); return true; })()`);
+    if (!found) await sleep(250);
+  }
   if (!found) { results.push({ what, ok: false, why: 'the button was not found' }); return; }
   for (let i = 0; i < 120 && !done.length; i++) await sleep(500); // a month of SLA can take a while to build
   await sleep(400);
   const fresh = readdirSync(downloads).filter((f) => !before.has(f) && !f.endsWith('.crdownload'));
-  const sizes = fresh.map((f) => `${f} ${statSync(join(downloads, f)).size} B`);
+  // A CSV is described by its shape, never its content: rows and columns of the first line.
+  const shape = (f) => {
+    if (!f.endsWith('.csv')) return '';
+    const lines = readFileSync(join(downloads, f), 'utf8').split('\n');
+    return `, ${lines.length - 1} rows after the heading, ${lines[0].split('","').length} columns`;
+  };
+  const sizes = fresh.map((f) => `${f} ${statSync(join(downloads, f)).size} B${shape(f)}`);
   results.push({ what, ok: done.length > 0 && fresh.length > 0 && csp.length === 0, suggested: started, files: sizes, csp: [...new Set(csp)], console: [...new Set(problems)].slice(0, 3) });
 }
 
 await click('CSV from Alert noise', '/reports/noise', `[...document.querySelectorAll('button')].find((b) => /Download CSV/.test(b.textContent))`);
 await click('CSV from the Inventory gap list', '/reports/inventory', `[...document.querySelectorAll('button')].find((b) => /Download CSV/.test(b.textContent))`);
+if (GRAPH) await click('CSV from the Graphs Show data table', GRAPH, `[...document.querySelectorAll('button')].find((b) => /Download CSV/.test(b.textContent))`);
 const slaRoute = `/sla${MONTH ? `?month=${MONTH}` : ''}`;
 await click('SLA report, first button (PDF)', slaRoute, `document.querySelectorAll('.report-actions button')[0]`);
 await click('SLA report, second button (Excel)', slaRoute, `document.querySelectorAll('.report-actions button')[1]`);

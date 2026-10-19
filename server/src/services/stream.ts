@@ -1,5 +1,7 @@
 import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
 import type { ServerResponse } from 'node:http';
+import type { Writable } from 'node:stream';
+import { constants as zlibConstants, createGzip, type Gzip } from 'node:zlib';
 import { getProblems, type ZbxProblem } from '../domain/queries.js';
 import { cached } from '../core/cache.js';
 import { config } from '../core/config.js';
@@ -14,7 +16,8 @@ import { SOURCE_DOWN } from '../http/errors.js';
  * resolved, acknowledged, suppressed or re-graded. A change in only a name or host goes out at most
  * every 30 s. A list that is identical to the last one sent is never sent again: the keep-alive
  * says the line and the data are still current. A frame carries only the fields the Dashboard reads
- * (frameJson), so no tags and no `opdata`.
+ * (frameJson), so no tags and no `opdata`. A screen that accepts gzip gets the frames compressed (about a tenth of the bytes),
+ * flushed after every frame so that none waits in a buffer: a keep-alive stuck behind one would trip the page's 45 s watchdog.
  *
  * A timer per connection would serialise and send the whole list every 5 s whether or not anything
  * had changed: ~450 KB per screen per tick against HCML's Zabbix.
@@ -104,6 +107,9 @@ interface Frame {
 
 interface Client {
   res: ServerResponse;
+  /** Where frames are written: the response itself, or the gzip stream that feeds it. */
+  out: Writable;
+  gzip: Gzip | null;
   /** Who it counts against: the signed-in user, or the client address with auth off. */
   owner: string;
   /** `write()` returned false: data frames are skipped until 'drain'. */
@@ -135,14 +141,17 @@ export function useLogger(logger: FastifyBaseLogger): void {
 }
 
 function write(client: Client, text: string, now: number): void {
-  const { res } = client;
-  if (res.destroyed || res.writableEnded) return;
+  const { out } = client;
+  if (out.destroyed || out.writableEnded) return;
   client.lastWrite = now;
-  if (res.write(text)) return;
+  const room = out.write(text);
+  // A sync flush: the frame leaves now, and the next one still compresses against it.
+  client.gzip?.flush(zlibConstants.Z_SYNC_FLUSH);
+  if (room) return;
   // The socket's buffer is full: a slow link, or a tab the browser throttles.
   // Stacking 450 KB frames behind it would only grow the BFF's memory.
   client.blocked = true;
-  res.once('drain', () => {
+  out.once('drain', () => {
     client.blocked = false;
     if (latest && client.frameId !== latest.id && clients.has(client)) deliver(client, latest, Date.now());
   });
@@ -165,7 +174,7 @@ function broadcast(text: string, now: number): void {
  */
 function publicMessage(err: unknown): string {
   const known = err instanceof ZabbixApiError || err instanceof ZabbixTimeoutError || err instanceof ZabbixAuthError;
-  const message = known ? SOURCE_DOWN : 'The live stream hit an unexpected error. Details are in the BFF log.';
+  const message = known ? SOURCE_DOWN : 'The live stream hit an unexpected error. Tell an administrator.';
   // Logged when the failure changes, not when only the wording of the screen stays the same.
   const logged = known ? err.message : message;
   if (logged !== lastError) {
@@ -267,8 +276,18 @@ function remove(client: Client): void {
  * as soon as the first read lands, and the ticker runs while anyone listens.
  * Returns the function that removes it again.
  */
-export function subscribe(res: ServerResponse, owner = ''): () => void {
-  const client: Client = { res, owner, blocked: false, frameId: 0, lastWrite: Date.now() };
+export function subscribe(res: ServerResponse, owner = '', options: { gzip?: boolean } = {}): () => void {
+  const gzip = options.gzip ? createGzip({ level: 4 }) : null;
+  const client: Client = { res, out: gzip ?? res, gzip, owner, blocked: false, frameId: 0, lastWrite: Date.now() };
+  if (gzip) {
+    gzip.pipe(res);
+    // A compressor that fails ends only its own screen, which reconnects.
+    gzip.on('error', (err) => {
+      log?.error(err, 'live stream compression failed');
+      remove(client);
+      res.destroy();
+    });
+  }
   clients.add(client);
   if (!ticker) {
     ticker = setInterval(tick, TICK_MS);
@@ -282,7 +301,11 @@ export function subscribe(res: ServerResponse, owner = ''): () => void {
     });
   }
 
-  return () => remove(client);
+  return () => {
+    remove(client);
+    // Nothing more goes to a screen that has left, and the compressor's memory goes with it.
+    gzip?.destroy();
+  };
 }
 
 /** Screens connected right now. */
@@ -295,9 +318,22 @@ export function endStreams(): number {
   const ended = [...clients];
   for (const client of ended) {
     remove(client);
-    if (!client.res.writableEnded) client.res.end();
+    endClient(client);
   }
   return ended.length;
+}
+
+/** End one screen. A gzip one ends its compressor first, which writes the trailer and then ends the response. */
+function endClient(client: Client): void {
+  if (client.gzip) client.gzip.end();
+  else if (!client.res.writableEnded) client.res.end();
+}
+
+/** End the screen that was given `res`: the route does this when the token behind it expires. */
+export function endStreamOf(res: ServerResponse): void {
+  const client = [...clients].find((c) => c.res === res);
+  if (client) endClient(client);
+  else if (!res.writableEnded) res.end();
 }
 
 /**

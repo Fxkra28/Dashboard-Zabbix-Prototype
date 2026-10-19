@@ -65,14 +65,13 @@ export class ZabbixApiError extends Error {
   }
 }
 
-/** Raised when a write is attempted with no ZABBIX_WRITE_TOKEN configured. */
+/** Raised when a write is attempted with no ZABBIX_WRITE_TOKEN configured. `detail` names the setting, for the log only. */
 export class ZabbixWriteDisabledError extends Error {
   readonly code = 'zabbix_write_disabled';
+  readonly detail =
+    'Set ZABBIX_WRITE_TOKEN in server/.env. It must be a separate, write-capable Zabbix token, never the read-only one.';
   constructor() {
-    super(
-      'Write-back is not configured. Set ZABBIX_WRITE_TOKEN in server/.env. ' +
-        'It must be a separate, write-capable Zabbix token, never the read-only one.',
-    );
+    super('Acknowledge and Close are not switched on for this portal. Tell an administrator.');
   }
 }
 

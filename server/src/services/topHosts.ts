@@ -1,6 +1,6 @@
 import { zbx } from '../clients/zabbix.js';
 import { isFresh } from '../domain/reachability.js';
-import { capacityMetricFor } from './analytics.js';
+import { capacityMetricFor } from './capacity.js';
 
 /**
  * The busiest hosts right now by CPU and by memory, as the Zabbix dashboard widget "Top hosts" shows them.

@@ -58,8 +58,8 @@ checks.**
 * **Server.** `routes/<area>.ts` is a registrar: it names the paths, checks the query or the body, calls one
   function of `services/<area>.ts` and sends the answer or the status. `services/<area>.ts` holds the logic and
   takes plain arguments. The direction is `index.ts`, then `routes/`, then `services/`, then the shared folders.
-  `routes/` went from 4,728 lines to 685 and holds 39 of the 45 endpoints (sign-in is in `security/auth.ts`, the health
-  check in `http/health.ts`), `services/` holds 5,639. The 25 files that sat flat beside `index.ts` went into five
+  `routes/` went from 4,728 lines to 685 (690 on 19 October) and holds 39 of the 45 endpoints (sign-in is in `security/auth.ts`, the health
+  check in `http/health.ts`), `services/` held 5,639 then and holds 5,737 in 33 files now. The 25 files that sat flat beside `index.ts` went into five
   folders by what they are for: `core/` (config, the cache and its stale marker, the gate, query parsing, the body
   schemas), `clients/` (the Zabbix client, the model client, the caps on its use), `domain/` (naming rules,
   reachability, the shared reads), `security/` (sign-in and roles, passwords, the page table, the viewer policy) and
@@ -74,7 +74,7 @@ checks.**
 * **Web.** `features/<name>/` holds a part of the portal with its pages, components, hooks, logic and their tests
   beside them: assistant, auth, dashboard, graphs, hosts, meters, network, problems, reports, shell, sla.
   `shared/` holds what two or more features use. The root keeps the app shell and the contract with the BFF
-  (`App.tsx`, `main.tsx`, `api.ts`, `types.ts`, `guards.ts`, `theme.ts`). 146 files moved, 91 sources and 55 tests. The tests that cut
+  (`App.tsx`, `main.tsx`, `theme.ts`, and the folders `api/`, `types/` and `guards/`, which were three files until 19 October). 146 files moved, 91 sources and 55 tests. The tests that cut
   across features stay in `__tests__/`. Three files that differed from a neighbour only by letter case
   (`Markdown.tsx` and `markdown.ts`, `HostsView.tsx` and `hostsView.ts`, `Gauge.tsx` and `gauge.ts`) could not
   share a folder on a case-insensitive disk, so the lower-case ones are now `parseMarkdown.ts`, `hostsFigures.ts`
@@ -94,8 +94,8 @@ Each rule is a test, not a sentence:
 
 | Rule | Where it fails |
 |---|---|
-| Only `index.ts` imports a route; no service imports a route; a route file exports its registrar and nothing else; `core/` imports nothing outside `core/`; the shared folders import no route and no service (one named exception); only `index.ts` imports `http/` (two named exceptions, both to `http/errors.ts`); nothing is left at the top of `src/` but `index.ts` | `server/src/__tests__/layering.test.ts` |
-| Root files (but `App` and `main`) and `shared/` import no feature; a feature imports another only where a table allows it; no cycle between the features that table allows; no shipped file imports a test | `web/src/__tests__/layering.test.ts` |
+| Only `index.ts` imports a route; no service imports a route; a route file exports its registrar and nothing else; `core/` imports nothing outside `core/`; the shared folders import no route and no service (one named exception); only `index.ts` imports `http/` (two named exceptions, both to `http/errors.ts`); nothing is left at the top of `src/` but `index.ts`; no import cycle among the files of `services/`; no piece of the assistant imports its entry file `assistant.ts`, which tests replace | `server/src/__tests__/layering.test.ts` |
+| Root files (but `App` and `main`) and `shared/` import no feature; a feature imports another only where a table allows it; no cycle between the features that table allows; no import cycle among the shipped files, a type-only import not counting; no shipped file imports a test | `web/src/__tests__/layering.test.ts` |
 | The parts of the stylesheet and the list in `index.css` agree | `web/src/__tests__/stylesheet.test.ts` |
 | Every link in the docs resolves, and a line citation neither runs past its file nor names one that is gone | `tools/check/links.check.mjs` |
 | The two copies differ in the files meant to and no others | `tools/check/parity.check.mjs` |
@@ -114,6 +114,8 @@ of both configurations. Mutation checks showed that each layering rule fails whe
 * The checks have one home and one command. A new contributor runs `npm run verify` and gets CI's answer for the code:
   typecheck, lint, tests, builds and checks. The audit, the secret scan and the image builds run in CI alone.
 * The rules cannot erode quietly: a route that imports another route fails a test the day it is written.
+* The server has a linter since 19 October (ST-06): `npm run lint` in `server/`, run by `npm run lint` at the root
+  and by a step of `ci.yml`, with no warning allowed. The layering tests cover the folder rules, and the linter the code.
 * The setup guide and the stylesheet can be read and diffed in parts. A change to one subsystem touches one file
   of the guide.
 
@@ -132,9 +134,17 @@ of both configurations. Mutation checks showed that each layering rule fails whe
   would be a dependency.
 * **The table of allowed couplings is upkeep.** Each new coupling between two features is a line someone has to
   add, which is the point, and also a friction that will be argued with.
-* **Moved, not decomposed.** `services/analytics.ts` is 1,011 lines and `services/assistant.ts` 1,040: they are as
-  they were, now in the right folder. On the web `api.ts`, `types.ts` and `guards.ts` still hold every feature's
-  part. Those are the next steps if the weight is felt, and not part of this decision.
+* **Moved first, split after.** The 16 October step moved files and left the large ones whole: `services/analytics.ts`
+  was 1,011 lines and `services/assistant.ts` 1,040, and on the web `api.ts`, `types.ts` and `guards.ts` held every
+  feature's part. On 19 October (ST-07, ST-08) they were split by the same compiler-API method, each declaration
+  keeping its own text. Analytics became `incidents`, `availability`, `noise`, `aging`, `capacity` and `reportPolicy`.
+  The assistant became six `assistant*.ts` pieces behind `assistant.ts`, which stays as the one entry the route,
+  `chat.ts` and the tests import and mock; the pieces import one another directly. The web's three became `api/`,
+  `types/` and `guards/`, a file for each feature behind an `index.ts` that re-exports the same names, so no page
+  changed an import and `vi.mock('../../api')` still replaces the module a page loads. They stayed at the root and
+  not inside the features, because the root may import no feature and a page of any feature calls any of them. Two
+  rules came with it (the table above): no import cycle in `services/` and none among the web's shipped files, and
+  no piece of the assistant imports its entry.
 * **Two edges run against the grain.** `http/health.ts` reads the live stream count from `services/stream.ts`, and
   two services (`chat.ts`, `stream.ts`) read one sentence from `http/errors.ts`. The layering test names both. A
   constant and a function could be moved to remove them; this step moved files and left them.
@@ -144,16 +154,17 @@ of both configurations. Mutation checks showed that each layering rule fails whe
   each other. Another reader would choose differently, and the tests pin only the direction, not the choice.
 * **The restore patch is tied to the layout.** `myown/patches/bk-11-removed-endpoints.patch` restores five endpoints
   that were removed on 12 October (BK-11). It was made again for this layout, twice, as the layout changed twice that day, and is checked with
-  `patch -p1 -R --dry-run`, but a patch is not a module: the next layout change breaks it again.
+  `patch -p1 -R --dry-run`, but a patch is not a module: the next layout change breaks it again. It was made again on
+  19 October, after the server linter had removed a type from one of its tests, and a copy of the restored tree was
+  typechecked, linted and tested. A restore also needs `npm run gen:api` in `web/`, because the OpenAPI file gets its
+  five paths back and a web test fails while the generated types are older than the file.
 * **The CI is still unproven on GitHub.** The workflow has never run there (the account is locked for billing,
   tracker IN-30). Its typecheck, lint, test, build and check commands were run locally (`npm run verify`) and a test reads the file; the audit, the secret scan and the image builds were not run, which is not the same.
-* **The server has no linter**, so `ci.yml` has a typecheck where the web has ESLint. The layering test covers
-  the folder rules, not style.
 
 ## Confirmation
 
-`npm run verify` at the root of either copy. The numbers on 19 October 2026: server 77 test files and 1,670
-tests, web 78 files and 1,132 tests. With both copies side by side, `node tools/check/parity.check.mjs` reports no
+`npm run verify` at the root of either copy. The numbers on 19 October 2026: server 78 test files and 1,687
+tests, web 81 files and 1,173 tests. With both copies side by side, `node tools/check/parity.check.mjs` reports no
 unlisted difference.
 
 ## More Information

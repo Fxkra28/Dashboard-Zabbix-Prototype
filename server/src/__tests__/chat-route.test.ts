@@ -44,6 +44,12 @@ const META = {
   truncated: false,
 };
 
+/** A model stream that fails before its first chunk: a generator with no `yield`, on purpose. */
+// eslint-disable-next-line require-yield
+const failing = (err: Error) => async function* (): AsyncGenerator<never> {
+  throw err;
+};
+
 const snapshot = (text: string) => ({ text, meta: META, sizes: {}, fingerprint: text, complete: true, frozen: false });
 
 function frames(body: string): { event: string; data: unknown }[] {
@@ -136,7 +142,7 @@ describe('POST /api/chat', () => {
     expect(got.map((f) => f.event)).toEqual(['context', 'token', 'error']);
     // An error nobody typed is a bug: its wording is for the log, not the reader.
     const message = (got[2].data as { message: string }).message;
-    expect(message).toBe('The assistant hit an unexpected error. Details are in the BFF log.');
+    expect(message).toBe('The assistant hit an unexpected error. Tell an administrator.');
     expect(res.body).not.toMatch(/HTTP 500|boom|qwen3/);
     await app.close();
   });
@@ -152,17 +158,15 @@ describe('POST /api/chat', () => {
       app.inject({ method: 'POST', url: '/api/chat', payload: { messages: [{ role: 'user', content: 'hi' }] } });
     const told = (body: string) => (frames(body).find((f) => f.event === 'error')?.data as { message: string }).message;
 
-    vi.mocked(streamAnswer).mockImplementation(async function* () {
-      throw new AiUpstreamError(AI_MESSAGE.unreachable, 'Could not reach the model at http://10.9.8.7:11434/v1 (ECONNREFUSED)');
-    });
+    vi.mocked(streamAnswer).mockImplementation(
+      failing(new AiUpstreamError(AI_MESSAGE.unreachable, 'Could not reach the model at http://10.9.8.7:11434/v1 (ECONNREFUSED)')),
+    );
     const ai = await ask();
     expect(told(ai.body)).toBe(AI_MESSAGE.unreachable);
     expect(ai.body).not.toMatch(/10\.9\.8\.7|ECONNREFUSED/);
     expect(lines.join('\n')).toContain('http://10.9.8.7:11434/v1');
 
-    vi.mocked(streamAnswer).mockImplementation(async function* () {
-      throw new ZabbixApiError('Zabbix could not be reached.', 'ZBX_URL=http://zabbix.internal:8080');
-    });
+    vi.mocked(streamAnswer).mockImplementation(failing(new ZabbixApiError('Zabbix could not be reached.', 'ZBX_URL=http://zabbix.internal:8080')));
     const zbx = await ask();
     // A reader is told the one sentence for every Zabbix failure; the wording and the address stay in the log.
     expect(told(zbx.body)).toBe('The data source is not answering.');
@@ -177,9 +181,7 @@ describe('POST /api/chat', () => {
     vi.mocked(getSnapshot).mockResolvedValue(snapshot('SNAPSHOT'));
     const app = await buildTestApp(chatRoutes);
     const told = async (err: Error) => {
-      vi.mocked(streamAnswer).mockImplementation(async function* () {
-        throw err;
-      });
+      vi.mocked(streamAnswer).mockImplementation(failing(err));
       const res = await app.inject({
         method: 'POST',
         url: '/api/chat',
@@ -199,7 +201,7 @@ describe('POST /api/chat', () => {
     ];
     for (const err of zabbix) expect(await told(err)).toBe('The data source is not answering.');
     expect(await told(new Error('read ECONNRESET 10.1.2.3:8080'))).toBe(
-      'The assistant hit an unexpected error. Details are in the BFF log.',
+      'The assistant hit an unexpected error. Tell an administrator.',
     );
     await app.close();
   });

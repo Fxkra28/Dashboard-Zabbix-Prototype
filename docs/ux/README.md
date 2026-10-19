@@ -16,9 +16,9 @@
 | Fact | Source |
 |---|---|
 | Three roles, ranked: viewer, operator, admin | `server/src/security/auth.ts` `ROUTE_RULES` |
-| An unmatched route needs `viewer`, so a new route is private by default | `auth.ts:49` |
-| Only `/api/reports/inventory` needs admin | `auth.ts:42` |
-| Only `/api/links`, `/api/net` (the Dashboard's internet traffic meters, `/api/net/meters`, among them) and the write route (acknowledge, with close as an option) need operator | `auth.ts:43,45` |
+| An unmatched route needs `viewer`, so a new route is private by default | `security/auth.ts:49` |
+| Only `/api/reports/inventory` needs admin | `security/auth.ts:42` |
+| Only `/api/links`, `/api/net` (the Dashboard's internet traffic meters, `/api/net/meters`, among them) and the write route (acknowledge, with close as an option) need operator | `security/auth.ts:43,45` |
 | 18 pages, 17 of them behind the shell | `web/src/App.tsx` |
 | 139 monitored hosts across 14 sites | Zabbix, measured 15 September 2026 |
 | Exactly one write exists: acknowledge and close | `server/src/routes/actions.ts` |
@@ -102,7 +102,7 @@ The only journey traceable end to end in code. Every step names the file that pe
 
 | Stage | What happens | Where | What can go wrong |
 |---|---|---|---|
-| Notice | The Dashboard's SSE connection pushes a `problems` event; the count and the list change without a reload | `services/stream.ts`, `features/dashboard/useSSE.ts` | The connection drops. Until 24 September 2026 that was silent: the page kept showing the last good state with no indication it had stopped being live (friction point 1) |
+| Notice | The Dashboard's SSE connection pushes a `problems` event; the count and the list change without a reload | `services/stream.ts`, `shared/hooks/useSSE.ts` | The connection drops. Until 24 September 2026 that was silent: the page kept showing the last good state with no indication it had stopped being live (friction point 1) |
 | Orient | Operator reads severity, host, duration. Severity is a filled chip, which is the only loud colour on the page | `ProblemsTable.tsx`, `shared/lib/severity.ts` | Host names are Zabbix's, which are not always the names people use for the same box |
 | Understand | Optional: open Explain, which sends the problem to the model and returns plain language, cached an hour | `services/explain.ts` | Off by default. When off, the operator is reading a trigger expression |
 | Decide | Operator decides this is known or being handled | none | Nothing records that a decision was made, only that an acknowledgement was sent |

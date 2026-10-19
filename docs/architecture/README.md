@@ -41,8 +41,9 @@ portal owns no database ([ADR-0003](adr/0003-no-database.md)).
 
 ## The contract
 
-[`../api/openapi.yaml`](../api/openapi.yaml), all 41 endpoints, both security schemes, every status
-code and response schema. Checked against the code by `npx tsx tools/check/openapi.check.ts`.
+[`../api/openapi.yaml`](../api/openapi.yaml), all 45 endpoints, both security schemes, every status
+code and response schema. Checked against the code by `npx tsx tools/check/openapi.check.ts`, and against the web app's types by
+`web/src/__tests__/openapiTypes.test.ts` (the types in `web/src/generated/openapi.ts` are made from it).
 
 ## The subsystems in prose
 

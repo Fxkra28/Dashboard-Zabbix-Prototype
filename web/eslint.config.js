@@ -7,7 +7,8 @@ import globals from 'globals';
 
 export default defineConfig([
   // vite.config.js and .d.ts: tsc -b output from before it moved to node_modules/.tmp, never sources.
-  globalIgnores(['dist', 'node_modules', 'vite.config.js', 'vite.config.d.ts']),
+  // src/generated: made by openapi-typescript (npm run gen:api), never edited, so not ours to lint.
+  globalIgnores(['dist', 'node_modules', 'vite.config.js', 'vite.config.d.ts', 'src/generated']),
   js.configs.recommended,
   tseslint.configs.recommended,
   jsxA11y.flatConfigs.recommended,

@@ -101,11 +101,11 @@ the typechecks, the lint, both test suites, both builds and every checker below 
 
 | Check | Run it | What it exists to prevent |
 |---|---|---|
-| Tests | `npm test` in `server/` | 1670 tests, 77 files. The status-code semantics are pinned here: a rejected token is 503, never 502 or 504. The SLA report files are pinned here too: the tests read each PDF and workbook back, and compare the theme colours, the logo and the wording copied from the web app with their originals. Files that are not code are read as text too, because nothing else would notice them breaking: `docker-compose.yml` against the BFF's settings and the Dockerfile's build arguments, `nginx.conf`, and the CI workflow |
-| Web tests | `npm test` in `web/` | 1132 tests in 78 files, in jsdom. They pin bugs that were found once: a slow answer for an old selection overwriting the new one, and, caught in review, sign-in returning to `/LOGIN` (the sign-in page again) and the wall bringing back a row marked "Cleared" after it had left the screen. Also the 401 handling and the CSRF header, and the report download buttons: one request however often they are pressed, and a month change dropping the request still in flight. Also the notices that say data is old (Zabbix stopped collecting, or a report is the last copy kept), the CSV formula guard, and the Assistant's conversation being cleared at sign-out |
-| Lint | `npm run lint` in `web/` | typescript-eslint, the two classic react-hooks rules and jsx-a11y. Three `eslint-disable` comments pointed at the hooks rule before anything ran it, and the first run found 14 form labels tied to no control |
+| Tests | `npm test` in `server/` | 1687 tests, 78 files. The status-code semantics are pinned here: a rejected token is 503, never 502 or 504. The SLA report files are pinned here too: the tests read each PDF and workbook back, and compare the theme colours, the logo and the wording copied from the web app with their originals. Files that are not code are read as text too, because nothing else would notice them breaking: `docker-compose.yml` against the BFF's settings and the Dockerfile's build arguments, `nginx.conf`, and the CI workflow |
+| Web tests | `npm test` in `web/` | 1173 tests in 81 files, in jsdom. They pin bugs that were found once: a slow answer for an old selection overwriting the new one, and, caught in review, sign-in returning to `/LOGIN` (the sign-in page again) and the wall bringing back a row marked "Cleared" after it had left the screen. Also the 401 handling and the CSRF header, and the report download buttons: one request however often they are pressed, and a month change dropping the request still in flight. Also the notices that say data is old (Zabbix stopped collecting, or a report is the last copy kept), the CSV formula guard, and the Assistant's conversation being cleared at sign-out |
+| Lint | `npm run lint` in `server/` and in `web/` | The web: typescript-eslint, the two classic react-hooks rules and jsx-a11y. Three `eslint-disable` comments pointed at the hooks rule before anything ran it, and the first run found 14 form labels tied to no control. The server: the recommended rules of ESLint and typescript-eslint, no warning allowed. It had no linter until 19 October, when the first run found 22 findings; the eight `eslint-disable` lines left name their reason |
 | Types | `npm run typecheck` in `server/` and in `web/` | Both check their test config too |
-| API contract | `npm run check:api` at the root | The endpoint table drifted twice: it claimed 35 endpoints while listing all of them, and 23 of 35 line citations pointed at unrelated lines after the route files grew. A third hand-written list would drift the same way |
+| API contract | `npm run check:api` at the root | The endpoint table drifted twice: it claimed 35 endpoints while listing all of them, and 23 of 35 line citations pointed at unrelated lines after the route files grew. A third hand-written list would drift the same way. The same check refuses a description that YAML cuts at a comma, and the web tests hold the app's types to the file's response schemas (`openapiTypes.test.ts`, below) |
 | Database ERD | `npm run check:erd` at the root | The database ERD exists twice, as `ERD-Database.mmd` and as `ERD-Database.erd`. Two hand-maintained copies of one model is the shape that has drifted every previous time here |
 | Stylesheet | `node scripts/css.check.mjs` in `web/` (every part of `src/styles/`) | A lost `}` once left about 50 rules silently unapplied in one portal while the other looked fine. Vite's build fails on none of this |
 | Design tokens | `node scripts/tokens.check.mjs` in `web/` (the parts of `src/styles/` read as one sheet) | The sheet held 42 padding values, 16 font sizes and 14 radii against 13 tokens, and three of its colours failed WCAG unnoticed: `--muted` sat 0.07 short of AA for as long as the file existed. Contrast is computed here, not asserted, so a token edited to an illegible colour fails instead of shipping |
@@ -113,6 +113,13 @@ the typechecks, the lint, both test suites, both builds and every checker below 
 | Links | `node tools/check/links.check.mjs` at the root | 41 relative links per copy had broken again after the ERD folder moved, 30 of them in `docs/erd/erd.md`. macOS resolves a wrong-case path, so the check matches each segment's exact spelling, and a link out of the repo fails, because a checkout does not have it |
 | Diagrams | `node tools/check/diagrams.check.mjs` at the root | Nine renders in one copy and eight in the other were older than their sources by file date, and a file date is no use in a git checkout. Each `.mmd` now ends with a stamp holding the hash of its source, and the check fails when the source changed after it. It cannot see whether the render was redone: `node tools/check/diagrams.stamp.mjs` is where that is said, run last |
 | Copies | `node tools/check/parity.check.mjs` at the root | The two folders drifting: it lists every file that differs between them, or exists in one only, outside the short list meant to differ, which names its 18 files one by one. Until it existed the recipe above was a number someone had to remember, and `README_copy.md` had already made that number wrong once |
+
+When a response in `docs/api/openapi.yaml` changes, run `npm run gen:api` in `web/` and commit
+`src/generated/openapi.ts` with it. The web tests fail while that file is stale, and `npm run typecheck` fails when the
+file says an answer can be something the app's own type (`web/src/types/`) does not accept: a field the app needs
+and the file does not promise, a field the file allows to be absent or null, or a kind the app cannot hold. The error names the
+place, such as `/api/hosts[].status`. It is one way: a field the file lists and the app ignores is fine. A new data
+call in `web/src/api/` goes in the table at the top of `web/src/__tests__/openapiTypes.test.ts`, or that test fails.
 
 `server/scripts/validate-sli.ts` is a thirteenth, but it is not part of the routine set: it needs
 HCML's real Availability Report spreadsheets in `~/Downloads` and a running BFF. It compares the
@@ -154,8 +161,11 @@ Follow the nine that exist. The house pattern, in order of how often it has matt
 
 ## Zero new dependencies
 
-8 runtime + 5 dev on the server, 5 + 17 on the web: 35 in all, 13 of them shipped. Adding to either
-list needs a real argument, not a convenience one.
+8 runtime + 5 dev on the server, 5 + 18 on the web: 36 in all, 13 of them shipped. Adding to either
+list needs a real argument, not a convenience one. The 18th is `openapi-typescript`, added on 19 October 2026 (FR-16):
+a web dev dependency that never reaches the built site. It turns `docs/api/openapi.yaml` into
+`web/src/generated/openapi.ts`, and reading OpenAPI properly is what a library is for; the hand-written YAML scan
+of `openapi.check.ts` is not up to it.
 
 Two precedents set the bar: `validate-sli.ts` hand-wrote a
 zip reader rather than add an xlsx parser, and `openapi.check.ts` hand-wrote a YAML path extractor

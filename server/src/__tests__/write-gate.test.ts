@@ -70,7 +70,7 @@ describe('POST /api/problems/acknowledge with sign-in off', () => {
     config.auth.allowWriteWithoutAuth = false;
     const res = await ack();
     expect(res.statusCode).toBe(503);
-    expect(res.json()).toMatchObject({ error: 'zabbix_write_disabled', message: expect.stringContaining('ALLOW_WRITE_WITHOUT_AUTH=true') });
+    expect(res.json()).toEqual({ error: 'zabbix_write_disabled', message: 'Acknowledge and Close are off while sign-in is off. Tell an administrator.' });
     expect(zbxWriteMock).not.toHaveBeenCalled();
   });
 
@@ -94,7 +94,8 @@ describe('POST /api/problems/acknowledge with sign-in off', () => {
     config.zbxWriteToken = '';
     const res = await ack();
     expect(res.statusCode).toBe(503);
-    expect(res.json().message).toContain('ZABBIX_WRITE_TOKEN');
+    // The reader is told the feature is not switched on; the setting to change is in the log (plain-wording.test.ts).
+    expect(res.json().message).toBe('Acknowledge and Close are not switched on for this portal. Tell an administrator.');
     expect(zbxWriteMock).not.toHaveBeenCalled();
   });
 });

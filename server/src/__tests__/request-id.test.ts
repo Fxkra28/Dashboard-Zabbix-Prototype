@@ -147,7 +147,7 @@ describe('requestId in an error body', () => {
   it('adds only the id: the code and the message stay as errors.ts wrote them, and a crash still hides its wording', async () => {
     const crash = await app.inject({ url: '/api/crash', headers: signedIn() });
     expect(Object.keys(crash.json()).sort()).toEqual(['error', 'message', 'requestId']);
-    expect(crash.json().message).toBe('The portal hit an unexpected error. Details are in the BFF log.');
+    expect(crash.json().message).toBe(`The portal hit an unexpected error. Tell an administrator and quote reference ${idOf(crash.headers)}.`);
     expect(crash.body).not.toContain('internal wording');
     const down = await app.inject({ url: '/api/zabbix-down', headers: signedIn() });
     expect(down.body).not.toMatch(/zabbix\.internal|ZBX_URL/);

@@ -35,3 +35,13 @@ export function chartTable(series: GraphSeries[]): ChartTable {
   const rows = [...byTime.entries()].sort((a, b) => a[0] - b[0]).map(([at, cells]) => ({ at, cells }));
   return { ranged: series.map(isRanged), rows };
 }
+
+/** A series' name without the shared "Interface X(alias): " prefix when every series has it, and with its host when the hosts differ. */
+export function seriesLabel(s: GraphSeries, all: GraphSeries[]): string {
+  const prefix = /^(Interface [^:]+:\s*)/.exec(s.name)?.[1];
+  if (prefix && all.length > 1 && all.every((o) => o.name.startsWith(prefix))) {
+    return s.name.slice(prefix.length);
+  }
+  const hosts = new Set(all.map((o) => o.host));
+  return hosts.size > 1 ? `${s.host}: ${s.name}` : s.name;
+}

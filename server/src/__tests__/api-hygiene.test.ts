@@ -14,8 +14,6 @@ vi.mock('../clients/zabbix.js', async (importOriginal) => {
   return { ...actual, zbx: zbxMock, zbxWrite: zbxWriteMock };
 });
 
-type Params = Record<string, unknown>;
-
 afterEach(() => {
   zbxMock.mockReset();
   zbxWriteMock.mockReset();

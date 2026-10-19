@@ -35,7 +35,7 @@ const stream = vi.hoisted(() => ({
     error: string | null;
   },
 }));
-vi.mock('../../features/dashboard/useSSE', () => ({ useSSE: () => stream.current }));
+vi.mock('../hooks/useSSE', () => ({ STREAM_SILENT_MS: 45_000, useSSE: () => stream.current }));
 
 const DAY = 86_400;
 const never = () => new Promise<never>(() => undefined);

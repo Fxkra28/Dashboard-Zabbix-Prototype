@@ -8,7 +8,7 @@
   "scripts": {
     "install:all": "npm ci --prefix server && npm ci --prefix web",
     "typecheck": "npm run typecheck --prefix server && npm run typecheck --prefix web",
-    "lint": "npm run lint --prefix web",
+    "lint": "npm run lint --prefix server && npm run lint --prefix web",
     "test": "npm test --prefix server && npm test --prefix web",
     "build": "npm run build --prefix server && npm run build --prefix web",
     "check:api": "./server/node_modules/.bin/tsx tools/check/openapi.check.ts",

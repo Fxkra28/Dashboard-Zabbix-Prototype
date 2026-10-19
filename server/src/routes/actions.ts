@@ -30,19 +30,23 @@ export async function actionRoutes(app: FastifyInstance): Promise<void> {
     const trail = trailOf(req);
     const user = trail.user;
     // A refusal is logged too, so a probe or a slip leaves a line with the same fields.
-    const refuse = (status: number, error: string, message: string) => {
+    const refuse = (status: number, error: string, message: string, fix?: string) => {
       answered.add(req);
-      req.log.warn({ ...trail, status, error }, 'zabbix write-back refused');
+      req.log.warn({ ...trail, status, error, fix }, 'zabbix write-back refused');
       return reply.code(status).send({ error, message });
     };
 
     if (!writeBackEnabled()) {
+      // The reader is told to ask an administrator; the setting to change goes to the log.
       return refuse(
         503,
         'zabbix_write_disabled',
         config.zbxWriteToken
-          ? 'Write-back is off while sign-in is off. For local dev only, set ALLOW_WRITE_WITHOUT_AUTH=true in server/.env.'
-          : 'Write-back is not configured. Set ZABBIX_WRITE_TOKEN in server/.env.',
+          ? 'Acknowledge and Close are off while sign-in is off. Tell an administrator.'
+          : 'Acknowledge and Close are not switched on for this portal. Tell an administrator.',
+        config.zbxWriteToken
+          ? 'For local dev only, set ALLOW_WRITE_WITHOUT_AUTH=true in server/.env.'
+          : 'Set ZABBIX_WRITE_TOKEN in server/.env.',
       );
     }
 

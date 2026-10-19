@@ -14,7 +14,7 @@
 
 A sign-in gives the browser a JWT that lasts 12 hours (`tokenLifetime()` in `server/src/security/auth.ts`, set by `SESSION_HOURS`),
 and until now nothing could extend it. The Dashboard polls the BFF every 15 and 30 seconds, so within
-about 15 seconds of the twelfth hour a request came back 401, `web/src/api.ts` cleared the token, and
+about 15 seconds of the twelfth hour a request came back 401, `web/src/api.ts` (now `web/src/api/session.ts`) cleared the token, and
 the page jumped to the login screen. A wall screen switched on at 07:00 showed a login form from about
 19:00 until someone typed a password into it.
 

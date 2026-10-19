@@ -45,7 +45,12 @@ const MAX_DECIMALS = 15; // what a double holds, and it keeps the number of form
 
 // Control characters XML 1.0 forbids, the two non-characters, and surrogates without a partner.
 const ILLEGAL_XML =
+  // eslint-disable-next-line no-control-regex -- matching the control characters XML forbids is the point
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+// Any control character: a sheet name may hold none.
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const CONTROL = /[\u0000-\u001F]/g;
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -81,7 +86,7 @@ class SheetNames {
   add(raw: string): string {
     const fit = (s: string, max: number) => cut(s, max).replace(/^['\s]+|['\s]+$/g, '');
     const base =
-      fit(raw.replace(ILLEGAL_XML, '').replace(/[\u0000-\u001F]/g, ' ').replace(/[[\]:*?/\\]/g, '-'), 31) || 'Sheet';
+      fit(raw.replace(ILLEGAL_XML, '').replace(CONTROL, ' ').replace(/[[\]:*?/\\]/g, '-'), 31) || 'Sheet';
     const key = base.toLowerCase();
     let name = base;
     let n = this.next.get(key) ?? 2;
@@ -180,7 +185,7 @@ class SharedStrings {
 
   xml(): string {
     const items = [...this.index.keys()].map((s) => {
-      const keep = /^\s|\s$|[\t\n]|  /.test(s) ? ' xml:space="preserve"' : '';
+      const keep = /^\s|\s$|[\t\n]| {2}/.test(s) ? ' xml:space="preserve"' : '';
       return `<si><t${keep}>${esc(s)}</t></si>`;
     });
     return `${XML_DECL}<sst xmlns="${NS_MAIN}" count="${this.refs}" uniqueCount="${items.length}">${items.join('')}</sst>`;

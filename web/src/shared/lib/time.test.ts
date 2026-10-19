@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isMonth, monthBounds, monthLabel, monthOf, recentMonths, zonedMonthStart } from './time';
+import { formatIsoDateTime, isMonth, monthBounds, monthLabel, monthOf, recentMonths, zonedMonthStart } from './time';
 
 const utc = (iso: string) => Date.parse(iso) / 1000;
 
@@ -37,5 +37,26 @@ describe('lib/time: reporting months in Asia/Jakarta', () => {
 
   it('labels a month the way the pickers show it', () => {
     expect(monthLabel('2026-08')).toBe('Aug 2026');
+  });
+});
+
+describe('lib/time: formatIsoDateTime', () => {
+  const at = Date.parse('2026-10-19T07:05:09Z');
+
+  it('writes the digits of the report zone, year first, with two digits for each field', () => {
+    expect(formatIsoDateTime(at, 'Asia/Jakarta')).toBe('2026-10-19 14:05:09');
+    expect(formatIsoDateTime(at, 'UTC')).toBe('2026-10-19 07:05:09');
+    expect(formatIsoDateTime(Date.parse('2026-01-02T03:04:05Z'), 'UTC')).toBe('2026-01-02 03:04:05');
+  });
+
+  it('writes midnight as 00, not 24, and crosses the date line with the zone', () => {
+    expect(formatIsoDateTime(Date.parse('2026-10-18T17:00:00Z'), 'Asia/Jakarta')).toBe('2026-10-19 00:00:00');
+    expect(formatIsoDateTime(Date.parse('2026-10-19T00:00:00Z'), 'UTC')).toBe('2026-10-19 00:00:00');
+  });
+
+  it('follows a zone with daylight saving, so a clock change does not repeat or skip a label', () => {
+    // New York leaves daylight saving on 2026-11-01 at 02:00 local: 05:59:59Z is 01:59:59 EDT, 06:00:00Z is 01:00:00 EST.
+    expect(formatIsoDateTime(Date.parse('2026-11-01T05:59:59Z'), 'America/New_York')).toBe('2026-11-01 01:59:59');
+    expect(formatIsoDateTime(Date.parse('2026-11-01T06:00:00Z'), 'America/New_York')).toBe('2026-11-01 01:00:00');
   });
 });

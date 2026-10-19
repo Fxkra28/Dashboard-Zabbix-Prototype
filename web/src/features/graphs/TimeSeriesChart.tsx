@@ -19,7 +19,9 @@ import { theme } from '../../theme';
 import { formatAxis, formatValue } from '../../shared/lib/units';
 import { fmtTime } from '../../shared/lib/severity';
 import { formatDateTime } from '../../shared/lib/time';
-import { chartTable } from './chartTable';
+import { chartTable, seriesLabel } from './chartTable';
+import { chartCsvFileName, chartCsvRows } from './chartCsv';
+import { downloadCsv } from '../../shared/lib/csv';
 import { NoData, orNoData } from '../../shared/components/NoData';
 import { api } from '../../api';
 import { useAsync } from '../../shared/hooks/useAsync';
@@ -311,6 +313,15 @@ export default function TimeSeriesChart({
         >
           {showData ? 'Hide data' : 'Show data'}
         </button>
+        {/* The file is what the table shows, whether or not the table is open. */}
+        <button
+          type="button"
+          className="btn ghost sm"
+          disabled={!series.some((s) => s.points.length)}
+          onClick={() => downloadCsv(chartCsvFileName(from, to), chartCsvRows(series))}
+        >
+          Download CSV
+        </button>
       </div>
       <div id={dataId}>{showData && <ChartData series={series} />}</div>
     </div>
@@ -396,16 +407,6 @@ function ChartData({ series }: { series: GraphSeries[] }) {
       </div>
     </div>
   );
-}
-
-/** Name without the shared "Interface X(alias): " prefix when every series has it. */
-function seriesLabel(s: GraphSeries, all: GraphSeries[]): string {
-  const prefix = /^(Interface [^:]+:\s*)/.exec(s.name)?.[1];
-  if (prefix && all.length > 1 && all.every((o) => o.name.startsWith(prefix))) {
-    return s.name.slice(prefix.length);
-  }
-  const hosts = new Set(all.map((o) => o.host));
-  return hosts.size > 1 ? `${s.host}: ${s.name}` : s.name;
 }
 
 function esc(text: string): string {

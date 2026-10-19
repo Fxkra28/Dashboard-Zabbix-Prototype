@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { GraphSeries } from '../../types';
+import type { GraphPoint, GraphSeries } from '../../types';
 
 // jsdom has no canvas, and the drawing is not what is under test.
 vi.mock('echarts-for-react/esm/core', () => ({ default: () => <div data-testid="canvas" /> }));
@@ -249,5 +249,70 @@ describe('the data table behind the chart (UX-17)', () => {
     expect(screen.queryByRole('table')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Show data' }));
     expect(onChange).toHaveBeenLastCalledWith(true);
+  });
+});
+
+describe('the CSV of the data table (MT-02)', () => {
+  const window_ = { from: 1_800_000_000, to: 1_800_003_600 };
+  const T = 1_800_000_000_000;
+  const withPoints = (id: string, name: string, points: GraphPoint[]): GraphSeries => ({ ...series(id, name, null), points });
+
+  /** What the throwaway link was asked to save: its name and the text of the file. */
+  let saved: { name: string; text: Promise<string> }[];
+  beforeEach(() => {
+    saved = [];
+    let last: Blob | undefined;
+    URL.createObjectURL = vi.fn((b: Blob) => ((last = b), 'blob:csv'));
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push({ name: this.download, text: last!.text() });
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('offers the file beside Show data, with the table closed', () => {
+    render(<TimeSeriesChart series={[series('1', 'Bits received', stats)]} {...window_} />);
+    expect(screen.getByRole('button', { name: 'Show data' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Download CSV' })).toBeEnabled();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('saves the plotted values as numbers, with the unit and the zone in the headings, and names the day', async () => {
+    const user = userEvent.setup();
+    render(
+      <TimeSeriesChart
+        series={[withPoints('1', 'Bits received', [[T, 1_500_000, null, null], [T + 60_000, 2_000_000, null, null]])]}
+        {...window_}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Download CSV' }));
+    expect(saved).toHaveLength(1);
+    expect(saved[0].name).toBe('hcml-graph-2027-01-15.csv');
+    expect(await saved[0].text).toBe(
+      ['"Time (Asia/Jakarta)","Bits received (bps)"', '"2027-01-15 15:00:00","1500000"', '"2027-01-15 15:01:00","2000000"'].join('\n'),
+    );
+  });
+
+  it('holds the rows of the table, joined on time, whether or not the table is open', async () => {
+    const user = userEvent.setup();
+    const two = [
+      withPoints('1', 'Bits received', [[T, 100, null, null], [T + 60_000, 200, null, null]]),
+      withPoints('2', 'Bits sent', [[T + 60_000, 7, null, null], [T + 120_000, 8, null, null]]),
+    ];
+    render(<TimeSeriesChart series={two} {...window_} />);
+    await user.click(screen.getByRole('button', { name: 'Show data' }));
+    const tableRows = screen.getAllByRole('row').length - 2; // two heading rows: a column group per series
+    await user.click(screen.getByRole('button', { name: 'Download CSV' }));
+    const lines = (await saved[0].text).split('\n');
+    expect(lines).toHaveLength(tableRows + 1);
+    expect(lines[0]).toBe('"Time (Asia/Jakarta)","Bits received (bps)","Bits sent (bps)"');
+    // A time at which a series has no point is an empty cell, as in the table.
+    expect(lines[1]).toBe('"2027-01-15 15:00:00","100",""');
+    expect(lines[3]).toBe('"2027-01-15 15:02:00","","8"');
+  });
+
+  it('is off when no series has a point, so the file would be a heading and nothing else', () => {
+    render(<TimeSeriesChart series={[withPoints('1', 'Bits received', [])]} {...window_} />);
+    expect(screen.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
   });
 });

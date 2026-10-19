@@ -31,7 +31,7 @@ const sameDeps = (a: unknown[], b: unknown[]) =>
  *
  * - A run that is replaced (new `deps`, `reload`) or whose component unmounts is aborted; `fn` may
  *   take the signal, and every `api.*` call it makes synchronously gets it anyway (see `withSignal`
- *   in api.ts).
+ *   in api/client.ts).
  * - Polls are sequential: the next is scheduled only once the last has settled, so a slow BFF is
  *   never asked twice at once. They pause while the tab is hidden and catch up on return when one
  *   came due.

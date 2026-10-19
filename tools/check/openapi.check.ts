@@ -21,7 +21,10 @@
  *     viewer) must document 403. The public paths and the role rules are read from `PUBLIC_ROUTES`
  *     and `ROUTE_RULES` in the source, so there is no third list to drift;
  *   - the body: an unsafe method takes a body schema (schemas.ts), so it must document 400.
- * Not compared: query parameters and response bodies. No GET route declares a schema for them.
+ *   - the text: no one-line flow mapping has an entry without a key, which is what a description with a comma in it
+ *     turns into when it is not quoted (YAML cuts it there, silently).
+ * Not compared: query parameters and response bodies. No GET route declares a schema for them. The web app's types
+ * are held to the response bodies by web/src/__tests__/openapiTypes.test.ts.
  *
  * Read-only. No npm dependency: the YAML is scanned rather than parsed, the same trade
  * validate-sli.ts made when it hand-wrote a zip reader instead of adding a parser. That is safe here
@@ -213,6 +216,72 @@ export function specOperations(yaml: string): SpecOp[] {
       });
     }
   }
+  return out;
+}
+
+/**
+ * The lines where YAML cuts a description short. In a one-line flow mapping such as
+ * `{ type: integer, description: Seconds, summed over the hosts }` the plain scalar ends at the comma, and
+ * `summed over the hosts` becomes a key of its own with no value: nothing fails, the sentence just loses its tail,
+ * here and in the types made from the file. Every entry of such a mapping has to be `key: value`.
+ */
+export function cutDescriptions(yaml: string): { line: number; entry: string }[] {
+  const out: { line: number; entry: string }[] = [];
+  let blockIndent: number | null = null;
+
+  yaml.split('\n').forEach((text, i) => {
+    if (blockIndent !== null) {
+      if (text.trim() === '' || indentOf(text) > blockIndent) return;
+      blockIndent = null;
+    }
+    if (text.trimStart().startsWith('#')) return;
+    if (/(?::|-)\s+[|>][+-]?\d?\s*$/.test(text)) blockIndent = indentOf(text);
+
+    // One frame per open bracket: the entries it has finished and the one it is reading.
+    const frames: { brace: boolean; entries: string[]; current: string }[] = [];
+    let quote = '';
+    for (let c = 0; c < text.length; c++) {
+      const ch = text[c];
+      if (quote) {
+        frames.forEach((f) => (f.current += ch));
+        if (ch === quote) {
+          if (quote === "'" && text[c + 1] === "'") {
+            frames.forEach((f) => (f.current += "'"));
+            c++;
+          } else quote = '';
+        } else if (quote === '"' && ch === '\\') {
+          frames.forEach((f) => (f.current += text[c + 1] ?? ''));
+          c++;
+        }
+        continue;
+      }
+      if ((ch === "'" || ch === '"') && /[\s{[,:]/.test(text[c - 1] ?? ' ')) quote = ch;
+      if (ch === '{' || ch === '[') {
+        frames.forEach((f) => (f.current += ch));
+        frames.push({ brace: ch === '{', entries: [], current: '' });
+        continue;
+      }
+      const top = frames[frames.length - 1];
+      if (top && ch === ',') {
+        top.entries.push(top.current);
+        top.current = '';
+        frames.slice(0, -1).forEach((f) => (f.current += ch));
+        continue;
+      }
+      if (top && (ch === '}' || ch === ']')) {
+        frames.pop();
+        if (top.current.trim() !== '') top.entries.push(top.current);
+        if (top.brace) {
+          for (const entry of top.entries) {
+            if (!/^[^:]+:(\s|$)/.test(entry.trim())) out.push({ line: i + 1, entry: entry.trim() });
+          }
+        }
+        frames.forEach((f) => (f.current += ch));
+        continue;
+      }
+      frames.forEach((f) => (f.current += ch));
+    }
+  });
   return out;
 }
 
@@ -434,6 +503,19 @@ function selfTest(): string[] {
   );
   eq('spec with no operations', specOperations('info:\n  title: x\n'), []);
 
+  // Descriptions YAML would cut at a comma
+
+  const cut = (text: string) => cutDescriptions(text).map((c) => `${c.line}:${c.entry}`);
+  eq('a description cut at a comma', cut('a: { type: integer, description: Seconds, summed over the hosts }'), ['1:summed over the hosts']);
+  eq('the same description quoted', cut("a: { type: integer, description: 'Seconds, summed over the hosts' }"), []);
+  eq('double quotes with an escaped quote', cut('a: { description: "Say \\"a, b\\"", type: string }'), []);
+  eq('a doubled apostrophe in single quotes', cut("a: { description: 'The item''s value, or none', type: string }"), []);
+  eq('lists and nested mappings', cut("a: { oneOf: [{ type: number }, { type: 'null' }], description: ok }"), []);
+  eq('a key with no value', cut('a: { type: string, b }'), ['1:b']);
+  eq('the cut one inside another mapping', cut('a: { x: { description: One, two }, type: string }'), ['1:two']);
+  eq('a comment', cut('# a: { b, c }'), []);
+  eq('a block scalar is prose', cut(['a:', '  description: |', '    Write { b, c } like this.', '  type: string', 'x: { y, z }'].join('\n')), ['5:y', '5:z']);
+
   // The guard's two tables
 
   const authSource = String.raw`
@@ -541,6 +623,12 @@ if (!operations.length) {
 const compared = guard ? compare(registered, operations, guard) : { problems: [], guarded: 0, forbidding: 0, refusing: 0 };
 problems.push(...compared.problems);
 
+for (const c of cutDescriptions(yaml)) {
+  problems.push(
+    `docs/api/openapi.yaml:${c.line}  a flow mapping has the entry "${c.entry}" with no key. A description with a comma in it is cut there: quote the whole description.`,
+  );
+}
+
 const dupes = documented.filter((p, i) => documented.indexOf(p) !== i);
 for (const d of new Set(dupes)) {
   problems.push(`docs/api/openapi.yaml  ${d} appears more than once under paths:`);
@@ -567,5 +655,5 @@ const shape = Object.entries(byMethod)
 console.log(
   `openapi.check: ${registered.length} endpoints (${shape}), all documented, none extra. ` +
     `Methods and path parameters agree; 401 documented on ${compared.guarded} guarded operations, ` +
-    `403 on ${compared.forbidding} that can answer it, 400 on ${compared.refusing} that take a body.`,
+    `403 on ${compared.forbidding} that can answer it, 400 on ${compared.refusing} that take a body. No description is cut at a comma.`,
 );

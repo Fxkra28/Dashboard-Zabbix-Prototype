@@ -19,7 +19,7 @@ vi.mock('../clients/zabbix.js', async (importOriginal) => {
   return { ...actual, zbx: zbxMock, zbxWrite: zbxWriteMock };
 });
 
-const { ZabbixAuthError, ZabbixTimeoutError, ZabbixWriteDisabledError } = await import(
+const { ZabbixAuthError, ZabbixTimeoutError } = await import(
   '../clients/zabbix.js'
 );
 
@@ -420,7 +420,7 @@ describe('analytics routes', () => {
     const now = Math.floor(Date.now() / 1000);
     zabbixReturns({ 'event.get': [] });
     const { analyticsRoutes } = await import('../routes/analytics.js');
-    const { OPEN_AT_START_LOOKBACK } = await import('../services/analytics.js');
+    const { OPEN_AT_START_LOOKBACK } = await import('../services/incidents.js');
     const app = await buildTestApp(analyticsRoutes);
     // Each report reads its window, just before it the look-back for problems already open, and the
     // window's recovery events again, in that order.

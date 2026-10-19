@@ -35,7 +35,7 @@ Chosen: **React + TypeScript + Vite** on the front, **Fastify + TypeScript** on 
 for charts.
 
 TypeScript on both sides means a response shape can be written once and checked on both ends, and
-in practice `web/src/types.ts` mirrors the server's types by hand, so the compiler catches drift on
+in practice `web/src/types/` mirrors the server's types by hand, so the compiler catches drift on
 the client even though nothing generates the mirror.
 
 Fastify beat Express on its built-in hook lifecycle: the ordering of helmet, CORS, rate
@@ -53,7 +53,7 @@ explicit rather than a matter of `app.use` call order.
 ### Negative Consequences
 
 * Two build toolchains to keep working, and two `node_modules` trees.
-* **The type mirror is hand-maintained.** `web/src/types.ts` is not generated, and it has already
+* **The type mirror is hand-maintained.** `web/src/types/` is not generated, and it has already
   drifted: in six places it declares a field optional that the server always sends. Nothing checks it.
 * A TypeScript/Node stack is a second language in a shop whose monitoring system is PHP. If HCML's
   team is PHP-first, this is a handover cost that was accepted rather than solved.

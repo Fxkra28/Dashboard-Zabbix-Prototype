@@ -19,7 +19,7 @@ const refused = (body: unknown) =>
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
-/** A fresh api.ts for each test: its session state lives at module level. */
+/** A fresh api/ for each test: its session state lives at module level (api/session.ts). */
 async function load() {
   vi.resetModules();
   return import('../api');

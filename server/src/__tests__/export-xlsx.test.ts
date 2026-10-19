@@ -62,6 +62,7 @@ function decode(s: string): string {
 /** A small tag-balance checker that also builds the tree, so tests can ask questions of it. */
 function parseXml(xml: string): XNode {
   const body = xml.replace(/^<\?xml[^?]*\?>\s*/, '');
+  // eslint-disable-next-line no-control-regex -- the point of the check is to find these characters
   if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(body)) throw new Error('Control character in XML');
   if (body.includes(ch(0xfffe)) || body.includes(ch(0xffff))) throw new Error('Non-character in XML');
   if (/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(body)) throw new Error('Lone surrogate in XML');

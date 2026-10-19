@@ -10,7 +10,7 @@ vi.mock('../clients/zabbix.js', async (importOriginal) => {
 
 const { analyticsRoutes } = await import('../routes/analytics.js');
 
-const { heavy, HEAVY_REPORTS_AT_ONCE } = await import('../services/analytics.js');
+const { heavy, HEAVY_REPORTS_AT_ONCE } = await import('../services/reportPolicy.js');
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 20));
 

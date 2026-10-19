@@ -4,7 +4,7 @@ import { useAsync } from '../../shared/hooks/useAsync';
 import { useUrlState } from '../../shared/hooks/useUrlState';
 import type { DimensionKey, ScorecardResponse } from '../../types';
 import { Async, Empty } from '../../shared/components/states';
-import { downloadCsv } from './csv';
+import { downloadCsv } from '../../shared/lib/csv';
 import { NoData } from '../../shared/components/NoData';
 import { count } from '../../shared/lib/plural';
 import { TableWrap } from '../../shared/components/TableWrap';

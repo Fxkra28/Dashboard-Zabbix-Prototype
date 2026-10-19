@@ -9,7 +9,7 @@ import { Async, Empty } from '../../shared/components/states';
 import { Field } from '../../shared/components/Field';
 import KpiCard from '../../shared/components/KpiCard';
 import { dur } from '../../shared/lib/units';
-import { downloadCsv } from './csv';
+import { downloadCsv } from '../../shared/lib/csv';
 import { NoData } from '../../shared/components/NoData';
 import { count } from '../../shared/lib/plural';
 import { TableWrap } from '../../shared/components/TableWrap';

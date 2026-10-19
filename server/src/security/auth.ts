@@ -381,6 +381,7 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
   // Every attempt is logged: the name as typed, the outcome and the address, never the password.
   const typedName = (req: FastifyRequest) => {
     const { username } = (req.body ?? {}) as { username?: unknown };
+    // eslint-disable-next-line no-control-regex -- a typed name must not carry control characters into a log line
     return typeof username === 'string' ? username.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, LOG_NAME_MAX) : '';
   };
   const logAttempt = (req: FastifyRequest, outcome: 'success' | 'failure' | 'locked' | 'rate_limited') =>

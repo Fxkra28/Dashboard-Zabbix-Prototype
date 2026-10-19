@@ -108,4 +108,4 @@ a fix.
 * Follows [ADR-0002](0002-react-typescript-fastify.md)
 * `setup.md` §13 *Plain-language layer*, §24 *Assistant*
 * `flow/DataFlow.pdf`: the trust boundary, drawn per copy
-* `server/src/clients/ai.ts`, `server/src/services/assistant.ts`
+* `server/src/clients/ai.ts`, `server/src/services/assistant.ts` (the entry) and the `assistant*.ts` pieces behind it

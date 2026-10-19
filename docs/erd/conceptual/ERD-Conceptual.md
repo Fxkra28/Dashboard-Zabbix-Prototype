@@ -203,7 +203,7 @@ absent on purpose. See the *cascade* legend in
 
 ***derives from* carries the evidence source**: trends, raw history on an instance too young to have
 trends, or none at all. The same capacity figure means different things depending on which answered, so the
-source belongs to the association (`server/src/services/analytics.ts:772-788`).
+source belongs to the association (`server/src/services/capacity.ts:161-177`).
 
 **Interface Reading is absent from every existing ERD** (`server/src/services/net.ts:7-14,39-54`).
 
@@ -453,7 +453,7 @@ the assistant knows: it has no tools and cannot query anything, so a device abse
 not exist as far as any answer is concerned. The association therefore carries each section's character
 budget and whether that section was cut: the snapshot is capped at 5,500 characters overall, with a budget
 per section and at most 20 problems, and the page says *partial view* when a cap fired
-(`server/src/services/assistant.ts:81-93`). A snapshot is frozen for five minutes and so answers several turns, and a
+(`server/src/services/assistantSnapshot.ts:53-67`). A snapshot is frozen for five minutes and so answers several turns, and a
 host-state change must hold for a minute before it forces a rebuild, which is why *answers from* is
 `(0,n)` on the snapshot leg.
 
@@ -572,7 +572,7 @@ So, concretely: a change to any of these obliges a change here.
 | `server/src/domain/reachability.ts`, states or reasons | Host State |
 | `server/src/sli/engine.ts`: the profiles, or what a result carries | Availability Period, Availability Result, R23 to R25 |
 | `server/src/sli/tree.ts`: the node kinds | Derived Service Node, R26, R27 |
-| `server/src/services/assistant.ts`: the caps, the freeze or the sections | Assistant Snapshot, R31, R32 |
+| `server/src/services/assistantSnapshot.ts`: the caps, the freeze or the sections | Assistant Snapshot, R31, R32 |
 | `server/src/services/inventory.ts`: the dimensions | Governance Dimension, R28 |
 | A new Zabbix API method in `server/src/clients/zabbix.ts` | Whether a new entity is observed rather than derived |
 

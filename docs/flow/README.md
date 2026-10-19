@@ -43,9 +43,9 @@ index.html ──► main.tsx ──► <App/> ──► GET /api/auth/me ──
 ```
 
 Every page is code-split. `useAsync` lets only its newest run write state, so picking host A and
-then host B cannot leave A's slower answer on screen. A 401 from anywhere sends `api.ts` to `/login`,
-and so do a sign-out in another tab and a page Back restores after one; those are the only automatic
-paths to it, because nothing guards routes by role in the browser. The
+then host B cannot leave A's slower answer on screen. A 401 from anywhere sends the API client
+(`web/src/api/`) to `/login`, and so do a sign-out in another tab and a page Back restores after one;
+those are the only automatic paths to it, because nothing guards routes by role in the browser. The
 sidebar's role filter is cosmetic; the BFF returns 403 regardless. `web/src/App.tsx:40-69`.
 
 ### 2 · Web: the live dashboard
@@ -54,17 +54,17 @@ sidebar's role filter is cosmetic; the BFF returns 403 regardless. `web/src/App.
 Dashboard ──EventSource /api/stream + session cookie──► BFF ──tick 5 s──► Zabbix ──event: problems──► setState
 ```
 
-`useSSE` has exactly one call site, `Overview.tsx`; navigating away closes the connection, and the
-Problems page polls instead. The server ticks every 5 s but only writes when the fingerprint changed
+`useSSE` has two call sites, `Overview.tsx` and `Problems.tsx`; navigating away closes the connection. The Dashboard shows the stream's list; the
+Problems page keeps polling every 30 s and reads its list again at once when a frame says the list changed. The server ticks every 5 s but only writes when the fingerprint changed
 (a change in only a name or host waits up to 30 s, a list identical to the last one is never
-resent, and a frame carries only the fields the Dashboard reads: no tags, no `opdata`). After 15 s of silence it sends a named `ping` event that carries the list's age in
+resent, and a frame carries only the fields the Dashboard reads: no tags, no `opdata`), and a screen that accepts gzip gets the frames compressed, flushed after each one. After 15 s of silence it sends a named `ping` event that carries the list's age in
 milliseconds: `useSSE` uses it to tell a quiet line from a dead one and to keep "Data as of" moving.
 Screens are capped (`STREAM_MAX_CLIENTS` 100 in all, `STREAM_MAX_PER_USER` 5, a 429 past either), a
 signed-in stream ends when its token expires so the browser reconnects with the renewed cookie, and every
 stream ends on SIGTERM so the server can close. No token rides in the URL: `EventSource` cannot set a header, but it sends the
 httpOnly session cookie like any same-origin request, and the BFF refuses `?token=` on every route.
 `logging.ts` still redacts one, for pages loaded before the cookie (ADR-0010).
-`server/src/services/stream.ts:28-36,303-322`, `server/src/routes/stream.ts:4-39`, `web/src/api.ts:580-583`.
+`server/src/services/stream.ts:28-36,303-322`, `server/src/routes/stream.ts:4-39`, `web/src/api/problems.ts:7-10`.
 
 ### 3 · Server: one request
 
@@ -207,12 +207,12 @@ Six things on it are easy to miss and cost real bugs if you forget them:
 - No token rides in the stream's URL. `EventSource` cannot set a header, but it sends the
   httpOnly session cookie like any same-origin request, so the BFF refuses `?token=` everywhere.
   `logging.ts` still redacts one, for pages loaded before the cookie.
-- Only the Dashboard streams. `useSSE` has exactly one call site (`Overview.tsx`), and navigating
-  away closes the connection. The Problems page does not stream: it polls every 30 s.
+- Two pages stream. `useSSE` has two call sites (`Overview.tsx` and `Problems.tsx`), and navigating
+  away closes the connection. The Problems page uses the stream only as a signal to read its list again; it still polls every 30 s.
 - `ExplainPanel` does not render markdown. It writes its fields as plain `<p>` paragraphs; the
   Assistant is the only consumer of `features/assistant/parseMarkdown.ts`.
 - Stage 2's "signed in?" diamond is not a route guard. Nothing reads the role and redirects: the
-  automatic paths to `/login` are `api.ts` reacting to a 401, to a sign-out in another tab, or to a
+  automatic paths to `/login` are the API client reacting to a 401, to a sign-out in another tab, or to a
   page Back restores after one, so an unauthenticated visitor sees
   the chrome painted for one round trip before the redirect lands. The sidebar's role filter is
   cosmetic; the BFF enforces with a 403 regardless.

@@ -158,7 +158,9 @@ patch -p1 -R < ../patches/bk-11-removed-endpoints.patch
 ```
 
 The patch covers the ten files that held code, tests and OpenAPI entries. It does not restore the prose of the
-README and this file, where the endpoint count would go back to 46.
+README and this file, where the endpoint count would go back to 46. Since 19 October the web also needs
+`npm run gen:api` in `web/` after it, because a test fails while `web/src/generated/openapi.ts` is older than the
+OpenAPI file, which has its five paths back.
 
 ## The Zabbix stack's passwords out of its compose file (IN-23)
 

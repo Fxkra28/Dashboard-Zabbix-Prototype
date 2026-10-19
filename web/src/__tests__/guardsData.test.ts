@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import apiSource from '../api?raw';
 import * as g from '../guards';
 
 /**
@@ -11,6 +10,9 @@ import * as g from '../guards';
  * rest. The guards also fitted every real answer of both portals when run over them once; that run
  * is not repeatable here, since its input is HCML's estate.
  */
+/** Every file of api/ as text: the calls are in one file for each part of the portal. */
+const callFiles = import.meta.glob('../api/*.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
 type AnyGuard = g.Guard<unknown>;
 interface Case {
   name: string;
@@ -204,6 +206,17 @@ const cases: Case[] = [
   },
   { name: 'SLA source', guard: g.slaSourceGuard, sample: { real: false, slas: 0, services: 0 } },
   { name: 'SLA list', guard: g.slaListGuard, sample: [{ slaid: '1', name: 'n', slo: '99.9', period: '1', status: '1', timezone: 'UTC', description: 'd' }], optional: ['[0].timezone', '[0].description'] },
+  {
+    name: 'problem explanation',
+    guard: g.problemExplanationGuard,
+    sample: { summary: 's', tagsExplained: [{ tag: 'class', value: 'network', meaning: 'm' }], businessImpact: 'b', recommendation: 'r' },
+  },
+  {
+    name: 'SLA explanation',
+    guard: g.slaExplanationGuard,
+    sample: { status: 's', plain: 'p', meetingTarget: true, recommendation: 'r', noData: true },
+    optional: ['noData'],
+  },
   { name: 'SLA figures', guard: g.slaSliGuard, sample: [{ serviceid: '1', name: 'n', sli: 99, uptime: 1, downtime: 1, error_budget: 1, period_from: 1, period_to: 2 }] },
 ];
 
@@ -274,12 +287,13 @@ describe('answers that are not the kind at all', () => {
 });
 
 describe('every data answer the web app reads has a guard (FR-16)', () => {
-  const api = apiSource;
-  /** The members of `export const api = { ... }`: from a name at two spaces' indent to the next one. */
-  const body = api.slice(api.indexOf('export const api = {'));
-  const members = body.split(/\n {2}(?=[a-zA-Z]\w*: )/).slice(1);
-  /** Answers that are not read as data: the public health probe, and the text a model writes. */
-  const UNGUARDED = ['health', 'explainProblem', 'explainSla'];
+  /** The members of each `export const xApi = { ... }` of api/: from a name at two spaces' indent to the next one. */
+  const members = Object.values(callFiles).flatMap((source) => {
+    const at = source.search(/export const \w+Api = \{/);
+    return at < 0 ? [] : source.slice(at).split(/\n {2}(?=[a-zA-Z]\w*: )/).slice(1);
+  });
+  /** Answers that are not read as data: the public health probe. */
+  const UNGUARDED = ['health'];
 
   it('finds the members it checks', () => {
     expect(members.length).toBeGreaterThan(25);

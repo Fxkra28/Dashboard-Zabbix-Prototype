@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/** The tabs' channel is not under test here; api.ts only needs one to exist. */
+/** The tabs' channel is not under test here; api/ only needs one to exist. */
 class FakeChannel {
   postMessage() {}
   addEventListener() {}
@@ -19,7 +19,7 @@ const json = (status: number, body: unknown) =>
 let fetchMock: ReturnType<typeof vi.fn>;
 let where: { pathname: string; search: string; href: string; origin: string };
 
-/** A fresh api.ts for each test: its session state lives at module level. */
+/** A fresh api/ for each test: its session state lives at module level (api/session.ts). */
 async function load() {
   vi.resetModules();
   return import('../api');
@@ -149,7 +149,7 @@ describe('api.sliExport', () => {
   });
 });
 
-describe('api.ts JSON reads, which share their GET with the download', () => {
+describe('api/ JSON reads, which share their GET with the download', () => {
   it('read JSON and carry the signal withSignal sets, so useAsync can still cancel them', async () => {
     const { api, withSignal } = await load();
     // A read has its own signal now (it carries a deadline too), so the proof is that the

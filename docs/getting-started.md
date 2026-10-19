@@ -133,16 +133,18 @@ has the other main pages, the dark theme and the narrow-screen layout.
 
 ```bash
 cd server
-npm test                                  # 1670 tests, 77 files
+npm test                                  # 1687 tests, 78 files
+npm run lint                              # eslint
 npm run typecheck
 npx tsx tools/check/openapi.check.ts          # the API contract matches the code
 npx tsx tools/check/erd.check.ts              # the database ERD matches its .erd model
 npx tsx scripts/validate-sli.ts           # the derived SLA against HCML's published reports
 
 cd ../web
-npm test                                  # 1132 tests, 78 files, in jsdom
+npm test                                  # 1173 tests, 81 files, in jsdom
 npm run lint                              # eslint
 npm run typecheck
+npm run gen:api                           # web/src/generated/openapi.ts, from docs/api/openapi.yaml
 ../server/node_modules/.bin/tsx scripts/markdown.check.ts   # web/ has no tsx of its own
 ../server/node_modules/.bin/tsx scripts/units.check.ts
 node scripts/css.check.mjs
@@ -152,8 +154,8 @@ node tools/check/diagrams.check.mjs           # every diagram source still match
 node tools/check/parity.check.mjs            # the two copies match (needs both folders side by side)
 ```
 
-The checkers add zero dependencies: they are standalone scripts. The web's tests and lint use
-vitest and eslint, dev dependencies that never reach the built site.
+The checkers add zero dependencies: they are standalone scripts. The tests and lint of both packages, and the web's generated API types, use
+vitest, eslint and openapi-typescript, dev dependencies that never reach the built site.
 `validate-sli.ts` needs HCML's Availability Report spreadsheets in `~/Downloads` and will skip
 politely without them.
 

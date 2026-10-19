@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-// One test in its own file: each api.ts instance adds a window listener, and
+// One test in its own file: each fresh api/ adds a window listener (api/index.ts), and
 // jsdom's window lasts the whole file.
 describe('a page Back restores from the browser cache', () => {
   it('asks the BFF whether the session still holds, and goes to sign-in once it has ended', async () => {

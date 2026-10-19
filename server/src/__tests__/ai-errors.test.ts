@@ -93,13 +93,13 @@ describe('a model that answers with an error', () => {
       'fetch',
       vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'x'.repeat(5_000) } as unknown as Response),
     );
-    const { humanize, AiUpstreamError } = await loadAi(LOCAL_ENV);
-    const failure = (await humanize('problem', {}).catch((e: unknown) => e)) as InstanceType<typeof AiUpstreamError>;
+    const { humanize } = await loadAi(LOCAL_ENV);
+    const failure = (await humanize('problem', {}).catch((e: unknown) => e)) as Upstream;
     expect(failure.detail?.length).toBeLessThan(260);
   });
 
   it('treats a failure line in Ollama\'s stream the same way', async () => {
-    const { readOllamaStream, AI_MESSAGE, AiUpstreamError } = await loadAi({ ...LOCAL_ENV, AI_OLLAMA_NATIVE: 'auto' });
+    const { readOllamaStream, AI_MESSAGE } = await loadAi({ ...LOCAL_ENV, AI_OLLAMA_NATIVE: 'auto' });
     const body = new ReadableStream<Uint8Array>({
       start(c) {
         c.enqueue(new TextEncoder().encode(`${JSON.stringify({ error: 'runner exited at /usr/lib/ollama' })}\n`));
@@ -110,7 +110,7 @@ describe('a model that answers with an error', () => {
       try {
         for await (const piece of readOllamaStream(body)) void piece;
       } catch (err) {
-        return err as InstanceType<typeof AiUpstreamError>;
+        return err as Upstream;
       }
     })();
     expect(failure?.message).toBe(AI_MESSAGE.failed);

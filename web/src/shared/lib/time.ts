@@ -68,6 +68,31 @@ export function formatDateTime(atMs: number, tz = reportTz): string {
   return `${fmt.format(new Date(atMs))} ${zoneLabel(atMs, tz)}`;
 }
 
+const isoFormats = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * A moment as `2026-10-19 14:05:00` in the report zone: the same digits in every browser and locale, in an order that sorts, and
+ * what a spreadsheet reads as a date. The zone is not in the text, so a file that holds it names the zone once, in its heading.
+ */
+export function formatIsoDateTime(atMs: number, tz = reportTz): string {
+  let fmt = isoFormats.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    isoFormats.set(tz, fmt);
+  }
+  const p = Object.fromEntries(fmt.formatToParts(new Date(atMs)).map((part) => [part.type, part.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+}
+
 function offsetSeconds(utcSeconds: number, tz: string): number {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-US', {
