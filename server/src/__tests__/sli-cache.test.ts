@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MAX_ENTRIES, cached, invalidate } from '../cache.js';
+import { MAX_ENTRIES, cached, invalidate } from '../core/cache.js';
 
 /**
  * getMonthlySli is the one place the derived SLA is computed and kept, and
@@ -14,7 +14,7 @@ vi.mock('../sli/engine.js', async (importOriginal) => {
   return { ...actual, computeSli: compute };
 });
 
-const { getMonthlySli } = await import('../routes/sli.js');
+const { getMonthlySli } = await import('../services/sli.js');
 
 const NOW = new Date('2026-10-02T03:00:00Z');
 const MINUTE = 60_000;

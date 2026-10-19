@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 /**
- * web/scripts/diagrams.check.mjs and diagrams.stamp.mjs: a diagram source carries a stamp of its own
+ * tools/check/diagrams.check.mjs and diagrams.stamp.mjs: a diagram source carries a stamp of its own
  * hash, the check fails when the source changed after it, and only the stamp script writes one.
  * CI runs the check on the tree it holds; this keeps the rules, and runs the check on this copy, so a
  * source edited without a stamp fails `npm test` here before it fails there.
@@ -21,8 +21,8 @@ interface Diagrams {
   checkDiagrams(root: string): { sources: number; problems: string[] };
   selfTest(): string[];
 }
-const diagrams = (await import(pathToFileURL(repo('web/scripts/diagrams.check.mjs')).href)) as Diagrams;
-const stampScript = repo('web/scripts/diagrams.stamp.mjs');
+const diagrams = (await import(pathToFileURL(repo('tools/check/diagrams.check.mjs')).href)) as Diagrams;
+const stampScript = repo('tools/check/diagrams.stamp.mjs');
 
 const scratch = mkdtempSync(join(tmpdir(), 'diagrams-check-test-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));

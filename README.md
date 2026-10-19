@@ -94,7 +94,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | `dotenv` | ^16.4 | `.env` in dev. In Docker, Compose passes the environment directly |
 | `@anthropic-ai/sdk` | ^0.124 | The `anthropic` backend of the AI layer, and nothing else. The OpenAI-compatible backend is hand-rolled on `fetch`: one response shape to maintain instead of a second SDK to keep current |
 | Report writers | not a package | `src/export/` writes the monthly SLA report as a PDF and as an Excel workbook, on request, with Node's built-in `zlib` and `crypto` modules and no PDF or spreadsheet library. ADR-0011 (`docs/architecture/adr/0011-build-the-sla-report-files-in-the-bff.md`) has the trade-off |
-| Vitest | ^5.0 | 1622 tests in 73 files. Zabbix is mocked at `src/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
+| Vitest | ^5.0 | 1670 tests in 77 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
 | tsx | ^4.16 | `npm run dev` watch mode only. Production runs plain `node dist/index.js` |
 
 ### Web: `web/`
@@ -105,9 +105,9 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | Vite | ^8.3 | Dev server proxies `/bff` → `:4000`, so dev and prod hit the same paths. The production build is static files |
 | `react-router-dom` | ^7.18 | All 19 pages are `lazy()`. The initial bundle is 210 kB JS + 37 kB CSS; a page after that costs between 2 and 17 kB |
 | ECharts + `echarts-for-react` | ^6.1 / ^3.0 | Registered selectively (line chart, grid, tooltip, legend, data zoom, canvas renderer) instead of the barrel, which pulls in roughly a megabyte of chart types nothing draws. Drawn with the `v5` theme ECharts 6 ships, so the parts the portal does not colour itself look as they did on 5.x. Imported only by `TimeSeriesChart`, so its 608 kB chunk loads on Graphs and Network and nowhere else |
-| Custom CSS | not a package | One `styles.css`. HCML blue `#2B5584`, measured from the company logo, with Inter for text and IBM Plex Mono for IDs and figures. Light and dark come from one set of CSS variables, per [`DESIGN.md`](DESIGN.md). `web/scripts/tokens.check.mjs` computes the contrast of every pair in both themes and fails on a raw value used where a token exists |
-| Hand-rolled, on purpose | not a package | `hooks/useSSE.ts` over native `EventSource`; `hooks/useAsync.ts` for server state, in place of a query library; `lib/markdown.ts` in 141 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
-| Vitest + Testing Library | ^5.0 / ^16.3 | 1026 tests in 70 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api.ts`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
+| Custom CSS | not a package | One stylesheet in 18 numbered parts (`web/src/styles/`). HCML blue `#2B5584`, measured from the company logo, with Inter for text and IBM Plex Mono for IDs and figures. Light and dark come from one set of CSS variables, per [`DESIGN.md`](DESIGN.md). `web/scripts/tokens.check.mjs` computes the contrast of every pair in both themes and fails on a raw value used where a token exists |
+| Hand-rolled, on purpose | not a package | `features/dashboard/useSSE.ts` over native `EventSource`; `shared/hooks/useAsync.ts` for server state, in place of a query library; `features/assistant/parseMarkdown.ts` in 141 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
+| Vitest + Testing Library | ^5.0 / ^16.3 | 1132 tests in 78 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api.ts`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
 | ESLint | ^9.39 | `npm run lint` in `web/`: typescript-eslint, the two classic react-hooks rules and jsx-a11y's recommended set. On 9 because jsx-a11y does not support ESLint 10 yet |
 
 ### Around it
@@ -116,7 +116,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 |---|---|---|
 | Zabbix | 7.0 | The only data source, read over JSON-RPC 2.0, never its database. Two tokens: read everywhere, write only for acknowledge/close |
 | Docker Compose | not pinned | Two services, neither of them a datastore: `portal-bff` (Node, with a healthcheck on `/api/health` and `init: true`) and `portal-web` (nginx, which starts once the BFF is healthy). Both images are multi-stage and install with `npm ci` against a committed lockfile, so one commit builds the same twice |
-| nginx | alpine | Serves the build and reverse-proxies `/bff`, with buffering off on the live stream and the assistant (SSE never arrives without it) and a 60 s read timeout elsewhere (180 s for explanations and for the monthly SLA and its download), a resolver so recreating the BFF alone does not leave `/bff` on 502, a one-year immutable cache on `/assets/`, and SPA fallback to `index.html`. It runs as an unprivileged user and listens on 8080 inside the container, with a read-only root filesystem (setup.md, section 23). It also adds security headers to the app's pages and files (the CSP in report-only mode), gzips them, hides its version and writes `token=redacted` in its access log, for pages opened before the session cookie |
+| nginx | alpine | Serves the build and reverse-proxies `/bff`, with buffering off on the live stream and the assistant (SSE never arrives without it) and a 60 s read timeout elsewhere (180 s for explanations and for the monthly SLA and its download), a resolver so recreating the BFF alone does not leave `/bff` on 502, a one-year immutable cache on `/assets/`, and SPA fallback to `index.html`. It runs as an unprivileged user and listens on 8080 inside the container, with a read-only root filesystem (setup.md, section 23). It also adds security headers to the app's pages and files (the CSP, enforced since 14 October), gzips them, hides its version and writes `token=redacted` in its access log, for pages opened before the session cookie |
 | The model | set in `.env` | One switch, `AI_PROVIDER`, over two backends that get the same prompt and the same JSON Schemas. See *Plain-language layer* below |
 
 Deliberately not used: no ORM or database driver (the portal owns no data), no state-management
@@ -129,22 +129,22 @@ report writers are hand-rolled on `zlib` and `crypto`), and no second HTTP clien
 This copy runs the hosted model: `AI_PROVIDER=anthropic` with `claude-sonnet-4-6`. Its sibling,
 `hcml-portal-ollama`, is the *same source code* set to `AI_PROVIDER=openai-compatible` and pointed at
 `qwen3:8b` running on the local computer. Everything in the three tables above is identical in both:
-`server/src`, `web/src` and both `scripts/` folders match file for file.
+`server/src`, `web/src`, `tools/` and both `scripts/` folders match file for file.
 
-Exactly 21 files differ between the two. All of them are settings, or documents written from
+Exactly 22 files differ between the two. All of them are settings, or documents written from
 each copy's point of view. None of them is code:
 
 - the two `.env` files and the two `.env.example` templates
 - `docker-compose.yml` and `docs/api/openapi.yaml`, which name each copy's web port
-- `setup.md`, where three lines name the port and one the session cookie
+- `docs/setup/11-running-deploying.md` and `19-authentication-rbac.md`, where three lines name the port and one the session cookie
 - `README.md`, `docs/index.md`, and `AUDIT_REPORT.md` (each copy holds a different audit)
 - `docs/architecture/adr/0005-*`, the decision record about the AI layer
 - `docs/schema/CDM.mmd`, `ERD.mmd` and `PDM.mmd`, their three PDFs, and `docs/schema/README.md`
 - `docs/flow/DataFlow.mmd`, its PDF, and `docs/flow/README.md`
 
 The command that proves it, with the exclusions it needs, is in
-[`docs/contributing.md`](docs/contributing.md), and `node web/scripts/parity.check.mjs` runs the same
-comparison with the 17 files that may differ (21 with the four `.env` files) named one by one.
+[`docs/contributing.md`](docs/contributing.md), and `node tools/check/parity.check.mjs` runs the same
+comparison with the 18 files that may differ (22 with the four `.env` files) named one by one.
 
 ---
 
@@ -152,54 +152,58 @@ comparison with the 17 files that may differ (21 with the four `.env` files) nam
 
 ```
 hcml-portal/
-├── server/                  # BFF: Fastify + TypeScript
-│   └── src/
-│       ├── index.ts         # app, plugins, route registration
-│       ├── health.ts        # GET /api/health: build, version, Zabbix and model readiness
-│       ├── shutdown.ts      # closes on SIGTERM and SIGINT, ending live streams first
-│       ├── staleness.ts     # X-Data-Stale headers on an answer served from an old copy
-│       ├── config.ts        # env config + startup validation
-│       ├── errors.ts        # typed failure → HTTP mapping
-│       ├── zabbix.ts        # JSON-RPC client; read/write token split, timeouts
-│       ├── ai.ts            # LLM client (plain-language layer): Claude or a local model
-│       ├── chat.ts          # the assistant: estate snapshot + streamed answers
-│       ├── cache.ts         # TTL cache, in-flight coalescing, invalidate(prefix)
-│       ├── auth.ts          # cookie sign-in + 3-tier RBAC guard
-│       ├── queries.ts       # shared Zabbix queries
-│       ├── export/          # SLA report files: one document model, a PDF writer, an Excel writer
-│       ├── routes/          # 18 modules → 35 endpoints (41 with health, ready and the four auth/ routes);
-│       │                    #   sliExport.ts serves the report files
-│       └── __tests__/       # vitest suite (1622 tests); export-*.test.ts cover the report files
-├── web/                     # React + TypeScript + Vite
+├── server/                      # BFF: Fastify + TypeScript, its own package.json, lockfile and Dockerfile
 │   ├── src/
-│   │   ├── pages/           # 18, all lazy-loaded
-│   │   ├── components/      # Layout, Sidebar, ExplainPanel, AckDialog, ReportDownload, …
-│   │   ├── hooks/           # useAsync, useSSE, useAuth, useUiPrefs, useUrlState, …
-│   │   ├── __tests__/       # vitest + Testing Library, in jsdom (1026 tests); ReportDownload and reportApi cover the download
-│   │   └── api.ts, types.ts, theme.ts, styles.css
-│   ├── scripts/             # css.check.mjs, tokens.check.mjs, markdown.check.ts, units.check.ts, links.check.mjs, diagrams.check.mjs, diagrams.stamp.mjs
-│   ├── public/              # logo.png · logo-mark.png · logo-icon.png (served at /)
-│   └── brand/               # the supplied original, kept for provenance, not served
-├── docs/                    # everything documentary lives here
-│   ├── index.md             # what is documented, and in what order to read it
-│   ├── getting-started.md   # clone → running portal
-│   ├── contributing.md      # the house rules, and why each one exists
-│   ├── api/openapi.yaml     # all 43 endpoints; checked by scripts/openapi.check.ts
-│   ├── architecture/adr/    # 11 Architecture Decision Records (MADR)
-│   ├── schema/              # the data model on three pages: CDM · ERD · PDM (start here)
-│   ├── flow/                # how it runs: WebFlow · ServerFlow · DataFlow, and nine one-line flows
-│   ├── ux/                  # who uses this: roles, the acknowledge journey (derived, not interviewed)
-│   ├── operations/          # backing up the .env files; TLS for any deployment beyond localhost
-│   └── erd/                 # the full data model (erd.md) and the reference set behind it
-├── deploy/                  # settings.example: every non-secret setting and its default
-├── .github/workflows/       # docs.yml: typechecks, web lint, both test suites, the web build, the nine checkers, npm audit, a secret scan, both Docker builds
-├── .github/dependabot.yml   # weekly pull requests for the actions, the npm packages and the base images
-├── DESIGN.md                # the design direction: identity, palette, typography, mood
-├── CHANGELOG.md             # what changed in each build, newest first
-├── setup.md                 # how each subsystem works and why, 31 sections
-├── AUDIT_REPORT.md          # security + documentation audits
-├── docker-compose.yml       # portal-web (nginx) + portal-bff
-└── web/nginx.conf           # serves the build, reverse-proxies /bff
+│   │   ├── index.ts             # the composition root: plugins, hooks, route registration
+│   │   ├── routes/              # HTTP only: one registrar for each module (read the request, call a service, reply); 22 files, 39 of the 45 endpoints (sign-in is in security/auth.ts, health and ready in http/health.ts)
+│   │   ├── services/            # what the routes call: the Zabbix reads and the work done on them, one module for each route,
+│   │   │                        #   with the assistant (assistant.ts, chat.ts) and the live-stream hub (stream.ts)
+│   │   ├── sli/                 # derived SLA: engine, events, intervals, summary, time, tree
+│   │   ├── export/              # SLA report files: one document model, a PDF writer, an Excel writer
+│   │   ├── core/                # env config + startup validation, the TTL cache, the gate, query parsing, the body schemas; imports nothing else
+│   │   ├── clients/             # Zabbix JSON-RPC (read/write token split), the model client, the caps on its use
+│   │   ├── domain/              # what a host, a site and a problem are: naming rules, reachability, the shared reads
+│   │   ├── security/            # cookie sign-in + 3-tier RBAC guard, password hashes, the page table, the viewer policy
+│   │   ├── http/                # what index.ts wires in: rate limit, request id, compression, error mapping, health, shutdown
+│   │   └── __tests__/           # vitest: 77 files, 1670 tests; layering.test.ts keeps the direction (routes → services → the shared folders)
+│   └── scripts/                 # validate-sli.ts (HCML's published figures), hash-password.ts
+├── web/                         # React + TypeScript + Vite, its own package.json, lockfile and Dockerfile
+│   ├── src/
+│   │   ├── features/            # one folder for each part of the portal, with its pages, components, hooks, logic and tests:
+│   │   │                        #   assistant, auth, dashboard, graphs, hosts, meters, network, problems, reports, shell, sla
+│   │   ├── shared/              # what two or more features use: components/, hooks/, lib/
+│   │   ├── styles/              # the stylesheet in numbered parts; index.css imports them in cascade order
+│   │   ├── __tests__/           # tests that cross features (routes, layering, wording), the fixtures, and the setup; the other tests sit beside their code: 78 files, 1132 tests in all
+│   │   └── App.tsx, main.tsx, api.ts, types.ts, guards.ts, theme.ts
+│   ├── scripts/                 # css.check.mjs, tokens.check.mjs, markdown.check.ts, units.check.ts
+│   ├── public/                  # logo.png · logo-mark.png · logo-icon.png (served at /), the fonts
+│   ├── brand/                   # the supplied original, kept for provenance, not served
+│   └── nginx.conf               # serves the build, reverse-proxies /bff
+├── tools/
+│   ├── check/                   # the repository against itself: openapi, erd, links, diagrams, parity (run by CI)
+│   └── live/                    # tools that read a running portal: page audit, keyboard walk, CSP trial server, load and timing
+├── docs/                        # everything documentary lives here
+│   ├── index.md                 # what is documented, and in what order to read it
+│   ├── getting-started.md       # clone → running portal
+│   ├── contributing.md          # the house rules, and why each one exists
+│   ├── setup/                   # how each subsystem works and why: 35 parts, indexed by setup.md
+│   ├── api/openapi.yaml         # all 45 endpoints; checked by tools/check/openapi.check.ts
+│   ├── architecture/adr/        # 13 Architecture Decision Records (MADR)
+│   ├── schema/                  # the data model on three pages: CDM · ERD · PDM (start here)
+│   ├── flow/                    # how it runs: WebFlow · ServerFlow · DataFlow, and nine one-line flows
+│   ├── ux/                      # who uses this: roles, the acknowledge journey (derived, not interviewed)
+│   ├── operations/              # backing up the .env files; TLS for any deployment beyond localhost
+│   └── erd/                     # the full data model (erd.md) and the reference set behind it
+├── deploy/                      # settings.example: every non-secret setting and its default
+├── .github/workflows/ci.yml     # five jobs: server, web, checks, secret scan, Docker images
+├── .github/dependabot.yml       # weekly pull requests for the actions, the npm packages and the base images
+├── package.json                 # no dependencies: `npm run verify` runs every check from here (see tools/README.md)
+├── LICENSE, SECURITY.md         # the terms the code is shared on, and how to report a vulnerability
+├── DESIGN.md                    # the design direction: identity, palette, typography, mood
+├── CHANGELOG.md, tracker.md     # what changed in each build, newest first; the rows of work and their state
+├── setup.md                     # the index of docs/setup/
+├── AUDIT_REPORT.md              # security + documentation audits
+└── docker-compose.yml           # portal-web (nginx) + portal-bff
 ```
 
 19 pages: Dashboard · Problems · Sites · Hosts · Devices · Graphs · Latest data · Maps · Network ·
@@ -230,7 +234,7 @@ cd server
 cp .env.example .env          # set ZBX_URL + ZABBIX_API_TOKEN; auth needs JWT_SECRET + PORTAL_PASS
 npm install
 npm run dev                   # http://localhost:4000
-npm test                      # 1622 tests, no live Zabbix needed
+npm test                      # 1670 tests, no live Zabbix needed
 
 curl localhost:4000/api/health   # { ok, ts, ai, writeBack, defaults, version, startedAt, build, ready, streams }
 ```
@@ -337,7 +341,7 @@ Three roles, and the BFF is what enforces them:
 | `admin` | …plus `/api/reports/inventory` |
 
 The sidebar hides what your role cannot reach, but that is cosmetic: the guard is server-side and
-returns 403 whatever the browser shows. The rules are `ROUTE_RULES` in `server/src/auth.ts`. A password
+returns 403 whatever the browser shows. The rules are `ROUTE_RULES` in `server/src/security/auth.ts`. A password
 in `.env` is plain text unless the entry is an scrypt hash (accepted since 7 October 2026), and either is
 compared in constant time. The BFF audit items on this (BE-12 to BE-17, in `hcml-portal-ollama/AUDIT_REPORT.md`) are closed;
 what is still open is under [Known gaps](#known-gaps).
@@ -348,7 +352,7 @@ Grouped by the question each one answers, not by the order they appear in the si
 
 | Page | Route | What it answers |
 |---|---|---|
-| Dashboard | `/` | Is anything wrong right now? The only page that streams. Operators and admins get a second view, the internet traffic meters: a gauge for each link, read from HCML's Zabbix dashboard, with a link that is down said to be down, the other direction shown when it is high, and a card for the links on the first view. A wall screen turns between the two by itself (`/?wall=1`, `rotate=` for the seconds) |
+| Dashboard | `/` | Is anything wrong right now? The only page that streams. Everyone gets a second view, the Hosts: how many hosts are up, degraded, down or without data, the devices of each kind, the web scenarios that pass or fail, and the ten busiest hosts by CPU and by memory. Operators and admins get a third, the internet traffic meters: a gauge for each link, read from HCML's Zabbix dashboard, with a link that is down said to be down, the other direction shown when it is high, and a card for the links on the first view. A wall screen turns between the views by itself (`/?wall=1`, `rotate=` for the seconds, `view=` to hold one) |
 | Problems · Alert noise · Top 100 triggers | `/problems` · `/reports/noise` · `/reports/top-triggers` | What is firing, and what fires so often that nobody reads it any more |
 | Sites · Hosts · Devices · Latest data · Graphs · Maps | `/sites` · `/hosts` · `/devices` · `/latest` · `/graphs` · `/maps` | Where a device is, what kind it is, what it is reporting, and what it looked like an hour ago |
 | Network · Links & WAN health | `/network` · `/links` | Operator role and above. The WAN view: which links are up, and what they cost in latency and loss |
@@ -418,7 +422,7 @@ curl -fsS "$BFF/api/sli/export?month=2026-08&format=pdf" -H "Authorization: Bear
 
 The browser sends the cookie instead, and a Bearer header wins when a request carries both. A `POST`
 that authenticates with the cookie must also carry `X-HCML-CSRF: 1` and, when it has an `Origin`,
-come from the portal's own host and port; anything else gets 403 `csrf` (`csrfRefusal()` in `server/src/auth.ts`).
+come from the portal's own host and port; anything else gets 403 `csrf` (`csrfRefusal()` in `server/src/security/auth.ts`).
 A Bearer request is not checked, so a script only needs the header to sign in or out, or when it
 keeps the cookie (`curl -c` / `-b`) instead of the token.
 
@@ -431,9 +435,9 @@ The guard lets exactly four routes through without a token: `GET /api/health`,
 router matched, not the URL text, so an encoded path such as `/%61pi/hosts` is guarded like
 `/api/hosts`. Every error, at every status, has the same body: `{ "error": "…", "message": "…" }`.
 
-The full contract is [`docs/api/openapi.yaml`](docs/api/openapi.yaml): 43 endpoints, both security
+The full contract is [`docs/api/openapi.yaml`](docs/api/openapi.yaml): 45 endpoints, both security
 schemes, every status code, and [`docs/api/README.md`](docs/api/README.md) shows how to read it with
-nothing installed. It is checked against the code by `./server/node_modules/.bin/tsx server/scripts/openapi.check.ts`, so it
+nothing installed. It is checked against the code by `./server/node_modules/.bin/tsx tools/check/openapi.check.ts`, so it
 cannot quietly drift.
 
 ### The assistant
@@ -606,16 +610,18 @@ Ollama. Either way the snapshot is capped (20 problems, a budget per section) an
 
 ```bash
 cd server
-npm test          # 1622 tests
+npm test          # 1670 tests
 npm run typecheck # app and tests
 
 cd ../web
-npm test          # 1026 tests, in jsdom
+npm test          # 1132 tests, in jsdom
 npm run lint      # eslint
 npm run typecheck # app and tests
 ```
 
-Zabbix is mocked at `src/zabbix.ts` (the single point all API traffic funnels through) so the
+`npm run verify` at the repository root runs all of this, then the builds and the checkers. CI runs the same steps and three more that `verify` does not: the dependency audit, the secret scan and the two image builds.
+
+Zabbix is mocked at `src/clients/zabbix.ts` (the single point all API traffic funnels through) so the
 suite needs no live instance and runs in CI. Coverage is weighted toward the code that would produce
 *confidently wrong numbers* rather than visible errors: interval merging in the availability report,
 the RBAC route table, cache coalescing, and the naming-convention regex. The report files get the
@@ -642,9 +648,9 @@ copied from the web app drifts from its original.
 |---|---|
 | [`docs/index.md`](docs/index.md) | Start here. What is documented, and in what order to read it |
 | [`docs/getting-started.md`](docs/getting-started.md) | From a fresh clone to a running portal, step by step |
-| [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | The API contract: all 43 endpoints, checked against the code |
-| [`docs/architecture/adr/`](docs/architecture/adr/) | Why the system is shaped this way: 11 decision records |
-| [`setup.md`](setup.md) | How each part works and why, in 31 sections |
+| [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | The API contract: all 45 endpoints, checked against the code |
+| [`docs/architecture/adr/`](docs/architecture/adr/) | Why the system is shaped this way: 13 decision records |
+| [`setup.md`](setup.md) | How each part works and why, in 35 parts (the index of `docs/setup/`) |
 | [`docs/schema/`](docs/schema/) | The data model on three pages |
 | [`docs/flow/`](docs/flow/) | The same system in motion, on three more pages |
 | [`docs/contributing.md`](docs/contributing.md) | The house rules before you change anything |
@@ -661,15 +667,17 @@ Kept short and honest; the full list is [`setup.md` §27](setup.md#27-limitation
 - The dataset is frozen at 17 Sep 2026 16:59:37. Local polling was stopped deliberately: a
   laptop should not poll production equipment. Every figure here is a snapshot of that moment.
 - Security: a password in `.env` can still be plain text (an scrypt hash is accepted since 7 October 2026), and users come from
-  environment variables. One thing is still the owner's to change: the Anthropic key flagged on 10 Sep has not
-  been rotated. The dev `server/.env` files hold a secret of their own since 13 October 2026. The audit items BE-12 to
+  environment variables. One thing is still the owner's to change: the Anthropic key flagged on 10 Sep. The key the running hosted
+  portal holds was refused by Anthropic on 16 Oct, so Explain and the Assistant of that portal answer nothing
+  until a valid one is in `.env`. The dev `server/.env` files hold a secret of their own since 13 October 2026. The audit items BE-12 to
   BE-17 are closed.
 - Nothing persists. No audit trail of who acknowledged what, no saved views, no user table, and
   a closed month's SLA is recomputed from scratch after every restart.
 - The SLA report files are new. The Excel file was checked with several readers but has not been
-  opened in Microsoft Excel itself, and both files were checked on realistic test data, not yet on
-  HCML's own. The PDF prints text outside Western European letters, Cyrillic or Chinese for example,
-  as `?`. There is no scheduled or emailed report and no CSV file.
+  opened in Microsoft Excel itself, and both files were checked on realistic test data. They have also
+  been downloaded from the running portal on HCML's own (frozen) data, on 12 and 15 October, where only
+  their size and shape were looked at. The PDF prints text outside Western European letters, Cyrillic or
+  Chinese for example, as `?`. There is no scheduled or emailed report and no CSV file.
 - Every performance figure is single-user and single-shot. No p95, no concurrency data, and the
   cache hit rate has never been measured.
 
@@ -688,7 +696,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Host | In Zabbix, one monitored device or server. In the setup instructions, "the host" is the computer the containers run on, which is why `host.docker.internal` exists. `HOST` is also a BFF setting: which network interface it listens on |
 | Model | Either a language model, the AI that writes plain-language answers (Claude or `qwen3:8b`), or a data model, a diagram of what data exists and how it connects (`docs/schema/`, `erd.md`) |
 | Service | Three things. Zabbix's own feature for grouping hosts into business services, which is empty at HCML. The portal's Services page, which builds that grouping itself. And a Docker Compose service, meaning one of the two containers, `portal-bff` or `portal-web` |
-| Token | Four things. A Zabbix API token is the password-like key the BFF uses to read Zabbix (`ZABBIX_API_TOKEN`), with a second one for the single write (`ZABBIX_WRITE_TOKEN`). A login token is the JWT the BFF puts in your session cookie when you sign in. A model token is a piece of a word, the unit a language model reads and writes in, so "8,192 tokens" is a length of text. A design token is a named colour or size in `styles.css`, checked by `tokens.check.mjs` |
+| Token | Four things. A Zabbix API token is the password-like key the BFF uses to read Zabbix (`ZABBIX_API_TOKEN`), with a second one for the single write (`ZABBIX_WRITE_TOKEN`). A login token is the JWT the BFF puts in your session cookie when you sign in. A model token is a piece of a word, the unit a language model reads and writes in, so "8,192 tokens" is a length of text. A design token is a named colour or size in `web/src/styles/01-tokens.css`, checked by `tokens.check.mjs` |
 
 ### HCML and the portal
 
@@ -797,7 +805,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Barrel import | Importing a whole library in one line. ECharts is imported piece by piece instead, so the browser does not download chart types nothing uses |
 | Bundle, chunk, lazy-loading | The browser downloads the app's code as files called chunks. The first bundle is kept small, and each page's code is only fetched when you open that page, which is lazy-loading |
 | Cache, TTL | A cache keeps a recent answer so the same question is not sent to Zabbix again. TTL, time to live, is how long an answer is kept |
-| CI | Continuous integration: checks that run automatically on every push. Here they are in `.github/workflows/docs.yml` |
+| CI | Continuous integration: checks that run automatically on every push. Here they are in `.github/workflows/ci.yml` |
 | CSS, CSS variables | CSS is the styling language of web pages. CSS variables hold each colour and size in one place, which is what lets light and dark mode share one stylesheet |
 | Dependency | An outside library the project relies on. There are 35 direct ones, 13 of them shipped, and adding more is avoided on purpose |
 | `diff -r` | A command that compares two folders file by file. It is how the two copies are proved to share one source tree |
@@ -824,7 +832,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Typecheck | Running the TypeScript checker (`npm run typecheck`) to catch mistakes, without building anything |
 | TypeScript | JavaScript with types that are checked before the code runs. Both `server/` and `web/` are written in it |
 | Vite | The tool that serves the web app during development and builds it for production |
-| Vitest | The test runner. `npm test` runs 1622 tests in `server/` with Zabbix faked, so no live system is needed, and 1026 in `web/` |
+| Vitest | The test runner. `npm test` runs 1670 tests in `server/` with Zabbix faked, so no live system is needed, and 1132 in `web/` |
 | zlib, crypto | Two modules that come with Node itself: zlib compresses and unpacks data, and crypto does hashing. The SLA report's PDF and Excel writers are built on them, in place of a PDF or spreadsheet library |
 
 ### Documents
@@ -837,4 +845,4 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | OpenAPI | A standard file format that describes every endpoint of an API. The portal's is `docs/api/openapi.yaml`, and a script checks it against the code |
 | PDF, Excel file, CSV | A PDF is a document that looks the same on every screen and printer. An Excel file is a spreadsheet: here a workbook whose name ends in `.xlsx`. A CSV file is a plain-text table, one row per line with the values separated by commas. The SLA report downloads as a PDF or an Excel file, and the portal makes no CSV |
 | README | This file: the first document to read in a code repository |
-| `setup.md` | How each part of the portal works and why, in 31 sections |
+| `setup.md` | How each part of the portal works and why, in 35 parts |

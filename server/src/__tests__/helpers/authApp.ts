@@ -39,7 +39,7 @@ export async function buildAuthApp(env: Record<string, string> = {}) {
     ...env,
   };
   for (const [key, value] of Object.entries(merged)) vi.stubEnv(key, value);
-  const auth = await import('../../auth.js');
+  const auth = await import('../../security/auth.js');
 
   const log: LogLine[] = [];
   const app = Fastify({ logger: { level: 'info', stream: { write: (line: string) => void log.push(JSON.parse(line)) } } });

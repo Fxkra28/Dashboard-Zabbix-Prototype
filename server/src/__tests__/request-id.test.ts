@@ -13,12 +13,12 @@ vi.hoisted(() => {
   process.env.PORTAL_USERS = 'ana:viewer-pass:viewer';
 });
 
-const { genReqId, registerRequestId } = await import('../requestId.js');
-const { registerErrorHandler } = await import('../errors.js');
-const { setupAuth, tokenClaims } = await import('../auth.js');
-const { config } = await import('../config.js');
-const { BadRequestError } = await import('../validate.js');
-const { ZabbixApiError, ZabbixTimeoutError } = await import('../zabbix.js');
+const { genReqId, registerRequestId } = await import('../http/requestId.js');
+const { registerErrorHandler } = await import('../http/errors.js');
+const { setupAuth, tokenClaims } = await import('../security/auth.js');
+const { config } = await import('../core/config.js');
+const { BadRequestError } = await import('../core/validate.js');
+const { ZabbixApiError, ZabbixTimeoutError } = await import('../clients/zabbix.js');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 

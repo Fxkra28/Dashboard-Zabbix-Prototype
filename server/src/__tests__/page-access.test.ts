@@ -15,9 +15,9 @@ vi.hoisted(() => {
   process.env.PORTAL_USERS = 'ana:viewer-pass:viewer,olu:operator-pass:operator,adi:admin-pass:admin';
 });
 
-const { setupAuth, requiredRole, tokenClaims } = await import('../auth.js');
-const { PAGE_API, pageRoles } = await import('../pageAccess.js');
-const { registerErrorHandler } = await import('../errors.js');
+const { setupAuth, requiredRole, tokenClaims } = await import('../security/auth.js');
+const { PAGE_API, pageRoles } = await import('../security/pageAccess.js');
+const { registerErrorHandler } = await import('../http/errors.js');
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -37,7 +37,7 @@ const me = async (role: string) => {
 };
 
 const SERVER_SRC = fileURLToPath(new URL('..', import.meta.url));
-const SIDEBAR = fileURLToPath(new URL('../../../web/src/components/Sidebar.tsx', import.meta.url));
+const SIDEBAR = fileURLToPath(new URL('../../../web/src/features/shell/Sidebar.tsx', import.meta.url));
 
 /** Every non-test source file under server/src. */
 function sources(dir = SERVER_SRC): string[] {

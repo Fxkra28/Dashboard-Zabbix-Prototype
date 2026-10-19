@@ -18,3 +18,6 @@ HCML_SLA_Report_*
 
 # Screenshots of the live portal show real host and site names: never commit them (docs/contributing.md).
 /pic/
+
+# What tools/live/api-timing.py writes where it is run.
+api-timing.json

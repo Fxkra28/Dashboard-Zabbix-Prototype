@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildTestApp } from './helpers/app.js';
-import { COLLECTING_STALE_SECONDS, collectingStatus, getIcmpByHost, newestClock } from '../reachability.js';
+import { COLLECTING_STALE_SECONDS, collectingStatus, getIcmpByHost, newestClock } from '../domain/reachability.js';
 
 /**
  * Whether Zabbix is still collecting, and the
@@ -10,8 +10,8 @@ import { COLLECTING_STALE_SECONDS, collectingStatus, getIcmpByHost, newestClock 
  */
 
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock };
 });
 

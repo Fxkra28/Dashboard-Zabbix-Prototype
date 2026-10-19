@@ -19,12 +19,12 @@ const LOCAL_ENV = {
 async function loadAi(env: Record<string, string>) {
   vi.resetModules();
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
-  return import('../ai.js');
+  return import('../clients/ai.js');
 }
 
 /** An app with the real error handler whose `/x` runs `fn`, and the log lines it writes. */
 async function appRunning(fn: () => Promise<unknown>) {
-  const { registerErrorHandler } = await import('../errors.js');
+  const { registerErrorHandler } = await import('../http/errors.js');
   const lines: string[] = [];
   const app = Fastify({ logger: { level: 'info', stream: { write: (line: string) => lines.push(line) } } });
   registerErrorHandler(app);
@@ -130,16 +130,69 @@ describe('a hosted model that fails', () => {
         new Headers(),
       ),
     );
-    expect(rejected.message).toBe(AI_MESSAGE.failed);
+    expect(rejected.message).toBe(AI_MESSAGE.refused);
     expect(rejected.detail).toContain('invalid x-api-key');
+    expect(rejected.detail).toContain('recreate the BFF');
+
+    const forbidden = anthropicFailure(
+      Anthropic.APIError.generate(403, { type: 'error', error: { type: 'permission_error', message: 'not allowed' } }, undefined, new Headers()),
+    );
+    expect(forbidden.message).toBe(AI_MESSAGE.refused);
+
+    const overloaded = anthropicFailure(
+      Anthropic.APIError.generate(529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }, undefined, new Headers()),
+    );
+    expect(overloaded.message).toBe(AI_MESSAGE.failed);
+    expect(overloaded.detail).not.toContain('recreate the BFF');
 
     expect(anthropicFailure(new Anthropic.APIConnectionTimeoutError()).message).toBe(AI_MESSAGE.timeout);
     expect(anthropicFailure(new Anthropic.APIConnectionError({ message: 'getaddrinfo ENOTFOUND api.anthropic.com' })).message).toBe(
       AI_MESSAGE.unreachable,
     );
-    for (const e of [rejected, anthropicFailure(new Anthropic.APIConnectionError({ message: 'getaddrinfo ENOTFOUND api.anthropic.com' }))]) {
+    for (const e of [rejected, forbidden, overloaded, anthropicFailure(new Anthropic.APIConnectionError({ message: 'getaddrinfo ENOTFOUND api.anthropic.com' }))]) {
       expect(e.message).not.toMatch(/sk-ant|ENOTFOUND|anthropic\.com|claude-x/);
     }
+  });
+
+  it('does not tell a viewer to try again when the key was refused, because that cannot help', async () => {
+    const { AI_MESSAGE } = await loadAi({ AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'k', AI_MODEL: 'claude-x' });
+    expect(AI_MESSAGE.refused).toMatch(/administrator/);
+    expect(AI_MESSAGE.refused).not.toMatch(/\btry again\b/i);
+    for (const other of [AI_MESSAGE.unreachable, AI_MESSAGE.failed, AI_MESSAGE.unusable]) expect(other).toMatch(/\bTry again\b/);
+  });
+});
+
+describe('a model server that refuses the key it was sent', () => {
+  const refuse = (status: number) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status, text: async () => '{"error":"invalid api key"}' } as unknown as Response),
+    );
+
+  it.each([401, 403])('answers %i with the refused sentence and keeps the fix for the log', async (status) => {
+    refuse(status);
+    const { humanize, AI_MESSAGE } = await loadAi({ ...LOCAL_ENV, AI_API_KEY: 'k-test' });
+    const { app, log } = await appRunning(() => humanize('problem', {}));
+
+    const res = await app.inject({ url: '/x' });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: 'ai_error', message: AI_MESSAGE.refused });
+    expect(res.body).not.toMatch(/invalid api key|k-test|qwen3|10\.9\.8\.7/);
+    expect(log()).toContain(`HTTP ${status}`);
+    expect(log()).toContain('recreate the BFF');
+    await app.close();
+  });
+
+  it('leaves a 401 from a server it sent no key to as an ordinary failure, since no key of ours fixes it', async () => {
+    refuse(401);
+    const { humanize, AI_MESSAGE } = await loadAi({ ...LOCAL_ENV, AI_API_KEY: '' });
+    const { app } = await appRunning(() => humanize('problem', {}));
+
+    const res = await app.inject({ url: '/x' });
+
+    expect(res.json().message).toBe(AI_MESSAGE.failed);
+    await app.close();
   });
 });
 
@@ -149,7 +202,7 @@ describe('a hosted model that fails', () => {
  * site that slipped back to "model name + address" would still be an
  * AiUpstreamError, so the message is compared whole, not just searched.
  */
-type Upstream = InstanceType<typeof import('../ai.js').AiUpstreamError>;
+type Upstream = InstanceType<typeof import('../clients/ai.js').AiUpstreamError>;
 const INTERNAL = /10\.9\.8\.7|11434|qwen3|claude-x|AI_TIMEOUT_MS|AI_BASE_URL|ECONNREFUSED|out of memory|HTTP \d{3}/;
 const enc = (text: string) => new TextEncoder().encode(text);
 
@@ -271,7 +324,7 @@ describe('an explanation the model fails to give', () => {
 });
 
 describe('an Assistant answer the model fails to give', () => {
-  const ask = (chat: typeof import('../chat.js'), signal?: AbortSignal) =>
+  const ask = (chat: typeof import('../services/assistant.js'), signal?: AbortSignal) =>
     drain(chat.streamAnswer([{ role: 'user', content: 'What is down?' }], 'SNAPSHOT', signal));
 
   it('says "stopped" for a native stream that ends before its done line, and keeps the model for the log', async () => {
@@ -297,7 +350,7 @@ describe('an Assistant answer the model fails to give', () => {
     it(`says "unusable" when ${name} server answers with no body`, async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, body: null } as unknown as Response));
       const { AI_MESSAGE } = await loadAi(env);
-      const chat = await import('../chat.js');
+      const chat = await import('../services/assistant.js');
 
       const failure = await failureOf(() => ask(chat));
 
@@ -322,7 +375,7 @@ describe('an Assistant answer the model fails to give', () => {
       }),
     );
     const { AI_MESSAGE } = await loadAi({ ...LOCAL_ENV, AI_TIMEOUT_MS: '150' });
-    const chat = await import('../chat.js');
+    const chat = await import('../services/assistant.js');
 
     const failure = await failureOf(() => ask(chat));
 
@@ -344,7 +397,7 @@ describe('an Assistant answer the model fails to give', () => {
       }),
     );
     const { AiUpstreamError } = await loadAi({ ...LOCAL_ENV, AI_TIMEOUT_MS: '60000' });
-    const chat = await import('../chat.js');
+    const chat = await import('../services/assistant.js');
     const stop = new AbortController();
     setTimeout(() => stop.abort(), 30);
 
@@ -359,7 +412,7 @@ describe('an Assistant answer the model fails to give', () => {
       ANTHROPIC_API_KEY: 'k',
       AI_MODEL: 'claude-x',
     });
-    const chat = await import('../chat.js');
+    const chat = await import('../services/assistant.js');
     // A bare stub of the SDK's stream is enough: it is only iterated.
     vi.spyOn(getAnthropic().messages, 'stream').mockImplementation(() => ({
       [Symbol.asyncIterator]() {

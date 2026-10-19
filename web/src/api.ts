@@ -29,6 +29,8 @@ import type {
   ScorecardResponse,
   LinksResponse,
   MetersResponse,
+  TopHostsResponse,
+  WebMonitoringResponse,
   DevicesResponse,
   AvailabilityReport,
   AgingReport,
@@ -39,8 +41,8 @@ import type {
   ChatDone,
   ChatMessage,
 } from './types';
-import { noteStaleCopy } from './lib/freshness';
-import { clearConversation, startConversation } from './lib/chatStore';
+import { noteStaleCopy } from './shared/lib/freshness';
+import { clearConversation, startConversation } from './shared/lib/chatStore';
 import {
   assertFits,
   agingGuard,
@@ -61,6 +63,8 @@ import {
   meGuard,
   netDevicesGuard,
   metersGuard,
+  topHostsGuard,
+  webMonitoringGuard,
   devicesGuard,
   netInterfacesGuard,
   noiseGuard,
@@ -75,7 +79,7 @@ import {
   statsGuard,
   topTriggersGuard,
   type Guard,
-} from './lib/guards';
+} from './guards';
 
 /**
  * The session. The token itself lives in an httpOnly cookie that no script on this page can read;
@@ -469,6 +473,10 @@ export const api = {
   netDevices: () => request<NetDevice[]>('/api/net/devices', { guard: netDevicesGuard }),
   /** The internet traffic meters: the gauge widgets of a Zabbix dashboard, with a value each. Operator and admin. */
   netMeters: () => request<MetersResponse>('/api/net/meters', { guard: metersGuard }),
+  /** The hosts with the highest CPU and memory use now, a few of each. */
+  topHosts: () => request<TopHostsResponse>('/api/reports/top-hosts', { guard: topHostsGuard }),
+  /** Web scenarios that pass, fail or have no current result, with the failed ones listed. */
+  webMonitoring: () => request<WebMonitoringResponse>('/api/reports/web-monitoring', { guard: webMonitoringGuard }),
   topTriggers: (days: number) =>
     request<TopTriggersReport>(`/api/reports/top-triggers${qs({ days })}`, { guard: topTriggersGuard }),
   stats: () => request<Stats>('/api/stats', { guard: statsGuard }),

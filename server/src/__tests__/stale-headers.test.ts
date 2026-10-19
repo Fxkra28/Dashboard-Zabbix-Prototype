@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { cached, invalidate } from '../cache.js';
-import { registerCompression } from '../compress.js';
-import { registerErrorHandler } from '../errors.js';
-import { AGE_HEADER, STALE_HEADER, noteStale, registerStaleHeaders } from '../staleness.js';
+import { cached, invalidate } from '../core/cache.js';
+import { registerCompression } from '../http/compress.js';
+import { registerErrorHandler } from '../http/errors.js';
+import { AGE_HEADER, STALE_HEADER, noteStale, registerStaleHeaders } from '../core/staleness.js';
 
 /**
  * An answer that is an old copy kept because Zabbix failed
@@ -172,7 +172,7 @@ describe('index.ts', () => {
     const hook = index.search(HOOK_CALL);
     expect(hook).toBeGreaterThan(-1);
     expect(hook).toBeLessThan(index.indexOf('await app.register(hostRoutes)'));
-    expect(index).toMatch(/import \{[^}]*\bregisterStaleHeaders\b[^}]*\} from '\.\/staleness\.js';/);
+    expect(index).toMatch(/import \{[^}]*\bregisterStaleHeaders\b[^}]*\} from '\.\/core\/staleness\.js';/);
   });
 
   it('does not count a call that is commented out', () => {

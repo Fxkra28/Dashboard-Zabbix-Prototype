@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { buildTestApp } from './helpers/app.js';
-import { setupAuth, tokenClaims } from '../auth.js';
-import { registerErrorHandler } from '../errors.js';
-import { invalidate } from '../cache.js';
+import { setupAuth, tokenClaims } from '../security/auth.js';
+import { registerErrorHandler } from '../http/errors.js';
+import { invalidate } from '../core/cache.js';
 
 vi.hoisted(() => {
   process.env.AUTH_ENABLED = 'true';
@@ -13,13 +13,15 @@ vi.hoisted(() => {
 
 /** GET /api/net/meters: the dashboard's gauge widgets turned into meters, through the same Zabbix reads every other route makes (mocked by method). */
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock };
 });
 
-const { meterRoutes, pairSiblings } = await import('../routes/meters.js');
-const { ZabbixApiError } = await import('../zabbix.js');
+const { meterRoutes } = await import('../routes/meters.js');
+
+const { pairSiblings } = await import('../services/meters.js');
+const { ZabbixApiError } = await import('../clients/zabbix.js');
 
 const NOW = Math.floor(Date.now() / 1000);
 const MBPS = 1_000_000;

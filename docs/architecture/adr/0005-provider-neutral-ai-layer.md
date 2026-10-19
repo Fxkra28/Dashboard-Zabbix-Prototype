@@ -28,7 +28,7 @@ rather than assert an answer?
 
 ## Decision Outcome
 
-Chosen: **one provider-neutral layer (`server/src/ai.ts`), switched by `AI_PROVIDER`, deployed as two
+Chosen: **one provider-neutral layer (`server/src/clients/ai.ts`), switched by `AI_PROVIDER`, deployed as two
 repositories that share a byte-identical source tree.**
 
 `hcml-portal` runs hosted Claude. `hcml-portal-ollama` runs `qwen3:8b` on the host. `server/src` and
@@ -69,7 +69,7 @@ a fix.
 
 ### Negative Consequences
 
-* **Two deployments to keep in step, forever.** The divergence is now 21 files and both READMEs state
+* **Two deployments to keep in step, forever.** The divergence is now 22 files and both READMEs state
   the count, so both have to be updated whenever it changes, and that count has already drifted once
   (audit finding DOC-10).
 * **`AI_PROVIDER` falls back to `anthropic` for any unrecognised value, with only a warning in the
@@ -79,8 +79,9 @@ a fix.
   this footgun enables.
 * `@anthropic-ai/sdk` is installed in both copies and unused in one.
 * Two stacks means two caches, two restarts, and twice the recompute cost of anything not persisted.
-* The API key has been flagged for rotation since 10 September and has still not been rotated
-  (FE-02).
+* The API key was flagged for rotation on 10 September (FE-02). The key the running hosted portal holds was
+  refused by Anthropic on 16 October (401, `invalid x-api-key`), so it no longer works; replacing it is the
+  owner's (SC-01).
 
 ## Pros and Cons of the Options
 
@@ -107,4 +108,4 @@ a fix.
 * Follows [ADR-0002](0002-react-typescript-fastify.md)
 * `setup.md` §13 *Plain-language layer*, §24 *Assistant*
 * `flow/DataFlow.pdf`: the trust boundary, drawn per copy
-* `server/src/ai.ts`, `server/src/chat.ts`
+* `server/src/clients/ai.ts`, `server/src/services/assistant.ts`

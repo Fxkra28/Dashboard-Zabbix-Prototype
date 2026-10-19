@@ -90,5 +90,5 @@ pushed to every open SSE client immediately.
 
 * Follows [ADR-0001](0001-bff-over-zabbix-api.md)
 * `setup.md` §19 *Authentication & RBAC*, §20 *Acknowledge / close write-back*
-* `server/src/routes/actions.ts`, `server/src/zabbix.ts`, `server/src/auth.ts`
+* `server/src/routes/actions.ts`, `server/src/services/actions.ts`, `server/src/clients/zabbix.ts`, `server/src/security/auth.ts`
 * Contract: [`../../api/openapi.yaml`](../../api/openapi.yaml) → `POST /api/problems/acknowledge`

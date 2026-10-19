@@ -15,19 +15,20 @@ vi.hoisted(() => {
 });
 
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../zabbix.js')>()),
+vi.mock('../clients/zabbix.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../clients/zabbix.js')>()),
   zbx: zbxMock,
 }));
-vi.mock('../queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]), openProblems: (p: unknown[]) => p }));
+vi.mock('../domain/queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]), openProblems: (p: unknown[]) => p }));
 
-const { config } = await import('../config.js');
-const { setupAuth, tokenClaims } = await import('../auth.js');
-const { registerErrorHandler } = await import('../errors.js');
-const { invalidate } = await import('../cache.js');
+const { config } = await import('../core/config.js');
+const { setupAuth, tokenClaims } = await import('../security/auth.js');
+const { registerErrorHandler } = await import('../http/errors.js');
+const { invalidate } = await import('../core/cache.js');
 const { hostRoutes } = await import('../routes/hosts.js');
-const { mapRoutes, withoutNetworkElements } = await import('../routes/maps.js');
-const { isNetworkKey, withoutNetworkItems } = await import('../viewerPolicy.js');
+const { mapRoutes } = await import('../routes/maps.js');
+const { withoutNetworkElements } = await import('../services/maps.js');
+const { isNetworkKey, withoutNetworkItems } = await import('../security/viewerPolicy.js');
 
 type Params = Record<string, unknown>;
 const callsOf = (method: string) => zbxMock.mock.calls.filter(([m]) => m === method).map(([, p]) => p as Params);

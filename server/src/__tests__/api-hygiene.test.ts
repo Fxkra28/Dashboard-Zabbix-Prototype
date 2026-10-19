@@ -9,8 +9,8 @@ import { sampleSliReports } from './helpers/sliReportFixture.js';
  * answers.
  */
 const { zbxMock, zbxWriteMock } = vi.hoisted(() => ({ zbxMock: vi.fn(), zbxWriteMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock, zbxWrite: zbxWriteMock };
 });
 
@@ -44,7 +44,7 @@ describe('grouping stays linear', () => {
           }))
         : [],
     );
-    const { getLinks } = await import('../routes/links.js');
+    const { getLinks } = await import('../services/links.js');
     const started = performance.now();
     const res = await getLinks();
     const took = performance.now() - started;
@@ -72,7 +72,7 @@ describe('grouping stays linear', () => {
           }))
         : [],
     );
-    const { getLinks } = await import('../routes/links.js');
+    const { getLinks } = await import('../services/links.js');
     const res = await getLinks();
     const worstFirst = ['BRAVO', 'ZULU', 'ALPHA', 'MIKE'];
     expect(res.paths).toHaveLength(1);
@@ -157,7 +157,7 @@ describe('POST /api/problems/acknowledge body types', () => {
   let savedToken: string;
   let savedAuth: boolean;
   beforeEach(async () => {
-    const { config } = await import('../config.js');
+    const { config } = await import('../core/config.js');
     savedToken = config.zbxWriteToken;
     savedAuth = config.auth.enabled;
     config.zbxWriteToken = 'test-only-not-a-real-token';
@@ -165,7 +165,7 @@ describe('POST /api/problems/acknowledge body types', () => {
     zbxWriteMock.mockResolvedValue({ eventids: ['109'] });
   });
   afterEach(async () => {
-    const { config } = await import('../config.js');
+    const { config } = await import('../core/config.js');
     config.zbxWriteToken = savedToken;
     config.auth.enabled = savedAuth;
   });

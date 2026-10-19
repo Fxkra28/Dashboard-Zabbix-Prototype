@@ -47,7 +47,7 @@ function composeEnv(): Map<string, string | null> {
 describe('the browser-to-nginx hop is drawn as plain HTTP (tracker IN-26)', () => {
   // The same sentence in every copy and every document, so that the two copies cannot disagree again.
   const NOTE = "plain HTTP on this computer's loopback address";
-  const DOCS = ['README.md', 'docs/index.md', 'setup.md', 'docs/flow/README.md'];
+  const DOCS = ['README.md', 'docs/index.md', 'docs/setup/01-the-big-picture.md', 'docs/flow/README.md'];
 
   it.each(DOCS)('%s labels the hop HTTP, says it is loopback and points at the TLS page', (rel) => {
     const text = read(rel);
@@ -143,7 +143,7 @@ describe('TLS in front: what the BFF does with the proxy headers (docs/operation
   async function seen(trustProxy: string | undefined, headers: Record<string, string>) {
     vi.resetModules();
     vi.stubEnv('TRUST_PROXY', trustProxy);
-    const { config, trustProxyOption } = await import('../config.js');
+    const { config, trustProxyOption } = await import('../core/config.js');
     const app = Fastify({ trustProxy: trustProxyOption(config.trustProxy) });
     app.get('/p', async (req) => ({ protocol: req.protocol, ip: req.ip, host: req.headers.host }));
     // The BFF's own peer is the nginx container. The client is 203.0.113.9; the TLS proxy wrote it, and nginx appended the proxy's 192.168.1.5.
@@ -238,10 +238,15 @@ describe('"nothing to back up" is gone from the documents it was in (tracker IN-
     expect(text).toContain('Amended: 2026-10-07');
   });
 
-  it.each(['README.md', 'setup.md', 'docs/index.md'])('%s links both operations pages', (rel) => {
+  it.each(['README.md', 'docs/index.md'])('%s links both operations pages', (rel) => {
     const text = read(rel);
     expect(text, rel).toContain('operations/backup-and-restore.md');
     expect(text, rel).toContain('operations/tls.md');
+  });
+
+  it('the setup guide links the TLS page from §1 and the backup page from §11', () => {
+    expect(read('docs/setup/01-the-big-picture.md')).toContain('operations/tls.md');
+    expect(read('docs/setup/11-running-deploying.md')).toContain('operations/backup-and-restore.md');
   });
 });
 

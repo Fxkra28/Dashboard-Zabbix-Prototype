@@ -341,6 +341,59 @@ export interface MetersResponse {
   };
 }
 
+// The busiest hosts (GET /api/reports/top-hosts): the highest CPU and memory use now.
+
+export interface TopHostRow {
+  hostid: string;
+  host: string;
+  itemid: string;
+  /** Percent. */
+  value: number;
+  /** When the value was collected, epoch seconds. */
+  clock: number;
+}
+
+export interface TopHostsMetric {
+  key: 'cpu' | 'memory';
+  label: string;
+  /** Hosts that have such an item. */
+  considered: number;
+  /** Of those, with a current value. */
+  current: number;
+  rows: TopHostRow[];
+}
+
+export interface TopHostsResponse {
+  generatedAt: number;
+  metrics: TopHostsMetric[];
+}
+
+// Web monitoring (GET /api/reports/web-monitoring): every enabled web scenario as OK, failed or unknown.
+
+export interface WebFailure {
+  hostid: string;
+  host: string;
+  /** The scenario's name. */
+  name: string;
+  itemid: string;
+  /** The step that failed, counting from 1. */
+  step: number;
+  /** When the result was collected, epoch seconds. */
+  clock: number;
+}
+
+export interface WebMonitoringResponse {
+  generatedAt: number;
+  /** Enabled scenarios on monitored hosts: ok, failed and unknown added up. */
+  total: number;
+  ok: number;
+  failed: number;
+  /** No current result. An old one is never read as OK. */
+  unknown: number;
+  /** The failed ones, as many as were asked for. */
+  failures: WebFailure[];
+}
+
 // Reports (Goal 6)
 
 export interface HostAvailability {

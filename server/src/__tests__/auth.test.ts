@@ -12,12 +12,12 @@ vi.hoisted(() => {
   process.env.PORTAL_USERS = 'ana:viewer-pass:viewer,olu:operator-pass:operator,adi:admin-pass:admin';
 });
 
-const { setupAuth, tokenClaims } = await import('../auth.js');
+const { setupAuth, tokenClaims } = await import('../security/auth.js');
 /** The issuer and audience every token of this portal carries; a token without them is refused. */
 const CLAIMS = tokenClaims('hcml_session');
 /** The configured user for each role. A token's user must still be in PORTAL_USERS. */
 const USER_OF: Record<string, string> = { viewer: 'ana', operator: 'olu', admin: 'adi' };
-const { registerErrorHandler } = await import('../errors.js');
+const { registerErrorHandler } = await import('../http/errors.js');
 
 let app: FastifyInstance;
 
@@ -147,7 +147,7 @@ describe('auth guard', () => {
 
 /** An app wired the way index.ts wires it: the limiter first, then the guard. */
 async function limitedApp(max: number) {
-  const { registerRateLimit } = await import('../rateLimit.js');
+  const { registerRateLimit } = await import('../http/rateLimit.js');
   const limited = Fastify({ logger: false });
   registerErrorHandler(limited);
   await registerRateLimit(limited, max);
@@ -222,7 +222,7 @@ describe('rate limits', () => {
   });
 
   it('counts one account across an IPv6 /64, as the global limit groups addresses', async () => {
-    const { LOGIN_ATTEMPTS_PER_MINUTE } = await import('../auth.js');
+    const { LOGIN_ATTEMPTS_PER_MINUTE } = await import('../security/auth.js');
     const limited = await limitedApp(300);
     const fromHost = (n: number) =>
       limited.inject({
@@ -245,7 +245,7 @@ describe('rate limits', () => {
   it('locks sign-in for longer after each further failure, and a success clears it', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() });
     try {
-      const { LOGIN_LOCK_AFTER, LOGIN_LOCK_BASE_MS } = await import('../auth.js');
+      const { LOGIN_LOCK_AFTER, LOGIN_LOCK_BASE_MS } = await import('../security/auth.js');
       const limited = await limitedApp(300);
       const tryAs = (password: string) =>
         limited.inject({ method: 'POST', url: '/api/auth/login', headers: page(), payload: { username: 'ana', password } });
@@ -271,7 +271,7 @@ describe('rate limits', () => {
   });
 
   it('answers 429 after ten attempts a minute on one account, before checking the password', async () => {
-    const { LOGIN_ATTEMPTS_PER_MINUTE } = await import('../auth.js');
+    const { LOGIN_ATTEMPTS_PER_MINUTE } = await import('../security/auth.js');
     const limited = await limitedApp(300);
 
     const attempt = () =>
@@ -488,7 +488,7 @@ describe('with auth off', () => {
     vi.resetModules();
     vi.stubEnv('AUTH_ENABLED', 'false');
     try {
-      const fresh = await import('../auth.js');
+      const fresh = await import('../security/auth.js');
       const open = Fastify({ logger: false });
       await fresh.setupAuth(open);
       await open.ready();
@@ -512,7 +512,7 @@ describe('SESSION_COOKIE', () => {
     vi.resetModules();
     vi.stubEnv('SESSION_COOKIE', 'hcml_session_ollama');
     try {
-      const fresh = await import('../auth.js');
+      const fresh = await import('../security/auth.js');
       const other = Fastify({ logger: false });
       await fresh.setupAuth(other);
       other.get('/api/hosts', async () => ({ ok: 'hosts' }));

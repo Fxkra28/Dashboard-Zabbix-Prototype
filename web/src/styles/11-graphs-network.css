@@ -1,0 +1,345 @@
+/* Graphs, Latest data, Network (graph pipeline, Phase 5/6) */
+
+/* Segmented buttons (range presets, status filters) */
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+.seg button {
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: var(--t-base);
+  color: var(--text);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+}
+.seg button:last-child {
+  border-right: none;
+}
+.seg button:hover {
+  background: var(--surface-2);
+}
+.seg button.on {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+.seg-count {
+  margin-left: 6px;
+  font-size: var(--t-xs);
+  opacity: 0.75;
+}
+
+.range-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.range-picker select.range-month {
+  min-width: 120px;
+}
+.range-custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+input[type='datetime-local'] {
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+}
+button.btn:disabled,
+button.btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Graphs page: picker beside chart, stacked on narrow screens */
+.graph-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .graph-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.graph-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-size: var(--t-sm);
+  margin-bottom: 8px;
+}
+
+.item-picker input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 8px 0;
+}
+.item-picker-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--t-sm);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  background: var(--tint);
+  border: 1px solid var(--tint-line);
+  border-radius: var(--r-pill);
+  padding: 2px 4px 2px 10px;
+}
+.chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+.chip button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--t-lg);
+  line-height: 1;
+  padding: 0 4px;
+  /* A 24 px target (WCAG 2.2); the negative margin leaves the chip as big as it was. */
+  min-width: 24px;
+  min-height: 24px;
+  margin: -4px -3px -4px 0;
+}
+.item-picker-list {
+  max-height: 460px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.item-group-label {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item-row {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: baseline;
+  text-align: left;
+  border: none;
+  border-left: 3px solid transparent;
+  background: var(--surface);
+  padding: 6px 10px;
+  font-size: var(--t-base);
+  cursor: pointer;
+  color: var(--text);
+}
+.item-row:hover,
+.item-row:focus {
+  background: var(--surface-2);
+}
+.item-row.on {
+  border-left-color: var(--primary);
+  background: var(--tint);
+  font-weight: 600;
+}
+.item-row.composite .item-name {
+  color: var(--primary);
+}
+.item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item-units {
+  flex: none;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.item-picker-more {
+  padding: 8px 10px;
+  font-size: var(--t-sm);
+}
+
+/* Chart summary row under TimeSeriesChart */
+.chart-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: var(--t-sm);
+}
+.chart-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.chart-summary-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.chart-summary-stats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--text);
+}
+.chart-summary-stats em {
+  font-style: normal;
+  color: var(--muted);
+  margin-right: 3px;
+}
+.chart-data-bar {
+  margin-top: var(--s-2);
+}
+/* A long series scrolls inside its own box, with the column names kept in view. */
+.chart-data {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-2);
+}
+.chart-data-scroll {
+  max-height: 320px;
+  overflow: auto;
+}
+.chart-data-scroll caption {
+  padding: 0 0 var(--s-1);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  text-align: left;
+}
+/* The head is what sticks, not each cell, so a second header row (one name per item above its columns) stays under the first. */
+.chart-data-scroll thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.chart-data-scroll thead th {
+  background: var(--surface);
+}
+/* The time stays in view while a wide table, one column group per item, scrolls sideways. */
+.chart-data-scroll .chart-time {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+.chart-data-scroll thead .chart-time {
+  z-index: 3;
+}
+
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: var(--t-sm);
+}
+
+/* Network: devices grouped by site, tri-state, port table */
+.device-site {
+  margin-top: 10px;
+}
+.device-site + .device-site {
+  margin-top: 18px;
+}
+.device-site-label {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+.device.unknown {
+  border-left-color: var(--border-strong);
+}
+.panel-head {
+  flex-wrap: wrap;
+}
+table.data.ports tr.clickable {
+  cursor: pointer;
+}
+/* The interface name is the row's button: it looks like the text it replaced. */
+table.data.ports button.port-open {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  /* A 24 px target (WCAG 2.2); the margin leaves the row as tall as before. */
+  min-width: 24px;
+  min-height: 24px;
+  line-height: 24px;
+  margin: -4px 0;
+}
+table.data.ports button.port-open:hover {
+  text-decoration: underline;
+}
+table.data.ports tr.sel td {
+  background: var(--tint);
+}
+.port-alias {
+  font-size: var(--t-sm);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.port-bad {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+td.nowrap {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  select,
+  input[type='text'] {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .controls .field {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .chip-text {
+    max-width: 180px;
+  }
+}
+

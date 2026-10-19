@@ -5,9 +5,9 @@
  * Vite's build does not fail on any of these. A lost "}" once left about 50
  * rules in one portal silently unapplied while the other portal looked fine.
  *
- *   node scripts/css.check.mjs [file.css ...]   (default: src/styles.css)
+ *   node scripts/css.check.mjs [file.css ...]   (default: every part in src/styles/)
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /** Problems found in `text`, each prefixed with its line number. */
@@ -91,7 +91,10 @@ for (const [css, expected] of cases) {
 }
 
 const files = process.argv.slice(2);
-if (!files.length) files.push(fileURLToPath(new URL('../src/styles.css', import.meta.url)));
+if (!files.length) {
+  const dir = fileURLToPath(new URL('../src/styles/', import.meta.url));
+  files.push(...readdirSync(dir).filter((name) => name.endsWith('.css')).sort().map((name) => dir + name));
+}
 
 let problems = 0;
 for (const file of files) {

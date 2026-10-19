@@ -12,14 +12,14 @@ diff -rq -x node_modules -x dist -x .DS_Store -x '*.tsbuildinfo' -x .git -x pic 
   ../hcml-portal ../hcml-portal-ollama
 ```
 
-That must print exactly 21 differing files, all of them configuration or per-repo perspective,
+That must print exactly 22 differing files, all of them configuration or per-repo perspective,
 and one more line, `Only in ../hcml-portal-ollama/docs: README_copy.md`. That file is a snapshot of
 the ollama README from 23 September, kept for reference and not maintained. It sat in that folder's
 root until 7 October 2026, where it made the count 22. Any other line means you changed something
 in one folder and not the other. The full list of the 21 is in both `README.md` files.
 
-`node web/scripts/parity.check.mjs` makes the same comparison with the allowed files written down
-by name: 17 files, and the four `.env*` files, which it skips without opening. It prints one line
+`node tools/check/parity.check.mjs` makes the same comparison with the allowed files written down
+by name: 18 files, and the four `.env*` files, which it skips without opening. It prints one line
 per difference outside that list and exits 1 if there is any. A file on the list that one copy
 lacks is a difference too, and so is `README_copy.md` anywhere but `docs/` in the ollama copy.
 No folder is on the list. `docs/flow/` and `docs/schema/` hold files that must match
@@ -45,7 +45,7 @@ writes it under `node_modules/.tmp`, and one that turns up beside the source sho
 documents kept as separate files. It was not done: on 7 October 2026 the owner accepted the
 default of keeping two folders, because merging them changes how both live portals are built and
 started. The parity script is the guard until then, and the price is unchanged: a fix is two
-edits, two builds and two deployments. To revisit it, start from the 17 files the script lists:
+edits, two builds and two deployments. To revisit it, start from the 18 files the script lists:
 they are what would become profile files.
 
 ---
@@ -96,28 +96,29 @@ are working on the plain-language layer.
 ## The checks
 
 Twelve committed checks, each one written because something specific broke. Run the ones your change
-can affect; run all of them before you call a change finished.
+can affect; run all of them before you call a change finished: `npm run verify` at the repository root does
+the typechecks, the lint, both test suites, both builds and every checker below (`npm run check` is the checkers alone).
 
 | Check | Run it | What it exists to prevent |
 |---|---|---|
-| Tests | `npm test` in `server/` | 1508 tests, 66 files. The status-code semantics are pinned here: a rejected token is 503, never 502 or 504. The SLA report files are pinned here too: the tests read each PDF and workbook back, and compare the theme colours, the logo and the wording copied from the web app with their originals. Files that are not code are read as text too, because nothing else would notice them breaking: `docker-compose.yml` against the BFF's settings and the Dockerfile's build arguments, `nginx.conf`, and the CI workflow |
-| Web tests | `npm test` in `web/` | 822 tests in jsdom. They pin bugs that were found once: a slow answer for an old selection overwriting the new one, and, caught in review, sign-in returning to `/LOGIN` (the sign-in page again) and the wall bringing back a row marked "Cleared" after it had left the screen. Also the 401 handling and the CSRF header, and the report download buttons: one request however often they are pressed, and a month change dropping the request still in flight. Also the notices that say data is old (Zabbix stopped collecting, or a report is the last copy kept), the CSV formula guard, and the Assistant's conversation being cleared at sign-out |
+| Tests | `npm test` in `server/` | 1670 tests, 77 files. The status-code semantics are pinned here: a rejected token is 503, never 502 or 504. The SLA report files are pinned here too: the tests read each PDF and workbook back, and compare the theme colours, the logo and the wording copied from the web app with their originals. Files that are not code are read as text too, because nothing else would notice them breaking: `docker-compose.yml` against the BFF's settings and the Dockerfile's build arguments, `nginx.conf`, and the CI workflow |
+| Web tests | `npm test` in `web/` | 1132 tests in 78 files, in jsdom. They pin bugs that were found once: a slow answer for an old selection overwriting the new one, and, caught in review, sign-in returning to `/LOGIN` (the sign-in page again) and the wall bringing back a row marked "Cleared" after it had left the screen. Also the 401 handling and the CSRF header, and the report download buttons: one request however often they are pressed, and a month change dropping the request still in flight. Also the notices that say data is old (Zabbix stopped collecting, or a report is the last copy kept), the CSV formula guard, and the Assistant's conversation being cleared at sign-out |
 | Lint | `npm run lint` in `web/` | typescript-eslint, the two classic react-hooks rules and jsx-a11y. Three `eslint-disable` comments pointed at the hooks rule before anything ran it, and the first run found 14 form labels tied to no control |
 | Types | `npm run typecheck` in `server/` and in `web/` | Both check their test config too |
-| API contract | `npx tsx scripts/openapi.check.ts` in `server/` | The endpoint table drifted twice: it claimed 35 endpoints while listing all of them, and 23 of 35 line citations pointed at unrelated lines after the route files grew. A third hand-written list would drift the same way |
-| Database ERD | `npx tsx scripts/erd.check.ts` in `server/` | The database ERD exists twice, as `ERD-Database.mmd` and as `ERD-Database.erd`. Two hand-maintained copies of one model is the shape that has drifted every previous time here |
-| Stylesheet | `node scripts/css.check.mjs` in `web/` | A lost `}` once left about 50 rules silently unapplied in one portal while the other looked fine. Vite's build fails on none of this |
-| Design tokens | `node scripts/tokens.check.mjs` in `web/` | The sheet held 42 padding values, 16 font sizes and 14 radii against 13 tokens, and three of its colours failed WCAG unnoticed: `--muted` sat 0.07 short of AA for as long as the file existed. Contrast is computed here, not asserted, so a token edited to an illegible colour fails instead of shipping |
+| API contract | `npm run check:api` at the root | The endpoint table drifted twice: it claimed 35 endpoints while listing all of them, and 23 of 35 line citations pointed at unrelated lines after the route files grew. A third hand-written list would drift the same way |
+| Database ERD | `npm run check:erd` at the root | The database ERD exists twice, as `ERD-Database.mmd` and as `ERD-Database.erd`. Two hand-maintained copies of one model is the shape that has drifted every previous time here |
+| Stylesheet | `node scripts/css.check.mjs` in `web/` (every part of `src/styles/`) | A lost `}` once left about 50 rules silently unapplied in one portal while the other looked fine. Vite's build fails on none of this |
+| Design tokens | `node scripts/tokens.check.mjs` in `web/` (the parts of `src/styles/` read as one sheet) | The sheet held 42 padding values, 16 font sizes and 14 radii against 13 tokens, and three of its colours failed WCAG unnoticed: `--muted` sat 0.07 short of AA for as long as the file existed. Contrast is computed here, not asserted, so a token edited to an illegible colour fails instead of shipping |
 | Parsers | `../server/node_modules/.bin/tsx scripts/markdown.check.ts` and `units.check.ts` in `web/` | The assistant's markdown renderer and the unit/duration formatters: standalone scripts, written before the web had a test runner |
-| Links | `node scripts/links.check.mjs` in `web/` | 41 relative links per copy had broken again after the ERD folder moved, 30 of them in `docs/erd/erd.md`. macOS resolves a wrong-case path, so the check matches each segment's exact spelling, and a link out of the repo fails, because a checkout does not have it |
-| Diagrams | `node scripts/diagrams.check.mjs` in `web/` | Nine renders in one copy and eight in the other were older than their sources by file date, and a file date is no use in a git checkout. Each `.mmd` now ends with a stamp holding the hash of its source, and the check fails when the source changed after it. It cannot see whether the render was redone: `node scripts/diagrams.stamp.mjs` is where that is said, run last |
-| Copies | `node scripts/parity.check.mjs` in `web/` | The two folders drifting: it lists every file that differs between them, or exists in one only, outside the short list meant to differ, which names its 17 files one by one. Until it existed the recipe above was a number someone had to remember, and `README_copy.md` had already made that number wrong once |
+| Links | `node tools/check/links.check.mjs` at the root | 41 relative links per copy had broken again after the ERD folder moved, 30 of them in `docs/erd/erd.md`. macOS resolves a wrong-case path, so the check matches each segment's exact spelling, and a link out of the repo fails, because a checkout does not have it |
+| Diagrams | `node tools/check/diagrams.check.mjs` at the root | Nine renders in one copy and eight in the other were older than their sources by file date, and a file date is no use in a git checkout. Each `.mmd` now ends with a stamp holding the hash of its source, and the check fails when the source changed after it. It cannot see whether the render was redone: `node tools/check/diagrams.stamp.mjs` is where that is said, run last |
+| Copies | `node tools/check/parity.check.mjs` at the root | The two folders drifting: it lists every file that differs between them, or exists in one only, outside the short list meant to differ, which names its 18 files one by one. Until it existed the recipe above was a number someone had to remember, and `README_copy.md` had already made that number wrong once |
 
 `server/scripts/validate-sli.ts` is a thirteenth, but it is not part of the routine set: it needs
 HCML's real Availability Report spreadsheets in `~/Downloads` and a running BFF. It compares the
 derived SLA against HCML's own published figures, and it never runs in CI.
 
-`.github/workflows/docs.yml` runs everything in the table above on push and pull request. It also
+`.github/workflows/ci.yml` runs everything in the table above on push and pull request, as five jobs (server, web, checks, secret scan, images). It also
 runs `npm audit --omit=dev --audit-level=high` in `server/` and `web/`, which fails on a high or
 critical advisory in a package that ships, builds the web app (`tsc -b` also typechecks
 `vite.config.ts`, which `npm run typecheck` never reaches), builds both Docker images without
@@ -127,7 +128,7 @@ not run on GitHub yet, so the image builds, `nginx -t` and the secret scan below
 
 Since 12 October 2026 (tracker SC-17) the workflow's token is read-only, and every action in it is pinned
 to a full commit SHA, with the tag it came from in the comment after it: a tag can be moved to other code, a
-SHA cannot. A third job, `secrets`, runs gitleaks over the commits of each push and pull request. It does not
+SHA cannot. The `secrets` job runs gitleaks over the commits of each push and pull request. It does not
 read the history already in the repository, so the token in `cb97069` does not fail it; revoking that token is
 the fix. It posts no comments and uploads no findings, because on a public repository either would repeat what
 it found, and manual runs skip it. `.github/dependabot.yml` opens a pull request a week for the actions, the
@@ -180,8 +181,8 @@ client are both hand-rolled around native `fetch`.
 portal owner's, and it is the input to every visual decision. `antislop.md` is the filter that checks
 work against it. The two are not interchangeable, and a filter never supplies taste.
 
-Colours, spacing, type sizes, radii and elevation all come from the token block at the top of
-`web/src/styles.css`. Reaching past it to a raw value fails `tokens.check.mjs`, which is the point:
+Colours, spacing, type sizes, radii and elevation all come from the tokens in
+`web/src/styles/01-tokens.css`. Reaching past it to a raw value fails `tokens.check.mjs`, which is the point:
 dark mode works only because every colour resolves through a token, so one hardcoded hex is one
 element that stays light on a dark page.
 
@@ -196,9 +197,9 @@ render beside them. After editing a `.mmd`, **re-render and check the picture, n
 tested `mermaid-cli` invocation is in each folder's README, along with the rules that were learned by
 breaking them: an unfilled subgraph frame, no bare `%%`, no numeric HTML entities in labels.
 
-When the render is done, run `node web/scripts/diagrams.stamp.mjs` from the repo root. It sets the
+When the render is done, run `node tools/check/diagrams.stamp.mjs` from the repo root. It sets the
 last line of each `.mmd` you changed to `%% source-hash:` and the hash of the source, and refuses a
-source whose PDF is older than it. `node web/scripts/diagrams.check.mjs` fails, in CI too, on a source
+source whose PDF is older than it. `node tools/check/diagrams.check.mjs` fails, in CI too, on a source
 edited after its stamp. A comment-only edit that cannot change the picture takes `--force`.
 
 Count that each lane still reads in order and that no box has lost an edge. A Mermaid diagram that

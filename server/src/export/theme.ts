@@ -2,7 +2,7 @@ import type { Tone } from './types.js';
 
 /**
  * The portal's colours, for files that cannot read a stylesheet. Every value
- * is copied from the light-theme token block at the top of web/src/styles.css,
+ * is copied from the light-theme token block at the top of web/src/styles/01-tokens.css,
  * and export-theme.test.ts fails if one drifts, so a report and the screen it came
  * from stay the same blue. Reports are printed and attached to email, so they
  * take the light theme whatever the viewer's screen uses.

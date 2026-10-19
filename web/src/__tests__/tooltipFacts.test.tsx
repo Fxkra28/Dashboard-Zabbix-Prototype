@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { api } from '../api';
-import { resetAuthProbe } from '../hooks/useAuth';
-import { RefreshFailed } from '../components/states';
-import { SliPill } from '../components/Sli';
-import Sites from '../pages/Sites';
+import { resetAuthProbe } from '../shared/hooks/useAuth';
+import { RefreshFailed } from '../shared/components/states';
+import { SliPill } from '../features/sla/Sli';
+import Sites from '../features/network/Sites';
 import type { SitesResponse } from '../types';
 
 /**

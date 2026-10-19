@@ -3,14 +3,14 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { api } from '../api';
-import { recentMonths } from '../lib/time';
-import Hosts from '../pages/Hosts';
-import Inventory from '../pages/Inventory';
-import AlertNoise from '../pages/AlertNoise';
-import Services from '../pages/Services';
-import Sites from '../pages/Sites';
-import TopTriggers from '../pages/TopTriggers';
-import { lastClosedMonth } from '../components/Sli';
+import { recentMonths } from '../shared/lib/time';
+import Hosts from '../features/hosts/Hosts';
+import Inventory from '../features/reports/Inventory';
+import AlertNoise from '../features/reports/AlertNoise';
+import Services from '../features/sla/Services';
+import Sites from '../features/network/Sites';
+import TopTriggers from '../features/reports/TopTriggers';
+import { lastClosedMonth } from '../features/sla/Sli';
 import type {
   DerivedServicesResponse,
   HostOverview,

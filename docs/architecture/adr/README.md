@@ -23,12 +23,14 @@ and was deleted on 22 September 2026. One file per decision does not rot as a un
 | [0010](0010-session-cookie.md) | Keep the sign-in token in an httpOnly session cookie | accepted | 2026-09-25 |
 | [0011](0011-build-the-sla-report-files-in-the-bff.md) | Build the SLA report files in the BFF, with hand-written PDF and Excel writers instead of a library | accepted | 2026-10-02 |
 | [0012](0012-internet-meters-from-the-zabbix-dashboard.md) | Draw the internet traffic meters from the gauge widgets of the Zabbix dashboard HCML already keeps | accepted | 2026-10-14 |
+| [0013](0013-layers-features-and-tools.md) | Group the server by layer, the web by feature, and keep the repository's checks in one place | accepted | 2026-10-16 |
 
 ## How they relate
 
 ```
 0001  BFF over the API
  ├── 0002  the stack
+ │    └── 0013  routes call services, the web is grouped by feature, one place for the checks
  ├── 0003  no database ──────────── confirmed for telemetry by 0007
  │    └── 0004  derive the SLA
  │         └── 0011  the SLA report as a file, built per request and stored nowhere

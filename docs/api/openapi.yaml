@@ -3,7 +3,7 @@ openapi: 3.1.0
 # Written 22 September 2026 by reading server/src, not by transcribing setup.md §5: that table
 # drifted twice (DOC-14, DOC-15) precisely because nothing checked it against the code.
 #
-# `server/scripts/openapi.check.ts` compares every app.get/app.post registration in server/src with the
+# `tools/check/openapi.check.ts` compares every app.get/app.post registration in server/src with the
 # operations below: the path and the method, the path parameters, and the 401, 403 and 400 that each
 # guarded or body-taking operation must document. It fails on any difference. Run it after touching either.
 #
@@ -60,7 +60,7 @@ info:
     ### Roles
 
     OpenAPI cannot express a role requirement per path, so each operation states its role in the
-    description. From `ROUTE_RULES` (`server/src/auth.ts:39-44`), first match wins, unmatched is
+    description. From `ROUTE_RULES` (`server/src/security/auth.ts:39-44`), first match wins, unmatched is
     `viewer`:
 
     | Role | Paths |
@@ -876,6 +876,64 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/top-hosts:
+    get:
+      summary: The busiest hosts right now, by CPU and by memory
+      description: |
+        Cached 30 s. For each of CPU and memory, the hosts with the highest current utilisation, as the
+        Zabbix dashboard widget "Top hosts" lists them. The items are found by key prefix and by the same rules
+        as the capacity report (`system.cpu.util`, `vm.memory.util`, the SNMP forms of Cisco and FortiGate), so
+        the idle share is never taken. A host with several matching items counts once, by its hottest.
+
+        Only a current value is listed: an item whose last value is older than three of its intervals (and at
+        least ten minutes) is counted in `considered` and not in `current`, and is never read from history, so
+        a copy of Zabbix that has stopped gives `current: 0` and no rows.
+      operationId: getTopHosts
+      tags: [Reports]
+      parameters:
+        - name: limit
+          in: query
+          description: Rows for each metric.
+          schema: { type: integer, minimum: 1, maximum: 20, default: 10 }
+      responses:
+        '200':
+          description: The busiest hosts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopHostsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502': { $ref: '#/components/responses/ZabbixError' }
+        '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/reports/web-monitoring:
+    get:
+      summary: Web scenarios that pass, fail or have no current result
+      description: |
+        Cached 30 s. Every enabled web scenario of a monitored host is counted once, as the Zabbix dashboard widget
+        "Web monitoring" counts them, from the item that holds its result (`web.test.fail[<scenario>]`: 0 when every
+        step passed, otherwise the step that failed).
+
+        Only a current result is believed: one older than three of the item's intervals (and at least ten minutes),
+        an item Zabbix cannot collect and an item that has collected nothing are `unknown`, so a scenario nobody has
+        run lately is never read as OK. The failed ones are listed by host and then by name, as many as `limit` says,
+        and `failed` counts them all.
+      operationId: getWebMonitoring
+      tags: [Reports]
+      parameters:
+        - name: limit
+          in: query
+          description: Failed scenarios to list.
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: The counts and the failed scenarios.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebMonitoringResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
 
@@ -1822,8 +1880,8 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     AiError:
       description: |
-        `ai_error`, the model could not be reached, took too long, returned an error or answered
-        unusably. The message is one fixed sentence for the cause. The model's address and what it sent
+        `ai_error`, the model could not be reached, took too long, returned an error, answered
+        unusably or refused the portal's key (the sentence then says that trying again will not help). The message is one fixed sentence for the cause. The model's address and what it sent
         back go to the BFF log only.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     AiUnavailable:
@@ -2053,6 +2111,55 @@ components:
                 latency: { type: number }
                 state: { type: string }
             - type: 'null'
+
+    TopHostsResponse:
+      type: object
+      required: [generatedAt, metrics]
+      properties:
+        generatedAt: { type: integer, description: Epoch seconds. }
+        metrics:
+          type: array
+          items:
+            type: object
+            required: [key, label, considered, current, rows]
+            properties:
+              key: { type: string, enum: [cpu, memory] }
+              label: { type: string }
+              considered: { type: integer, description: Hosts that have such an item. }
+              current: { type: integer, description: Of those, with a current value. }
+              rows:
+                type: array
+                items:
+                  type: object
+                  required: [hostid, host, itemid, value, clock]
+                  properties:
+                    hostid: { type: string }
+                    host: { type: string }
+                    itemid: { type: string }
+                    value: { type: number, description: Percent. }
+                    clock: { type: integer, description: When the value was collected, epoch seconds. }
+
+    WebMonitoringResponse:
+      type: object
+      required: [generatedAt, total, ok, failed, unknown, failures]
+      properties:
+        generatedAt: { type: integer, description: Epoch seconds. }
+        total: { type: integer, description: Enabled scenarios on monitored hosts. It is `ok`, `failed` and `unknown` added up. }
+        ok: { type: integer }
+        failed: { type: integer }
+        unknown: { type: integer, description: Scenarios with no current result. }
+        failures:
+          type: array
+          items:
+            type: object
+            required: [hostid, host, name, itemid, step, clock]
+            properties:
+              hostid: { type: string }
+              host: { type: string }
+              name: { type: string, description: The scenario's name. }
+              itemid: { type: string }
+              step: { type: integer, description: The step that failed, counting from 1. }
+              clock: { type: integer, description: When the result was collected, epoch seconds. }
 
     MeterZone:
       type: object

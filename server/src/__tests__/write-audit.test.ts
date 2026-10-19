@@ -13,17 +13,18 @@ vi.hoisted(() => {
 });
 
 const { zbxWriteMock } = vi.hoisted(() => ({ zbxWriteMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../zabbix.js')>()),
+vi.mock('../clients/zabbix.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../clients/zabbix.js')>()),
   zbxWrite: zbxWriteMock,
 }));
 
-const { config } = await import('../config.js');
-const { setupAuth, tokenClaims } = await import('../auth.js');
-const { registerErrorHandler } = await import('../errors.js');
-const { actionRoutes, MAX_EVENTIDS } = await import('../routes/actions.js');
-const { ZabbixApiError } = await import('../zabbix.js');
-const { AJV_OPTIONS } = await import('../schemas.js');
+const { config } = await import('../core/config.js');
+const { setupAuth, tokenClaims } = await import('../security/auth.js');
+const { registerErrorHandler } = await import('../http/errors.js');
+const { actionRoutes } = await import('../routes/actions.js');
+const { MAX_EVENTIDS } = await import('../services/actions.js');
+const { ZabbixApiError } = await import('../clients/zabbix.js');
+const { AJV_OPTIONS } = await import('../core/schemas.js');
 
 type Line = Record<string, unknown> & { level: number; msg: string };
 

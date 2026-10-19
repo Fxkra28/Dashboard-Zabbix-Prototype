@@ -1,6 +1,6 @@
-import { zbx } from '../zabbix.js';
-import { config, type SliProfile } from '../config.js';
-import { BadRequestError } from '../validate.js';
+import { zbx } from '../clients/zabbix.js';
+import { config, type SliProfile } from '../core/config.js';
+import { BadRequestError } from '../core/validate.js';
 import {
   CATEGORY_ORDER,
   DEVICE_CLASS_LABELS,
@@ -10,7 +10,7 @@ import {
   siteFromHostName,
   wanPairKey,
   type SiteRef,
-} from '../naming.js';
+} from '../domain/naming.js';
 import { chunk, fetchEventsSliced, fetchTrendsSliced, mapLimit } from './events.js';
 import { maintenanceByHost } from './maintenance.js';
 import { hourFloor, monthBounds } from './time.js';

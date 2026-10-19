@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Layout from './components/Layout';
-import { Loading } from './components/states';
+import Layout from './features/shell/Layout';
+import { Loading } from './shared/components/states';
 
 /**
  * Every page is code-split.
@@ -13,26 +13,26 @@ import { Loading } from './components/states';
  * Login is lazy too but sits outside the Layout: it is the one route an unauthenticated visitor
  * reaches, and it should not carry the rest with it.
  */
-const Overview = lazy(() => import('./pages/Overview'));
-const Problems = lazy(() => import('./pages/Problems'));
-const Sites = lazy(() => import('./pages/Sites'));
-const Hosts = lazy(() => import('./pages/Hosts'));
-const Devices = lazy(() => import('./pages/Devices'));
-const HostDetail = lazy(() => import('./pages/HostDetail'));
-const LatestData = lazy(() => import('./pages/LatestData'));
-const Maps = lazy(() => import('./pages/Maps'));
-const Network = lazy(() => import('./pages/Network'));
-const Links = lazy(() => import('./pages/Links'));
-const Services = lazy(() => import('./pages/Services'));
-const Sla = lazy(() => import('./pages/Sla'));
-const Availability = lazy(() => import('./pages/Availability'));
-const Capacity = lazy(() => import('./pages/Capacity'));
-const AlertNoise = lazy(() => import('./pages/AlertNoise'));
-const Inventory = lazy(() => import('./pages/Inventory'));
-const TopTriggers = lazy(() => import('./pages/TopTriggers'));
-const Assistant = lazy(() => import('./pages/Assistant'));
-const Login = lazy(() => import('./pages/Login'));
-const NotFound = lazy(() => import('./pages/NotFound'));
+const Overview = lazy(() => import('./features/dashboard/Overview'));
+const Problems = lazy(() => import('./features/problems/Problems'));
+const Sites = lazy(() => import('./features/network/Sites'));
+const Hosts = lazy(() => import('./features/hosts/Hosts'));
+const Devices = lazy(() => import('./features/hosts/Devices'));
+const HostDetail = lazy(() => import('./features/graphs/HostDetail'));
+const LatestData = lazy(() => import('./features/hosts/LatestData'));
+const Maps = lazy(() => import('./features/network/Maps'));
+const Network = lazy(() => import('./features/network/Network'));
+const Links = lazy(() => import('./features/network/Links'));
+const Services = lazy(() => import('./features/sla/Services'));
+const Sla = lazy(() => import('./features/sla/Sla'));
+const Availability = lazy(() => import('./features/sla/Availability'));
+const Capacity = lazy(() => import('./features/reports/Capacity'));
+const AlertNoise = lazy(() => import('./features/reports/AlertNoise'));
+const Inventory = lazy(() => import('./features/reports/Inventory'));
+const TopTriggers = lazy(() => import('./features/reports/TopTriggers'));
+const Assistant = lazy(() => import('./features/assistant/Assistant'));
+const Login = lazy(() => import('./features/auth/Login'));
+const NotFound = lazy(() => import('./features/shell/NotFound'));
 
 /** The route table on its own, so a test can mount it in a MemoryRouter. */
 export function AppRoutes() {

@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildTestApp } from './helpers/app.js';
-import { DEVICE_CLASS_LABELS } from '../naming.js';
-import { invalidate } from '../cache.js';
+import { DEVICE_CLASS_LABELS } from '../domain/naming.js';
+import { invalidate } from '../core/cache.js';
 
 /** GET /api/devices: every host as a device of one kind, the SLA report's own (naming.ts); the Zabbix reads are mocked by method. */
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock };
 });
 
-const { deviceRoutes, CLASS_ORDER } = await import('../routes/devices.js');
+const { deviceRoutes } = await import('../routes/devices.js');
+
+const { CLASS_ORDER } = await import('../services/devices.js');
 const { hostRoutes } = await import('../routes/hosts.js');
 
 const host = (hostid: string, name: string, templates: string[], over: Record<string, unknown> = {}) => ({
@@ -146,7 +148,7 @@ describe('GET /api/devices', () => {
   });
 
   it('says one sentence, and no method name, when Zabbix cannot be read', async () => {
-    const { ZabbixApiError } = await import('../zabbix.js');
+    const { ZabbixApiError } = await import('../clients/zabbix.js');
     zbxMock.mockRejectedValue(new ZabbixApiError('host.get: {"code":-32602}'));
     const app = await buildTestApp(deviceRoutes);
     const res = await app.inject({ url: '/api/devices' });

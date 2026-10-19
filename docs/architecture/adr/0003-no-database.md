@@ -98,5 +98,5 @@ headers (`X-Data-Stale`, `X-Data-Age-Seconds`); problem and acknowledgement stat
 * Follows [ADR-0001](0001-bff-over-zabbix-api.md)
 * Confirmed by [ADR-0007](0007-keep-the-zabbix-api.md)
 * [`operations/backup-and-restore.md`](../../operations/backup-and-restore.md): what the portal does keep
-* `setup.md` §9 *Caching strategy*; `server/src/cache.ts`
+* `setup.md` §9 *Caching strategy*; `server/src/core/cache.ts`
 * `flow/DataFlow.pdf`: every green box is derived and has no table anywhere

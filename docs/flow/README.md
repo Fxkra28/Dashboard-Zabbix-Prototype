@@ -64,7 +64,7 @@ signed-in stream ends when its token expires so the browser reconnects with the 
 stream ends on SIGTERM so the server can close. No token rides in the URL: `EventSource` cannot set a header, but it sends the
 httpOnly session cookie like any same-origin request, and the BFF refuses `?token=` on every route.
 `logging.ts` still redacts one, for pages loaded before the cookie (ADR-0010).
-`server/src/routes/stream.ts:28-37,298-333`, `web/src/api.ts:580-583`.
+`server/src/services/stream.ts:28-36,303-322`, `server/src/routes/stream.ts:4-39`, `web/src/api.ts:580-583`.
 
 ### 3 · Server: one request
 
@@ -75,7 +75,7 @@ request ──► helmet ──► CORS ──► rate limit ──► compressi
 That is `index.ts` registration order, and **the order is the design**: a Fastify hook only covers the
 routes registered after it. The rate limit sits ahead of the auth guard deliberately: a flood should
 be rejected before the server spends work verifying JWTs, and `POST /api/auth/login` would otherwise
-be an unthrottled password oracle. `server/src/index.ts:56-106`, `server/src/rateLimit.ts:22-35`.
+be an unthrottled password oracle. `server/src/index.ts:56-106`, `server/src/http/rateLimit.ts:22-35`.
 
 ### 4 · Server: the cache
 
@@ -89,7 +89,7 @@ reached first, TTLs from 5 s to 24 h, all of it gone on restart. A closed month'
 so a run of graph keys cannot push it out.
 This is why twenty NOC screens cost one upstream read. Stale serving is never permitted for anything
 showing problem or acknowledgement state, and an answer given from an old copy because Zabbix failed
-says so in `X-Data-Stale` and `X-Data-Age-Seconds`. `server/src/cache.ts:80-208`.
+says so in `X-Data-Stale` and `X-Data-Age-Seconds`. `server/src/core/cache.ts:80-208`.
 
 ### 5 · Auth
 
@@ -107,7 +107,7 @@ only exemptions, matched exactly against the route the router matched, so an enc
 address. The forgery check runs first: a POST sent with the cookie, and every sign-in and sign-out,
 needs `X-HCML-CSRF: 1` and, when the browser sends an `Origin`, one naming the portal's own host and
 port, or gets 403 `csrf`. A Bearer request skips the check, except on sign-in and sign-out. `POST /api/auth/logout` clears the cookie.
-In `server/src/auth.ts`: `ROUTE_RULES` 41-46, `roleAllows` 52, `PUBLIC_ROUTES` 55, `csrfRefusal` 138,
+In `server/src/security/auth.ts`: `ROUTE_RULES` 41-46, `roleAllows` 52, `PUBLIC_ROUTES` 55, `csrfRefusal` 138,
 `loadUsers` 183, `authenticate` 314, and the `onRequest` guard from 487.
 
 ### 6 · Data: where a number comes from
@@ -133,7 +133,7 @@ ExplainPanel ──GET /api/explain/problem──► ai.ts ──HTTPS──► 
 Reached on demand only, never on page load, and only if the layer is configured at all. One
 problem crosses: host, trigger name, opdata, severity, start time, the acknowledged/resolved flags
 and that problem's tags. `/api/explain/sla` is the second route on this path and is cached 5 minutes,
-not an hour. `server/src/routes/explain.ts:65,83,141`.
+not an hour. `server/src/routes/explain.ts:11`, `server/src/services/explain.ts:80,120`.
 
 ### 8 · AI: the Assistant
 
@@ -145,7 +145,7 @@ The Assistant is the larger of the two AI paths by a wide margin: Explain sends 
 sends a rollup of the whole estate: all 139 hosts by site, the open problems, unreachable-host lists
 and derived SLA figures. Streamed token by token and never cached, where Explain is buffered and
 cached. `HISTORY_CHAR_BUDGET` is the one hard cap in the prompt, at 3,000 characters.
-`server/src/routes/chat.ts:34,134`.
+`server/src/services/chat.ts:31-32`, `server/src/routes/chat.ts:27`.
 
 ### 9 · The one write
 
@@ -157,7 +157,7 @@ The portal's only write, behind a token separate from the read token. Leave `ZAB
 unset and the portal is provably read-only: `/api/health` reports `writeBack: false` and the UI hides
 the control. The invalidate and the push are drawn as a parallel fork in `DataFlow` but run in
 sequence: `event.acknowledge` is awaited first.
-[ADR-0006](../architecture/adr/0006-read-only-with-one-write.md), `server/src/routes/actions.ts:130`.
+[ADR-0006](../architecture/adr/0006-read-only-with-one-write.md), `server/src/routes/actions.ts:39`.
 
 ---
 
@@ -210,7 +210,7 @@ Six things on it are easy to miss and cost real bugs if you forget them:
 - Only the Dashboard streams. `useSSE` has exactly one call site (`Overview.tsx`), and navigating
   away closes the connection. The Problems page does not stream: it polls every 30 s.
 - `ExplainPanel` does not render markdown. It writes its fields as plain `<p>` paragraphs; the
-  Assistant is the only consumer of `lib/markdown.ts`.
+  Assistant is the only consumer of `features/assistant/parseMarkdown.ts`.
 - Stage 2's "signed in?" diamond is not a route guard. Nothing reads the role and redirects: the
   automatic paths to `/login` are `api.ts` reacting to a 401, to a sign-out in another tab, or to a
   page Back restores after one, so an unauthenticated visitor sees
@@ -298,7 +298,7 @@ npx @mermaid-js/mermaid-cli -i ServerFlow.mmd -o ServerFlow.pdf -w 2600 -b white
 npx @mermaid-js/mermaid-cli -i DataFlow.mmd   -o DataFlow.pdf   -w 2600 -b white --pdfFit
 ```
 
-Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+Then run `node tools/check/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`tools/check/diagrams.check.mjs`).
 
 `--pdfFit` sizes the page to the chart; without it the diagram is squeezed onto A4 and unreadable.
 For a raster copy to paste into slides, swap the output for `.png` and add `-s 2`.

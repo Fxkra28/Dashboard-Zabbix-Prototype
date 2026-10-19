@@ -8,12 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * page limit.
  */
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock };
 });
 
-const { getAvailability, getNoise, OPEN_AT_START_LOOKBACK, LONG_OUTAGE_LOOKUPS } = await import('../routes/analytics.js');
+const { getAvailability, getNoise, OPEN_AT_START_LOOKBACK, LONG_OUTAGE_LOOKUPS } = await import('../services/analytics.js');
 
 const DAY = 86_400;
 const NOW = Math.floor(Date.parse('2026-09-17T03:00:00Z') / 1000);

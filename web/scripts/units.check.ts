@@ -1,11 +1,11 @@
-/** Assertions for web/src/lib/units.ts. Run from the repo root: ./server/node_modules/.bin/tsx web/scripts/units.check.ts */
+/** Assertions for web/src/shared/lib/units.ts. Run from the repo root: ./server/node_modules/.bin/tsx web/scripts/units.check.ts */
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PERCENT_DP, dur, formatAxis, formatPercent, formatValue, formatDuration } from '../src/lib/units.ts';
-import { naturalCompare, siteFromHostName } from '../src/lib/sites.ts';
-import { monthBounds } from '../src/lib/time.ts';
+import { PERCENT_DP, dur, formatAxis, formatPercent, formatValue, formatDuration } from '../src/shared/lib/units.ts';
+import { naturalCompare, siteFromHostName } from '../src/shared/lib/sites.ts';
+import { monthBounds } from '../src/shared/lib/time.ts';
 
 const eq = (actual: string, expected: string) => assert.equal(actual, expected);
 
@@ -93,15 +93,15 @@ function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) return name === '__tests__' ? [] : sourceFiles(path);
-    return /\.tsx?$/.test(name) ? [path] : [];
+    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
   });
 }
 const SRC = fileURLToPath(new URL('../src', import.meta.url));
 const offenders = sourceFiles(SRC)
   // units.ts is the rule itself, and percent.ts the Met/Missed text that adds digits to stay on the right side of a target.
-  .filter((f) => !f.endsWith(join('lib', 'units.ts')) && !f.endsWith(join('lib', 'percent.ts')))
+  .filter((f) => !f.endsWith(join('shared', 'lib', 'units.ts')) && !f.endsWith(join('features', 'sla', 'percent.ts')))
   .filter((f) => HAND_ROLLED_PERCENT.test(withoutComments(readFileSync(f, 'utf8'))))
   .map((f) => f.slice(SRC.length + 1));
-assert.deepEqual(offenders, [], `format percentages with formatPercent (lib/units.ts), not toFixed: ${offenders.join(', ')}`);
+assert.deepEqual(offenders, [], `format percentages with formatPercent (shared/lib/units.ts), not toFixed: ${offenders.join(', ')}`);
 
 console.log('units.check: all assertions passed');

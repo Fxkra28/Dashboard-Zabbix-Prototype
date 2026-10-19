@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/__tests__/**/*.test.ts'],
-    // Route tests mock '../zabbix.js' per file; without isolation a mock from
+    // Route tests mock '../clients/zabbix.js' per file; without isolation a mock from
     // one file would leak into the next through the ESM module cache.
     isolate: true,
     // Never load the developer's server/.env: its real tokens would reach every test, and CI would

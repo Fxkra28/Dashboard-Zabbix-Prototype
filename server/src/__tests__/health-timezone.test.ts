@@ -7,8 +7,8 @@ import Fastify from 'fastify';
  * than restating Asia/Jakarta.
  */
 
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: vi.fn().mockResolvedValue([]) };
 });
 
@@ -16,7 +16,7 @@ vi.mock('../zabbix.js', async (importOriginal) => {
 async function healthDefaults(zone: string) {
   vi.resetModules();
   vi.stubEnv('SLA_TIMEZONE', zone);
-  const { registerHealth, createReadiness } = await import('../health.js');
+  const { registerHealth, createReadiness } = await import('../http/health.js');
   const app = Fastify({ logger: false });
   registerHealth(app, createReadiness({ probes: { zabbix: async () => [], model: async () => 'off' } }));
   const res = await app.inject({ url: '/api/health' });

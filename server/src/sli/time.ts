@@ -1,4 +1,4 @@
-import { BadRequestError } from '../validate.js';
+import { BadRequestError } from '../core/validate.js';
 
 /**
  * Calendar months in a named time zone, as Unix seconds.

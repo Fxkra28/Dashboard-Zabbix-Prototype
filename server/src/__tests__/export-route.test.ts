@@ -3,12 +3,12 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { invalidate } from '../cache.js';
-import { registerCompression } from '../compress.js';
-import { registerErrorHandler } from '../errors.js';
-import { registerRateLimit } from '../rateLimit.js';
-import { BadRequestError } from '../validate.js';
-import { ZabbixApiError } from '../zabbix.js';
+import { invalidate } from '../core/cache.js';
+import { registerCompression } from '../http/compress.js';
+import { registerErrorHandler } from '../http/errors.js';
+import { registerRateLimit } from '../http/rateLimit.js';
+import { BadRequestError } from '../core/validate.js';
+import { ZabbixApiError } from '../clients/zabbix.js';
 import { sliExportRoutes } from '../routes/sliExport.js';
 import { buildTestApp } from './helpers/app.js';
 import { sampleSliReports } from './helpers/sliReportFixture.js';
@@ -20,8 +20,8 @@ import { sampleSliReports } from './helpers/sliReportFixture.js';
  */
 
 const { sliMock } = vi.hoisted(() => ({ sliMock: vi.fn() }));
-vi.mock('../routes/sli.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../routes/sli.js')>();
+vi.mock('../services/sli.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/sli.js')>();
   return { ...actual, getMonthlySli: sliMock };
 });
 

@@ -10,7 +10,7 @@
  * for the same password (a fresh salt) and any of them signs in. Only the hash goes to standard
  * output; prompts and errors go to standard error.
  */
-import { hashPassword } from '../src/passwords.js';
+import { hashPassword } from '../src/security/passwords.js';
 
 async function readPiped(): Promise<string> {
   const chunks: Buffer[] = [];

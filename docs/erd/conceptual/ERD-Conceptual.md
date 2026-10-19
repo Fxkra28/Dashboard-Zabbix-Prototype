@@ -43,7 +43,7 @@ npx @mermaid-js/mermaid-cli -i ERD-Conceptual.mmd -o ERD-Conceptual.pdf -w 2600 
 npx @mermaid-js/mermaid-cli -i ERD-Conceptual.mmd -o ERD-Conceptual.png -w 2600 -s 2 -b white
 ```
 
-Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+Then run `node tools/check/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`tools/check/diagrams.check.mjs`).
 
 `LR`, not `TB`. A Merise graph puts an extra node on every edge, so its longest path is about double the
 logical model's: `TB` came out 3712 × 16590, a 1:4.5 tower. `LR` is 5168 × 1348. Even so the single canvas
@@ -134,13 +134,13 @@ flowchart TB
 Host State is an entity, not a property of Device. The portal answers "is it down?" ping first, because
 on 17 September 2026 sixteen of HCML's twenty-three devices marked *unavailable* by Zabbix answered ping,
 and forty-three devices had no interface at all. The verdict is five states and eight reasons with a
-documented precedence (`server/src/reachability.ts:19,22,158-181`), which is more than an attribute can
+documented precedence (`server/src/domain/reachability.ts:19,22,158-181`), which is more than an attribute can
 carry. No existing ERD covers it.
 
 ***stations* carries the site signal, and that is why it is an association and not a foreign key.** A
 device's site is resolved from four signals in order: its `site` tag, then its own name parsed against
 HCML's `<site>.<class>.<seq>` convention, then inventory `site_city`/`location`, then its host group
-(`server/src/routes/sites.ts:25,84-106`). Which signal answered belongs to neither Device nor Site; it is a
+(`server/src/services/sites.ts:23,83-104`). Which signal answered belongs to neither Device nor Site; it is a
 property of *this device being placed at this site*, and it is the only reason the coverage counters can
 exist. It also decides governance: the scorecard counts a site resolved from the group as a failure to
 declare one, so R2's signal is what makes R28 true or false.
@@ -203,9 +203,9 @@ absent on purpose. See the *cascade* legend in
 
 ***derives from* carries the evidence source**: trends, raw history on an instance too young to have
 trends, or none at all. The same capacity figure means different things depending on which answered, so the
-source belongs to the association (`server/src/routes/analytics.ts:773-790`).
+source belongs to the association (`server/src/services/analytics.ts:772-788`).
 
-**Interface Reading is absent from every existing ERD** (`server/src/routes/net.ts:9-16,41-56`).
+**Interface Reading is absent from every existing ERD** (`server/src/services/net.ts:7-14,39-54`).
 
 ---
 
@@ -453,7 +453,7 @@ the assistant knows: it has no tools and cannot query anything, so a device abse
 not exist as far as any answer is concerned. The association therefore carries each section's character
 budget and whether that section was cut: the snapshot is capped at 5,500 characters overall, with a budget
 per section and at most 20 problems, and the page says *partial view* when a cap fired
-(`server/src/chat.ts:81-93`). A snapshot is frozen for five minutes and so answers several turns, and a
+(`server/src/services/assistant.ts:81-93`). A snapshot is frozen for five minutes and so answers several turns, and a
 host-state change must hold for a minute before it forces a rebuild, which is why *answers from* is
 `(0,n)` on the snapshot leg.
 
@@ -476,7 +476,7 @@ at this level, and there are only four of those.
 | Host State | D | `reachability.ts`, `HostState` + `StateReason` + `Availability` + `IcmpReading`. New |
 | Measurement | O | `ZBX_ITEM` + `ITEM_TAG` |
 | Observation | O | `ZBX_HISTORY` + `ZBX_TREND`: one concept, two granularities |
-| Interface Reading | D | `routes/net.ts`, `InterfaceRow` + `OperStatus`. New |
+| Interface Reading | D | `services/net.ts`, `InterfaceRow` + `OperStatus`. New |
 | Capacity Reading | D | `CAPACITY_ROW` |
 | Alert Rule | O | `ZBX_TRIGGER` |
 | Alert | O | `ZBX_EVENT` / `PROBLEM` + `PROBLEM_TAG` |
@@ -517,12 +517,12 @@ the physical model where a foreign key backs the cardinality, and the code where
 | | Left | | Verb | | Right | Evidence |
 |---|---|---|---|---|---|---|
 | R1 | Device | (1,n) | belongs to | (0,n) | Device Group | M:N: a link table with a key on both sides |
-| R2 | Site | (1,n) | stations | (1,1) | Device | carries the signal · conceptual only, `routes/sites.ts:84-106` |
+| R2 | Site | (1,n) | stations | (1,1) | Device | carries the signal · conceptual only, `services/sites.ts:83-104` |
 | R3 | Device Class | (0,n) | classes | (1,1) | Device | conceptual only, `naming.ts`, total, defaults to *other* |
 | R4 | Device | (1,1) | reaches | (1,1) | Host State | conceptual only, `reachability.ts:158`, total, disabled devices included |
 | R5 | Device | (0,n) | carries | (1,1) | Measurement | a NOT NULL foreign key |
 | R6 | Measurement | (0,n) | records | (1,1) | Observation | no foreign key on purpose. See Measurement above |
-| R7 | Device | (0,n) | exposes | (1,1) | Interface Reading | conceptual only, `routes/net.ts:59-65`, SNMP devices only |
+| R7 | Device | (0,n) | exposes | (1,1) | Interface Reading | conceptual only, `services/net.ts:57-63`, SNMP devices only |
 | R8 | Measurement | (0,1) | sums up | (1,1) | Capacity Reading | keyed by measurement, three metrics only |
 | R9 | Capacity Reading | (1,1) | derives from | (0,n) | Observation | carries the evidence source |
 | R10 | Alert Rule | (1,n) | watches | (0,n) | Device | M:N, rule → function → measurement → device |
@@ -568,13 +568,13 @@ So, concretely: a change to any of these obliges a change here.
 
 | If this changes | Revisit |
 |---|---|
-| `server/src/routes/sites.ts`: the site signals | R2, and the coverage properties on Site |
-| `server/src/reachability.ts`, states or reasons | Host State |
+| `server/src/services/sites.ts`: the site signals | R2, and the coverage properties on Site |
+| `server/src/domain/reachability.ts`, states or reasons | Host State |
 | `server/src/sli/engine.ts`: the profiles, or what a result carries | Availability Period, Availability Result, R23 to R25 |
 | `server/src/sli/tree.ts`: the node kinds | Derived Service Node, R26, R27 |
-| `server/src/chat.ts`: the caps, the freeze or the sections | Assistant Snapshot, R31, R32 |
-| `server/src/routes/inventory.ts`: the dimensions | Governance Dimension, R28 |
-| A new Zabbix API method in `server/src/zabbix.ts` | Whether a new entity is observed rather than derived |
+| `server/src/services/assistant.ts`: the caps, the freeze or the sections | Assistant Snapshot, R31, R32 |
+| `server/src/services/inventory.ts`: the dimensions | Governance Dimension, R28 |
+| A new Zabbix API method in `server/src/clients/zabbix.ts` | Whether a new entity is observed rather than derived |
 
 And the other direction: nothing here should be added because the code grew a type. A new interface is a
 logical-model change. It belongs here only when someone at HCML would name it.

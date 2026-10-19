@@ -8,7 +8,7 @@ import {
   cached,
   invalidate,
   setCacheLogger,
-} from '../cache.js';
+} from '../core/cache.js';
 
 // The cache is module-level state shared by every test in this file.
 beforeEach(() => {

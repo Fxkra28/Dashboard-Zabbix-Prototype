@@ -13,15 +13,15 @@ vi.hoisted(() => {
 });
 
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../zabbix.js')>()),
+vi.mock('../clients/zabbix.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../clients/zabbix.js')>()),
   zbx: zbxMock,
 }));
 
-const { config } = await import('../config.js');
-const { setupAuth, tokenClaims } = await import('../auth.js');
-const { registerErrorHandler } = await import('../errors.js');
-const { invalidate } = await import('../cache.js');
+const { config } = await import('../core/config.js');
+const { setupAuth, tokenClaims } = await import('../security/auth.js');
+const { registerErrorHandler } = await import('../http/errors.js');
+const { invalidate } = await import('../core/cache.js');
 const { historyRoutes } = await import('../routes/history.js');
 
 /** Which key each made-up item id has. An id that is not here is one Zabbix does not know. */

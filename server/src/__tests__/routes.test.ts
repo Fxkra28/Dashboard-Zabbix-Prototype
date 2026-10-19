@@ -14,13 +14,13 @@ const { zbxMock, zbxWriteMock } = vi.hoisted(() => ({
   zbxWriteMock: vi.fn(),
 }));
 
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock, zbxWrite: zbxWriteMock };
 });
 
 const { ZabbixAuthError, ZabbixTimeoutError, ZabbixWriteDisabledError } = await import(
-  '../zabbix.js'
+  '../clients/zabbix.js'
 );
 
 /** Answer per Zabbix method; anything unlisted returns an empty list. */
@@ -235,7 +235,7 @@ describe('problems / history / maps routes', () => {
   });
 
   it('resolveLabel drops unknown macros and brackets a missing value leaves empty', async () => {
-    const { resolveLabel } = await import('../routes/maps.js');
+    const { resolveLabel } = await import('../services/maps.js');
     // The bug this replaces: every HCML host label rendered as "()".
     expect(resolveLabel('{HOSTNAME} ({HOST.IP})', { hostid: '1', host: 'h', name: 'CORE' })).toBe('CORE');
     expect(resolveLabel('{NO.SUCH.MACRO}\r\nInet Jatayu 1')).toBe('Inet Jatayu 1');
@@ -289,7 +289,7 @@ describe('input validation and error shape', () => {
   });
 
   it('maps a Zabbix API error to 502 and an unknown route to 404, in the same shape', async () => {
-    const { ZabbixApiError } = await import('../zabbix.js');
+    const { ZabbixApiError } = await import('../clients/zabbix.js');
     zbxMock.mockRejectedValue(new ZabbixApiError('host.get: {"code":-32602}'));
     const { hostRoutes } = await import('../routes/hosts.js');
     const app = await buildTestApp(hostRoutes);
@@ -379,7 +379,7 @@ describe('analytics routes', () => {
     // because their entire estate alarms at severity 2.
     zabbixReturns({ 'event.get': [], 'host.get': [zHost()] });
     const { analyticsRoutes } = await import('../routes/analytics.js');
-    const { config } = await import('../config.js');
+    const { config } = await import('../core/config.js');
     const app = await buildTestApp(analyticsRoutes);
 
     const body = (await app.inject({ url: '/api/reports/availability' })).json();
@@ -419,7 +419,8 @@ describe('analytics routes', () => {
     vi.setSystemTime(new Date('2026-09-17T03:00:00Z'));
     const now = Math.floor(Date.now() / 1000);
     zabbixReturns({ 'event.get': [] });
-    const { analyticsRoutes, OPEN_AT_START_LOOKBACK } = await import('../routes/analytics.js');
+    const { analyticsRoutes } = await import('../routes/analytics.js');
+    const { OPEN_AT_START_LOOKBACK } = await import('../services/analytics.js');
     const app = await buildTestApp(analyticsRoutes);
     // Each report reads its window, just before it the look-back for problems already open, and the
     // window's recovery events again, in that order.
@@ -531,10 +532,10 @@ describe('analytics routes', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-09-17T03:00:00Z'));
     const start = Date.now();
-    const { invalidate } = await import('../cache.js');
+    const { invalidate } = await import('../core/cache.js');
     invalidate(''); // a clean cache: earlier tests in this file share it
     zabbixReturns({ 'event.get': [], 'item.get': [] });
-    const { ZabbixApiError } = await import('../zabbix.js');
+    const { ZabbixApiError } = await import('../clients/zabbix.js');
     const { analyticsRoutes } = await import('../routes/analytics.js');
     const app = await buildTestApp(analyticsRoutes);
     const reports = [
@@ -682,14 +683,14 @@ describe('acknowledge write-back', () => {
   let savedToken: string;
   let savedAuth: boolean;
   beforeEach(async () => {
-    const { config } = await import('../config.js');
+    const { config } = await import('../core/config.js');
     savedToken = config.zbxWriteToken;
     savedAuth = config.auth.enabled;
     config.zbxWriteToken = 'test-only-not-a-real-token';
     config.auth.enabled = true;
   });
   afterEach(async () => {
-    const { config } = await import('../config.js');
+    const { config } = await import('../core/config.js');
     config.zbxWriteToken = savedToken;
     config.auth.enabled = savedAuth;
   });
@@ -757,7 +758,7 @@ describe('acknowledge write-back', () => {
   it('maps a write attempted with no write token to 503, not 500', async () => {
     // Blank ZABBIX_WRITE_TOKEN means the portal is read-only by design. The UI
     // reads this code to hide the button rather than offering a failing one.
-    const { config } = await import('../config.js');
+    const { config } = await import('../core/config.js');
     config.zbxWriteToken = '';
     const { actionRoutes } = await import('../routes/actions.js');
     const app = await buildTestApp(actionRoutes);

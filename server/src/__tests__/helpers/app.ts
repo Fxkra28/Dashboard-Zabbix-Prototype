@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
-import { registerErrorHandler } from '../../errors.js';
-import { AJV_OPTIONS } from '../../schemas.js';
-import { invalidate } from '../../cache.js';
+import { registerErrorHandler } from '../../http/errors.js';
+import { AJV_OPTIONS } from '../../core/schemas.js';
+import { invalidate } from '../../core/cache.js';
 
 type RoutePlugin = (app: FastifyInstance) => Promise<void>;
 

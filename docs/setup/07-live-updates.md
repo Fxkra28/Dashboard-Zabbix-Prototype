@@ -1,0 +1,24 @@
+# 7. Live updates (SSE)
+
+[setup.md](../../setup.md) · previous: [§6](06-frontend-structure.md) · next: [§8](08-authentication.md)
+
+Server-Sent Events are the simplest live-push transport (chosen over WebSocket in the build brief,
+`myown/plan/instruct.md` §2; recorded as [ADR-0002](../architecture/adr/0002-react-typescript-fastify.md)).
+
+- BFF: [`routes/stream.ts`](../../server/src/routes/stream.ts) opens an `text/event-stream`, and [`services/stream.ts`](../../server/src/services/stream.ts) pushes an
+  `event: problems` frame when something shown changed, from one shared 5 s ticker. A list identical
+  to the last one sent is never sent again, and one where only a name or host changed goes after at
+  most 30 s. A frame carries only the fields the Dashboard reads (`eventid`, `objectid`, `object`, `name`, `severity`, `clock`,
+  `r_eventid`, `acknowledged`, `suppressed`, `host`, `hostid`): no tags, no `opdata`, and none of the other fields Zabbix
+  returns, which is about half the size of the full list (tracker IN-11). After 15 s of
+  silence it sends an `event: ping` whose data is `{ "ageMs": n }`, the age of the last good read of
+  the list, so the page's "Data as of" keeps moving on a quiet estate. It drops the client on
+  disconnect. `X-Accel-Buffering: no` tells nginx to stream, not buffer.
+- Limits. At most `STREAM_MAX_CLIENTS` screens in all (default 100) and `STREAM_MAX_PER_USER` for
+  one signed-in user (default 5; one client address when auth is off). A screen past either limit
+  gets `429 too_many_streams` with `Retry-After: 30`. The browser cannot read that body, so it falls
+  back to the 60 s poll and retries. A stream is also ended when the token it was opened with
+  expires, so the browser reconnects with the renewed cookie, and when the BFF shuts down.
+- Browser: [`useSSE`](../../web/src/features/dashboard/useSSE.ts) wraps `EventSource`. `EventSource` can't set headers,
+  but it sends the session cookie on a same-origin request like any other, so the stream is
+  authenticated by cookie. No route accepts a token in the query string.

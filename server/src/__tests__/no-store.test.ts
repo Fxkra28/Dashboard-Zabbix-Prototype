@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
 import helmet from '@fastify/helmet';
-import { registerNoStore } from '../noStore.js';
+import { registerNoStore } from '../http/noStore.js';
 
 /** Signed-in replies tell a browser and a proxy to keep nothing. */
 

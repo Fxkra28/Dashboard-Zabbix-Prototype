@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deviceClass, naturalCompare, siteFromHostName, wanPairKey } from '../naming.js';
+import { deviceClass, naturalCompare, siteFromHostName, wanPairKey } from '../domain/naming.js';
 
 /**
  * What a host's name says about it. No HCML host carries a `site` tag, so these

@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { api } from '../api';
-import { setReportTimeZone } from '../lib/time';
-import { MonthSelect, gapsSummary } from '../components/Sli';
-import RangePicker from '../components/RangePicker';
-import Availability from '../pages/Availability';
-import Sla from '../pages/Sla';
+import { setReportTimeZone } from '../shared/lib/time';
+import { MonthSelect, gapsSummary } from '../features/sla/Sli';
+import RangePicker from '../features/graphs/RangePicker';
+import Availability from '../features/sla/Availability';
+import Sla from '../features/sla/Sla';
 import type { SlaSource } from '../types';
 
 /**

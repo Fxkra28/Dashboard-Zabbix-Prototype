@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { api, login } from '../api';
-import { resetAuthProbe } from '../hooks/useAuth';
-import { ErrorState } from '../components/states';
+import { resetAuthProbe } from '../shared/hooks/useAuth';
+import { ErrorState } from '../shared/components/states';
 import type { Me, Role } from '../types';
 
 /**
@@ -12,16 +12,16 @@ import type { Me, Role } from '../types';
  */
 
 const caps = { ai: false, writeBack: false, availabilityMinSeverity: 2, known: true, failed: false, retry: () => undefined };
-vi.mock('../hooks/useAi', async (original) => ({
-  ...(await original<typeof import('../hooks/useAi')>()),
+vi.mock('../features/assistant/useAi', async (original) => ({
+  ...(await original<typeof import('../features/assistant/useAi')>()),
   useCapabilities: () => caps,
   useAiEnabled: () => caps.ai,
 }));
 const sse = { data: [] as unknown[], connected: true, updatedAt: Date.now(), error: null as string | null };
-vi.mock('../hooks/useSSE', () => ({ useSSE: () => sse }));
-const { default: Assistant } = await import('../pages/Assistant');
-const { default: Network } = await import('../pages/Network');
-const { default: Overview } = await import('../pages/Overview');
+vi.mock('../features/dashboard/useSSE', () => ({ useSSE: () => sse }));
+const { default: Assistant } = await import('../features/assistant/Assistant');
+const { default: Network } = await import('../features/network/Network');
+const { default: Overview } = await import('../features/dashboard/Overview');
 
 const as = (role: Role): Me => ({ authEnabled: true, user: { name: 'x', role }, expiresIn: 3600 });
 const signedInAs = (role: Role) => {

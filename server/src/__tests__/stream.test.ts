@@ -3,25 +3,13 @@ import { EventEmitter } from 'node:events';
 import http, { type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import Fastify, { type FastifyInstance } from 'fastify';
-import type { ZbxProblem } from '../queries.js';
-import { invalidate } from '../cache.js';
-import { config } from '../config.js';
-import { ZabbixApiError } from '../zabbix.js';
-import { genReqId, registerRequestId } from '../requestId.js';
-import {
-  MAX_QUIET_MS,
-  TICK_MS,
-  connectedClients,
-  endStreams,
-  fingerprint,
-  frameJson,
-  notifyProblemsChanged,
-  pingFrame,
-  refusalFor,
-  shouldSend,
-  streamRoutes,
-  subscribe,
-} from '../routes/stream.js';
+import type { ZbxProblem } from '../domain/queries.js';
+import { invalidate } from '../core/cache.js';
+import { config } from '../core/config.js';
+import { ZabbixApiError } from '../clients/zabbix.js';
+import { genReqId, registerRequestId } from '../http/requestId.js';
+import { streamRoutes } from '../routes/stream.js';
+import { MAX_QUIET_MS, TICK_MS, connectedClients, endStreams, fingerprint, frameJson, notifyProblemsChanged, pingFrame, refusalFor, shouldSend, subscribe } from '../services/stream.js';
 
 /**
  * The shared SSE ticker: one read per tick however many screens listen, a frame only when something
@@ -30,7 +18,7 @@ import {
  * shutdown.
  */
 const { getProblemsMock } = vi.hoisted(() => ({ getProblemsMock: vi.fn() }));
-vi.mock('../queries.js', () => ({ getProblems: getProblemsMock }));
+vi.mock('../domain/queries.js', () => ({ getProblems: getProblemsMock }));
 
 const problem = (over: Partial<ZbxProblem> = {}): ZbxProblem => ({
   eventid: '109',
@@ -634,7 +622,7 @@ describe('limits on live screens (SC-15)', () => {
   });
 
   it('with the real sign-in guard, counts the user the token names and ends the stream when that token expires', async () => {
-    const { setupAuth, tokenClaims } = await import('../auth.js');
+    const { setupAuth, tokenClaims } = await import('../security/auth.js');
     const was = { auth: config.auth.enabled, perUser: config.stream.maxPerUser, users: process.env.PORTAL_USERS };
     config.auth.enabled = true;
     config.stream.maxPerUser = 1;

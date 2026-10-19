@@ -63,7 +63,7 @@ function passed(): Map<string, Passed> {
 }
 
 /** Defaults compose gives that config.ts must give too: how to read each one off `config`. */
-type Config = typeof import('../config.js').config;
+type Config = typeof import('../core/config.js').config;
 const SAME_AS_CONFIG: Record<string, (c: Config) => unknown> = {
   ZABBIX_TIMEOUT_MS: (c) => c.zbxTimeoutMs,
   RATE_LIMIT_PER_MINUTE: (c) => c.rateLimitPerMinute,
@@ -133,7 +133,7 @@ describe('docker-compose.yml and the BFF (tracker IN-04)', () => {
   it('gives each default the value config.ts gives when nothing is set, so Docker and a bare checkout agree', async () => {
     vi.resetModules();
     for (const v of variablesRead()) vi.stubEnv(v, undefined);
-    const { config } = await import('../config.js');
+    const { config } = await import('../core/config.js');
     const compared: string[] = [];
     for (const [name, { fallback }] of passed()) {
       if (fallback === null || fallback === '') continue;

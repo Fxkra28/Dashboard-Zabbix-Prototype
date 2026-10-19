@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { api } from '../api';
-import { resetAuthProbe } from '../hooks/useAuth';
-import { ErrorState } from '../components/states';
-import HostDetail from '../pages/HostDetail';
-import LatestData from '../pages/LatestData';
+import { resetAuthProbe } from '../shared/hooks/useAuth';
+import { ErrorState } from '../shared/components/states';
+import HostDetail from '../features/graphs/HostDetail';
+import LatestData from '../features/hosts/LatestData';
 
 /** When the host list cannot load, Graphs and Latest data say so, not "Loading hosts…" for good or empty menus. */
 

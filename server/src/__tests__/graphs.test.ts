@@ -8,8 +8,8 @@ import { buildTestApp, zHost } from './helpers/app.js';
  */
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
 
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock };
 });
 
@@ -33,7 +33,7 @@ afterEach(async () => {
   zbxMock.mockReset();
   vi.useRealTimers();
   if (savedAuth !== undefined) {
-    (await import('../config.js')).config.auth.enabled = savedAuth;
+    (await import('../core/config.js')).config.auth.enabled = savedAuth;
     savedAuth = undefined;
   }
 });
@@ -174,7 +174,7 @@ async function graphApp() {
   // These tests run the graph pipeline with no sign-in in front of it. A caller with no user counts as
   // a viewer, and a viewer may not graph interface items, so sign-in is off here: every caller
   // is admin. viewer-network-ids.test.ts covers the viewer.
-  const { config } = await import('../config.js');
+  const { config } = await import('../core/config.js');
   savedAuth ??= config.auth.enabled;
   config.auth.enabled = false;
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -384,7 +384,7 @@ describe('/api/graph', () => {
 
 describe('parseDelay', () => {
   it('reads Zabbix intervals', async () => {
-    const { parseDelay } = await import('../routes/history.js');
+    const { parseDelay } = await import('../services/history.js');
     expect(parseDelay('60')).toBe(60);
     expect(parseDelay('1m')).toBe(60);
     expect(parseDelay('5m')).toBe(300);

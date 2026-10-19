@@ -1,5 +1,5 @@
-import { config } from '../config.js';
-import { getMonthlySli } from '../routes/sli.js';
+import { config } from '../core/config.js';
+import { getMonthlySli } from '../services/sli.js';
 import { currentMonth, previousMonth } from './time.js';
 import { getDerivedServices } from './tree.js';
 import { percentText } from '../export/slaReport.js';
@@ -7,7 +7,7 @@ import type { SliGroup } from './engine.js';
 
 /**
  * Plain-text lines about the derived SLA and service tree, for the assistant's
- * snapshot (chat.ts). Kept here so the chat code never needs to know how the
+ * snapshot (services/assistant.ts). Kept here so the chat code never needs to know how the
  * SLA engine works. Every figure comes from the same cached reports the SLA
  * and Services pages show.
  */

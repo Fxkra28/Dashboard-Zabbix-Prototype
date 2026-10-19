@@ -9,7 +9,7 @@ import Fastify from 'fastify';
  * one. Each case re-imports config, which reads the environment once.
  */
 
-vi.mock('../queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
+vi.mock('../domain/queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
 
 const NAMES = [
   'AI_PROVIDER',
@@ -30,13 +30,13 @@ async function load(env: Record<string, string>) {
   for (const [name, value] of Object.entries({ AUTH_ENABLED: 'true', JWT_SECRET: 'test-only-secret-at-least-32-bytes-long', ...env })) {
     vi.stubEnv(name, value);
   }
-  return import('../config.js');
+  return import('../core/config.js');
 }
 
 /** What an anonymous caller of GET /api/health is told. */
 async function healthUnder(env: Record<string, string>) {
   await load(env);
-  const { registerHealth } = await import('../health.js');
+  const { registerHealth } = await import('../http/health.js');
   const app = Fastify({ logger: false });
   registerHealth(app, { get: async () => ({}), warm: () => undefined } as never);
   await app.ready();

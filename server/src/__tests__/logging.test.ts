@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
-import { redactUrl, serializeRequest } from '../logging.js';
+import { redactUrl, serializeRequest } from '../http/logging.js';
 
 const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJub2MiLCJyb2xlIjoidmlld2VyIn0.c2lnbmF0dXJl';
 

@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { BrowserRouter, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { api, sessionTiming } from '../api';
-import { staleCopyOf } from '../lib/freshness';
-import { unreadableMessage } from '../lib/guards';
-import { resetAuthProbe } from '../hooks/useAuth';
-import Hosts from '../pages/Hosts';
-import Overview from '../pages/Overview';
-import Problems from '../pages/Problems';
+import { staleCopyOf } from '../shared/lib/freshness';
+import { unreadableMessage } from '../guards';
+import { resetAuthProbe } from '../shared/hooks/useAuth';
+import Hosts from '../features/hosts/Hosts';
+import Overview from '../features/dashboard/Overview';
+import Problems from '../features/problems/Problems';
 import type { Freshness, HostOverview, Me, Problem, Stats } from '../types';
 import { problem } from './problems';
 

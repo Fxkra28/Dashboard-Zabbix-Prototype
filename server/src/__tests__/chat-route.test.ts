@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import { buildTestApp } from './helpers/app.js';
 import { chatRoutes } from '../routes/chat.js';
-import { getSnapshot, streamAnswer, systemText } from '../chat.js';
-import { AI_MESSAGE, AiDisabledError, AiUpstreamError, prefillModel, warmModel } from '../ai.js';
-import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../zabbix.js';
+import { getSnapshot, streamAnswer, systemText } from '../services/assistant.js';
+import { AI_MESSAGE, AiDisabledError, AiUpstreamError, prefillModel, warmModel } from '../clients/ai.js';
+import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../clients/zabbix.js';
+import { genReqId, registerRequestId } from '../http/requestId.js';
+import { registerErrorHandler } from '../http/errors.js';
+import { AJV_OPTIONS } from '../core/schemas.js';
 
 /**
  * POST /api/chat as the browser sees it: validation, then a text/event-stream
@@ -21,12 +24,12 @@ vi.hoisted(() => {
   process.env.AI_CHAT_PER_MINUTE = '1000';
 });
 
-vi.mock('../chat.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../chat.js')>();
+vi.mock('../services/assistant.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/assistant.js')>();
   return { ...actual, getSnapshot: vi.fn(), streamAnswer: vi.fn() };
 });
-vi.mock('../ai.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../ai.js')>();
+vi.mock('../clients/ai.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/ai.js')>();
   return { ...actual, warmModel: vi.fn(async () => undefined), prefillModel: vi.fn(async () => true) };
 });
 
@@ -58,6 +61,29 @@ describe('POST /api/chat', () => {
   // Call history is per-file; the validation test asserts the model was not
   // called, which must mean "not by this test" rather than "never".
   beforeEach(() => vi.clearAllMocks());
+
+  it('carries the request id on the stream too, which skips the reply headers the id plugin sets', async () => {
+    vi.mocked(getSnapshot).mockResolvedValue(snapshot('SNAPSHOT'));
+    vi.mocked(streamAnswer).mockImplementation(async function* () {
+      yield 'Fine.';
+    });
+    // The order index.ts uses: the id first, then the error handler, then the routes.
+    const app = Fastify({ genReqId, logger: false, ajv: AJV_OPTIONS });
+    registerRequestId(app);
+    registerErrorHandler(app);
+    await app.register(chatRoutes);
+    await app.ready();
+    const sent = 'feedfacecafebeef0011223344556677';
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/chat',
+      headers: { 'x-request-id': sent },
+      payload: { messages: [{ role: 'user', content: 'What is wrong?' }] },
+    });
+    expect(res.headers['content-type']).toBe('text/event-stream');
+    expect(res.headers['x-request-id']).toBe(sent);
+    await app.close();
+  });
 
   it('streams context, tokens and done as SSE frames', async () => {
     vi.mocked(getSnapshot).mockResolvedValue(snapshot('SNAPSHOT'));
@@ -117,7 +143,7 @@ describe('POST /api/chat', () => {
 
   it('tells the reader what a typed AI or Zabbix error says, and logs the detail only', async () => {
     vi.mocked(getSnapshot).mockResolvedValue(snapshot('SNAPSHOT'));
-    const { registerErrorHandler } = await import('../errors.js');
+    const { registerErrorHandler } = await import('../http/errors.js');
     const lines: string[] = [];
     const app = Fastify({ logger: { level: 'info', stream: { write: (line: string) => lines.push(line) } } });
     registerErrorHandler(app);

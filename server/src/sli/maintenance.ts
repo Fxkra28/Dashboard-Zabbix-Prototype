@@ -1,4 +1,4 @@
-import { zbx } from '../zabbix.js';
+import { zbx } from '../clients/zabbix.js';
 import { clipIntervals, mergeIntervals, type Interval } from './intervals.js';
 import { zonedDate, zonedDayStart } from './time.js';
 

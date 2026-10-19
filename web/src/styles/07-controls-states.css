@@ -1,0 +1,181 @@
+/* Controls */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.field label,
+.field .field-label {
+  font-size: var(--t-sm);
+  color: var(--muted);
+  font-weight: 600;
+}
+select,
+input,
+button {
+  font-family: inherit;
+  font-size: var(--t-md);
+}
+select,
+input[type='text'],
+input[type='password'] {
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  min-width: 200px;
+  color: var(--text);
+}
+/* Chrome's own placeholder grey is 3.78:1 on the dark panel; --muted is 5.96:1 on white and 7.17:1 there. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+select:focus,
+input:focus {
+  border-color: var(--mid);
+  box-shadow: var(--focus-ring);
+}
+button.btn,
+a.btn {
+  padding: 9px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+button.btn.ghost,
+a.btn.ghost {
+  background: var(--surface);
+  color: var(--primary);
+}
+button.btn:hover,
+a.btn:hover {
+  filter: brightness(1.05);
+}
+
+/* States */
+.state {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+.state.error {
+  color: var(--danger-text);
+}
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.muted {
+  color: var(--muted);
+}
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-sm);
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-sm);
+}
+.live .dot {
+  background: var(--good);
+  box-shadow: 0 0 0 3px var(--good-glow);
+}
+.live.off .dot {
+  background: var(--muted);
+  box-shadow: none;
+}
+/* The data on screen is older than a wall screen may show without saying so. */
+.live.late {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+.live.late .dot {
+  background: var(--warn);
+  box-shadow: none;
+}
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.live-age {
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Device grid (network) */
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+}
+.device {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  background: var(--surface);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  border-left: 4px solid var(--muted);
+  transition: transform 0.1s;
+}
+.device:hover {
+  transform: translateY(-2px);
+}
+.device.up {
+  border-left-color: var(--good);
+}
+.device.down {
+  border-left-color: var(--danger);
+}
+/* A ring made of shadow, not outline: the keyboard focus ring is an outline, and on a selected card it
+   would otherwise replace the selection and look the same as it. The offset puts it outside the ring. */
+.device.sel {
+  box-shadow: var(--shadow), 0 0 0 2px var(--mid);
+}
+.device.sel:focus-visible {
+  outline-offset: 4px;
+}
+.device .name {
+  font-weight: 600;
+  font-size: var(--t-md);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.device .meta {
+  font-size: var(--t-sm);
+  color: var(--muted);
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+

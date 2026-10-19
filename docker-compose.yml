@@ -51,7 +51,7 @@ services:
       # and have that proxy keep the browser's Host (setup.md section 23).
       TRUST_PROXY: ${TRUST_PROXY:-true}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
-      # Live screens allowed at once, overall and per signed-in user (routes/stream.ts).
+      # Live screens allowed at once, overall and per signed-in user (services/stream.ts).
       STREAM_MAX_CLIENTS: ${STREAM_MAX_CLIENTS:-100}
       STREAM_MAX_PER_USER: ${STREAM_MAX_PER_USER:-5}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8081}
@@ -63,7 +63,7 @@ services:
       HOST_NAME_PATTERN: ${HOST_NAME_PATTERN:-}
       LINK_LOSS_WARN: ${LINK_LOSS_WARN:-2}
       LINK_LOSS_CRIT: ${LINK_LOSS_CRIT:-10}
-      # The Zabbix dashboard whose gauge widgets are the internet traffic meters (routes/meters.ts).
+      # The Zabbix dashboard whose gauge widgets are the internet traffic meters (services/meters.ts).
       INTERNET_METERS_DASHBOARD: ${INTERNET_METERS_DASHBOARD:-Global view}
       NOISE_SHORT_SECONDS: ${NOISE_SHORT_SECONDS:-300}
       NOISE_MIN_COUNT: ${NOISE_MIN_COUNT:-5}
@@ -103,7 +103,7 @@ services:
       AI_NUM_CTX: ${AI_NUM_CTX:-8192}
       AI_TEMPERATURE: ${AI_TEMPERATURE:-0.7}
       AI_TOP_P: ${AI_TOP_P:-0.8}
-      # Caps on Explain and the Assistant (server/src/limits.ts).
+      # Caps on Explain and the Assistant (server/src/clients/limits.ts).
       # Per signed-in user a minute, calls in flight at once, and tokens a day
       # (0 turns a budget off; only the hosted API is counted).
       AI_CHAT_PER_MINUTE: ${AI_CHAT_PER_MINUTE:-10}

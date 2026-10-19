@@ -17,17 +17,17 @@ vi.hoisted(() => {
 });
 
 const { zbxWriteMock } = vi.hoisted(() => ({ zbxWriteMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbxWrite: zbxWriteMock };
 });
 
-const { setupAuth, LOGIN_LOCK_AFTER } = await import('../auth.js');
-const { registerErrorHandler } = await import('../errors.js');
+const { setupAuth, LOGIN_LOCK_AFTER } = await import('../security/auth.js');
+const { registerErrorHandler } = await import('../http/errors.js');
 const { actionRoutes } = await import('../routes/actions.js');
 const { chatRoutes } = await import('../routes/chat.js');
-const { config } = await import('../config.js');
-const { AJV_OPTIONS, validationProblem } = await import('../schemas.js');
+const { config } = await import('../core/config.js');
+const { AJV_OPTIONS, validationProblem } = await import('../core/schemas.js');
 
 let app: FastifyInstance;
 let savedToken: string;

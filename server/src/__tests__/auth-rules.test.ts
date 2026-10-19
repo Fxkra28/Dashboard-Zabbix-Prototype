@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { requiredRole, roleAllows, setupAuth, tokenClaims } from '../auth.js';
-import { registerErrorHandler } from '../errors.js';
+import { requiredRole, roleAllows, setupAuth, tokenClaims } from '../security/auth.js';
+import { registerErrorHandler } from '../http/errors.js';
 import { sliExportRoutes } from '../routes/sliExport.js';
 import { sampleSliReports } from './helpers/sliReportFixture.js';
 
@@ -13,8 +13,8 @@ vi.hoisted(() => {
 
 // The Zabbix read behind the export: the guard is what these tests are about, and it decides before any handler runs.
 const { sliMock } = vi.hoisted(() => ({ sliMock: vi.fn() }));
-vi.mock('../routes/sli.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../routes/sli.js')>();
+vi.mock('../services/sli.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/sli.js')>();
   return { ...actual, getMonthlySli: sliMock };
 });
 
@@ -35,6 +35,8 @@ describe('requiredRole', () => {
     ['/api/problems/close', 'operator'],
     ['/api/hosts', 'viewer'],
     ['/api/devices', 'viewer'],
+    ['/api/reports/top-hosts', 'viewer'],
+    ['/api/reports/web-monitoring', 'viewer'],
     ['/api/problems', 'viewer'],
     ['/api/reports/availability', 'viewer'],
     ['/api/reports/noise', 'viewer'],

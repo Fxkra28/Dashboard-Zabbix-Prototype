@@ -1,9 +1,9 @@
 /**
- * Check the design tokens in src/styles.css: that the colour pairs the UI
+ * Check the design tokens in src/styles/ (read as one sheet): that the colour pairs the UI
  * actually renders clear WCAG, and that no rule reaches past the tokens to a
  * raw value.
  *
- *   node scripts/tokens.check.mjs [file.css]   (default: src/styles.css)
+ *   node scripts/tokens.check.mjs [file.css | folder]   (default: src/styles/, whose numbered parts are joined in order)
  *
  * Why this exists. The stylesheet held 42 distinct padding values, 16 font
  * sizes (including 10.5px, 11.5px, 12.5px and 13.5px, which round differently
@@ -171,7 +171,7 @@ const PAIRS = [
   ['--border-strong', '--bg', 3],
   ['--focus', '--surface', 3],
   ['--focus', '--bg', 3],
-  // The sidebar's focus ring (styles.css .sidebar :focus-visible).
+  // The sidebar's focus ring (styles/ .sidebar :focus-visible).
   ['--on-chrome', '--chrome', 3],
   ['--on-chrome', '--chrome-2', 3],
   ['--mid', '--surface', 3],
@@ -310,7 +310,7 @@ export function checkStatusText(css) {
 
 /**
  * Off-scale sizes in the TSX files that are known and accepted, by file under src/ and the
- * declaration, with how many: `'pages/X.tsx': { 'fontSize: 12.5': 1 }`. None now. An entry that no
+ * declaration, with how many: `'features/x/X.tsx': { 'fontSize: 12.5': 1 }`. None now. An entry that no
  * longer occurs fails the check, so a size that gets fixed cannot stay on the list.
  */
 export const TSX_EXCEPTIONS = {};
@@ -379,7 +379,7 @@ function tsxFiles(dir) {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) return name === '__tests__' ? [] : tsxFiles(path);
-    return name.endsWith('.tsx') ? [path] : [];
+    return name.endsWith('.tsx') && !name.endsWith('.test.tsx') ? [path] : [];
   });
 }
 
@@ -486,11 +486,33 @@ if (failures.length) {
 }
 
 const files = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-if (!files.length) files.push(fileURLToPath(new URL('../src/styles.css', import.meta.url)));
+if (!files.length) files.push(fileURLToPath(new URL('../src/styles', import.meta.url)));
+
+/** A stylesheet as one text. A folder is its numbered parts joined in order, which is the cascade a build serves. */
+function readSheet(path) {
+  if (!statSync(path).isDirectory()) return { raw: readFileSync(path, 'utf8'), where: (n) => `line ${n}` };
+  const names = readdirSync(path).filter((name) => /^\d.*\.css$/.test(name)).sort();
+  const starts = [];
+  let raw = '';
+  let line = 1;
+  for (const name of names) {
+    const text = readFileSync(join(path, name), 'utf8');
+    starts.push({ name, from: line });
+    raw += text;
+    line += text.split('\n').length - 1;
+  }
+  return {
+    raw,
+    where: (n) => {
+      const part = [...starts].reverse().find((s) => s.from <= n);
+      return part ? `${part.name} line ${n - part.from + 1}` : `line ${n}`;
+    },
+  };
+}
 
 let total = 0;
 for (const file of files) {
-  const raw = readFileSync(file, 'utf8');
+  const { raw, where } = readSheet(file);
   const css = raw.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
   const blocks = parseTokens(css);
   const problems = [
@@ -499,11 +521,11 @@ for (const file of files) {
     ...checkRawSizes(css, blocks.get(':root') ?? new Map()),
     ...checkStatusText(css),
   ];
-  for (const p of problems) console.error(`${file}: ${p}`);
+  for (const p of problems) console.error(`${file}: ${p.replace(/^line (\d+)/, (_, n) => where(Number(n)))}`);
   total += problems.length;
 
   // The TSX beside this stylesheet, against its scales. `--no-tsx` leaves it out for a stylesheet checked alone.
-  if (!process.argv.includes('--no-tsx') && file.endsWith(join('src', 'styles.css'))) {
+  if (!process.argv.includes('--no-tsx') && file.endsWith(join('src', 'styles'))) {
     const src = join(file, '..');
     for (const path of tsxFiles(src)) {
       const rel = path.slice(src.length + 1).split('\\').join('/');

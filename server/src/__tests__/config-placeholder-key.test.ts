@@ -12,7 +12,7 @@ async function load(env: Record<string, string>) {
   // Nothing from the machine running the tests may leak into the case.
   for (const name of ['AI_PROVIDER', 'AI_API_KEY', 'ANTHROPIC_API_KEY', 'AI_BASE_URL']) vi.stubEnv(name, undefined);
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
-  const { assertConfig, config } = await import('../config.js');
+  const { assertConfig, config } = await import('../core/config.js');
   const warnings: string[] = [];
   assertConfig((m) => warnings.push(m));
   return { config, warnings };

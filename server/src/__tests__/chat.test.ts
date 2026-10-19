@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { invalidate } from '../cache.js';
+import { invalidate } from '../core/cache.js';
 import {
   age,
   buildFocus,
@@ -18,12 +18,12 @@ import {
   sitesNamed,
   snapshotClock,
   systemText,
-} from '../chat.js';
-import { config } from '../config.js';
-import { getProblems } from '../queries.js';
-import { getSites } from '../routes/sites.js';
-import { getSlas, getSli } from '../routes/sla.js';
-import { getServiceTree } from '../routes/services.js';
+} from '../services/assistant.js';
+import { config } from '../core/config.js';
+import { getProblems } from '../domain/queries.js';
+import { getSites } from '../services/sites.js';
+import { getSlas, getSli } from '../services/sla.js';
+import { getServiceTree } from '../services/services.js';
 import { derivedServiceLines, derivedSlaLines } from '../sli/summary.js';
 
 /**
@@ -36,13 +36,13 @@ import { derivedServiceLines, derivedSlaLines } from '../sli/summary.js';
  * empty `content`; forwarding those would show the reader the model thinking.
  */
 
-vi.mock('../queries.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../queries.js')>();
+vi.mock('../domain/queries.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../domain/queries.js')>();
   return { ...actual, getProblems: vi.fn(), getHostsWithMeta: vi.fn() };
 });
-vi.mock('../routes/sites.js', () => ({ getSites: vi.fn() }));
-vi.mock('../routes/sla.js', () => ({ getSlas: vi.fn(), getSli: vi.fn() }));
-vi.mock('../routes/services.js', () => ({ getServiceTree: vi.fn() }));
+vi.mock('../services/sites.js', () => ({ getSites: vi.fn() }));
+vi.mock('../services/sla.js', () => ({ getSlas: vi.fn(), getSli: vi.fn() }));
+vi.mock('../services/services.js', () => ({ getServiceTree: vi.fn() }));
 vi.mock('../sli/summary.js', () => ({ derivedSlaLines: vi.fn(), derivedServiceLines: vi.fn() }));
 
 const NOW = Math.floor(Date.now() / 1000);

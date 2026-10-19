@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import * as icons from '../components/icons';
-import { MethodToggle, MonthSelect } from '../components/Sli';
-import styles from '../styles.css?raw';
+import * as icons from '../shared/components/icons';
+import { MethodToggle, MonthSelect } from '../features/sla/Sli';
+import { stylesheet as styles } from './stylesheet';
 
 /** The parts of the markup a screen reader meets, kept right by looking at all of it. */
 
@@ -24,7 +24,7 @@ describe('icons', () => {
 
 describe('table headers', () => {
   // Every page and component, as text.
-  const sources = import.meta.glob(['../**/*.tsx', '!../__tests__/**'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+  const sources = import.meta.glob(['../**/*.tsx', '!../__tests__/**', '!../**/*.test.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
   it('looks at the pages', () => {
     expect(Object.keys(sources).length).toBeGreaterThan(20);
@@ -39,11 +39,12 @@ describe('table headers', () => {
 });
 
 describe('wide tables and grids on a narrow screen (UX-14)', () => {
-  const sources = import.meta.glob(['../**/*.tsx', '!../__tests__/**'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+  const sources = import.meta.glob(['../**/*.tsx', '!../__tests__/**', '!../**/*.test.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
   it('puts every table in a box that scrolls sideways, so a wide one cannot push the page', () => {
+    const boxes = (text: string) => (text.match(/className="[^"]*\btable-wrap\b[^"]*"/g) ?? []).length + (text.match(/<TableWrap\b/g) ?? []).length;
     const loose = Object.entries(sources)
-      .filter(([, text]) => (text.match(/<table\b/g) ?? []).length > (text.match(/className="[^"]*\btable-wrap\b[^"]*"/g) ?? []).length)
+      .filter(([, text]) => (text.match(/<table\b/g) ?? []).length > boxes(text))
       .map(([file]) => file);
     expect(loose).toEqual([]);
   });
@@ -64,7 +65,7 @@ describe('wide tables and grids on a narrow screen (UX-14)', () => {
 });
 
 describe('form fields (UX-26)', () => {
-  const sources = import.meta.glob(['../**/*.tsx', '!../__tests__/**'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+  const sources = import.meta.glob(['../**/*.tsx', '!../__tests__/**', '!../**/*.test.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
   /** The attributes of every <input>, <select> and <textarea>, found by walking to the tag's own closing `>` past any `{ ... }`. */
   function fields(text: string): { line: number; attrs: string }[] {

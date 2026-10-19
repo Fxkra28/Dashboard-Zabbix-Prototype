@@ -20,7 +20,7 @@ npx @mermaid-js/mermaid-cli -i ERD-Database.mmd -o ERD-Database.pdf -w 2600 -b w
 npx @mermaid-js/mermaid-cli -i ERD-Database.mmd -o ERD-Database.png -w 2600 -s 2 -b white
 ```
 
-Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+Then run `node tools/check/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`tools/check/diagrams.check.mjs`).
 
 The same rules as the other diagram apply: keep `layout: elk` and every `style … fill:none`, or edges disappear under the domain frames. See [`erd.md`](../erd.md). Measured with the same script as that diagram, ELK lays this one out with 5 edge crossings and no edge through an unrelated table; dagre gives 18 and 21. `direction LR`, `mergeEdges: true`, the three other ELK node-placement strategies, `considerModelOrder` and two other domain orders also give 5, and a third order gives 6. The two tag-matching lines are written `problem_tag` → `service_problem_tag` and `service_tag` → `sla_service_tag` on purpose: the other way round, ELK sends the first back up around the whole events domain, where it reads as an extra frame. Either order is the same relationship. The per-domain views below have two crossings between them: one in [Services](#services), and one in [Acknowledge writes](#acknowledge-writes) that no layout removes, because `acknowledges` and `task` each point at both task tables, and two parents linked to the same two children always cross once in a layered drawing.
 
@@ -41,7 +41,7 @@ node $CLI validate --file docs/erd/database/ERD-Database.erd
 ```
 
 Neither file is the source of truth on its own. Two hand-maintained copies of one model is the
-shape that has drifted every previous time in this project, so `server/scripts/erd.check.ts` compares
+shape that has drifted every previous time in this project, so `tools/check/erd.check.ts` compares
 them on every run of the CI workflow and fails on any difference in the table set, the columns, the
 types, the primary keys or the foreign keys. Edit one, and either edit the other or the check tells
 you. It caught its first real drift within a minute of being written, when the two repos' copies were
@@ -55,26 +55,26 @@ instead, and the checker ignores dashed lines so that a dashed line turning soli
 
 ## Which API call reads which table
 
-The portal calls 14 Zabbix API methods, all through `server/src/zabbix.ts`. Before any of them runs, the call is authorised through `token` and `users`. See [API token & permissions](#api-token--permissions). For the other direction, which entity in `ERD-Mermaid.mmd` each table serves, see [`ERD-DatabaseSchema.md`](../database-schema/ERD-DatabaseSchema.md).
+The portal calls 14 Zabbix API methods, all through `server/src/clients/zabbix.ts`. Before any of them runs, the call is authorised through `token` and `users`. See [API token & permissions](#api-token--permissions). For the other direction, which entity in `ERD-Mermaid.mmd` each table serves, see [`ERD-DatabaseSchema.md`](../database-schema/ERD-DatabaseSchema.md).
 
-The line numbers are where each method is named in the code on 12 October 2026, test files left out. They move with every edit to those files, so treat them as a pointer to the file and re-run a search for the method name when one is off.
+The line numbers are where each method is called in the code on 16 October 2026, test files and comments left out. They move with every edit to those files, so treat them as a pointer to the file and re-run a search for the method name when one is off.
 
 | Method | Called from `server/src/` | Tables |
 |---|---|---|
-| `host.get` | `health.ts:43`, `queries.ts:120`, `routes/hosts.ts:56`, `:70`, `routes/maps.ts:90`, `:130`, `routes/net.ts:181`, `routes/reports.ts:67`, `sli/engine.ts:436`, `:562` | `hosts`; `interface`, `hosts_groups` → `hstgrp`, `host_tag`, `host_inventory` for the matching `select*` |
-| `hostgroup.get` | `routes/hosts.ts:98`, `routes/reports.ts:71`, `:98`, `sli/maintenance.ts:139` | `hstgrp` (host groups only), `hosts_groups` |
-| `item.get` | `reachability.ts:128`, `routes/analytics.ts:735`, `:860`, `routes/history.ts:254`, `routes/hosts.ts:123`, `:186`, `:203`, `:218`, `routes/links.ts:111`, `routes/net.ts:216`, `routes/reports.ts:68`, `sli/engine.ts:441`, `:571`, `viewerPolicy.ts:38` | `items`, `item_rtdata`, `item_tag`, `hosts`; the history tables for `lastvalue`, `lastclock`, `prevvalue` |
-| `history.get` | `routes/analytics.ts:782`, `routes/history.ts:73`, `sli/engine.ts:388`, `:476` | one of `history`, `history_str`, `history_log`, `history_uint`, `history_text`, chosen by the `history` parameter |
-| `trend.get` | `sli/events.ts:140` | `trends` for float items, `trends_uint` for unsigned ones |
-| `trigger.get` | `queries.ts:59`, `routes/analytics.ts:245`, `routes/reports.ts:69`, `sli/engine.ts:543` | `triggers`; `functions` → `items` → `hosts` for `selectHosts` |
-| `problem.get` | `queries.ts:40`, `routes/analytics.ts:204` | `problem`, `problem_tag`; `event_suppress` (not drawn) for `suppressed`; `triggers` for `opdata` |
-| `event.get` | `routes/analytics.ts:213`, `:251`, `:313`, `routes/reports.ts:26`, `sli/events.ts:36` | `events`, `event_recovery`; `functions` → `items` → `hosts` for `selectHosts` |
-| `service.get` | `routes/services.ts:117`, `routes/sla.ts:59`, `:97` | `services`, `services_links`, `service_tag`, `service_problem`, then `events` for problem names |
-| `sla.get` | `routes/services.ts:77`, `routes/sla.ts:34` | `sla` |
-| `sla.getsli` | `routes/services.ts:89`, `routes/sla.ts:51` | `sla`, `sla_schedule`, `sla_excluded_downtime`; services matched through `sla_service_tag`, with their status history from `service_alarms` |
-| `map.get` | `routes/maps.ts:98`, `:108` | `sysmaps`, `sysmaps_elements`, `sysmaps_links`, plus `sysmap_element_trigger` and `sysmaps_link_triggers` (not drawn) |
-| `maintenance.get` | `sli/maintenance.ts:128` | `maintenances`; `timeperiods` through `maintenances_windows`, `maintenances_hosts` and `maintenances_groups` for `selectTimeperiods`, `selectHosts` and `selectHostGroups` (none of them drawn) |
-| `event.acknowledge` | `routes/actions.ts:193` | writes `acknowledges`; updates `acknowledged` on `events` and `problem`; adds `task` with `task_close_problem` to close, or with `task_acknowledge` for the server to act on |
+| `host.get` | `domain/queries.ts:118`, `http/health.ts:43`, `services/devices.ts:28`, `services/hosts.ts:52`, `:82`, `services/maps.ts:86`, `:119`, `services/net.ts:172`, `services/reports.ts:65`, `sli/engine.ts:436`, `:562` | `hosts`; `interface`, `hosts_groups` → `hstgrp`, `host_tag`, `host_inventory` for the matching `select*` |
+| `hostgroup.get` | `services/hosts.ts:94`, `services/reports.ts:69`, `:98`, `sli/maintenance.ts:137` | `hstgrp` (host groups only), `hosts_groups` |
+| `item.get` | `domain/reachability.ts:126`, `security/viewerPolicy.ts:38`, `services/analytics.ts:730`, `:855`, `services/history.ts:243`, `services/hosts.ts:112`, `:162`, `:179`, `:196`, `services/links.ts:108`, `services/meters.ts:457`, `:529`, `:542`, `services/net.ts:207`, `services/reports.ts:66`, `services/topHosts.ts:57`, `services/webMonitoring.ts:57`, `sli/engine.ts:441`, `:571` | `items`, `item_rtdata`, `item_tag`, `hosts`; the history tables for `lastvalue`, `lastclock`, `prevvalue` |
+| `history.get` | `services/analytics.ts:777`, `services/history.ts:71`, `services/meters.ts:505`, `sli/engine.ts:388`, `:476` | one of `history`, `history_str`, `history_log`, `history_uint`, `history_text`, chosen by the `history` parameter |
+| `trend.get` | `sli/events.ts:139` | `trends` for float items, `trends_uint` for unsigned ones |
+| `trigger.get` | `domain/queries.ts:57`, `services/analytics.ts:242`, `services/reports.ts:67`, `sli/engine.ts:543` | `triggers`; `functions` → `items` → `hosts` for `selectHosts` |
+| `problem.get` | `domain/queries.ts:38`, `services/analytics.ts:201` | `problem`, `problem_tag`; `event_suppress` (not drawn) for `suppressed`; `triggers` for `opdata` |
+| `event.get` | `services/analytics.ts:210`, `:248`, `:309`, `services/reports.ts:24`, `sli/events.ts:35` | `events`, `event_recovery`; `functions` → `items` → `hosts` for `selectHosts` |
+| `service.get` | `services/services.ts:109`, `services/sla.ts:57`, `:95` | `services`, `services_links`, `service_tag`, `service_problem`, then `events` for problem names |
+| `sla.get` | `services/services.ts:69`, `services/sla.ts:32` | `sla` |
+| `sla.getsli` | `services/services.ts:81`, `services/sla.ts:49` | `sla`, `sla_schedule`, `sla_excluded_downtime`; services matched through `sla_service_tag`, with their status history from `service_alarms` |
+| `map.get` | `services/maps.ts:97`, `:158` | `sysmaps`, `sysmaps_elements`, `sysmaps_links`, plus `sysmap_element_trigger` and `sysmaps_link_triggers` (not drawn) |
+| `maintenance.get` | `sli/maintenance.ts:126` | `maintenances`; `timeperiods` through `maintenances_windows`, `maintenances_hosts` and `maintenances_groups` for `selectTimeperiods`, `selectHosts` and `selectHostGroups` (none of them drawn) |
+| `event.acknowledge` | `routes/actions.ts:102` | writes `acknowledges`; updates `acknowledged` on `events` and `problem`; adds `task` with `task_close_problem` to close, or with `task_acknowledge` for the server to act on |
 
 ---
 
@@ -437,7 +437,7 @@ erDiagram
 
 ## Acknowledge writes
 
-The only writes the portal can cause, all from one `event.acknowledge` call (`routes/actions.ts:193`). The `acknowledges` row and the `acknowledged` flag on `events` and `problem` change at once (`CEvent.php:1165-1203`). Closing does not: it queues `task` and `task_close_problem` (`:1228`), and the Zabbix server's task manager generates the recovery afterwards, so a closed problem can stay on the portal's list for a few seconds.
+The only writes the portal can cause, all from one `event.acknowledge` call (`routes/actions.ts:102`). The `acknowledges` row and the `acknowledged` flag on `events` and `problem` change at once (`CEvent.php:1165-1203`). Closing does not: it queues `task` and `task_close_problem` (`:1228`), and the Zabbix server's task manager generates the recovery afterwards, so a closed problem can stay on the portal's list for a few seconds.
 
 ```mermaid
 ---

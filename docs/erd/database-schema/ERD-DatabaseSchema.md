@@ -62,7 +62,7 @@ npx @mermaid-js/mermaid-cli -i ERD-DatabaseSchema.mmd -o ERD-DatabaseSchema.pdf 
 npx @mermaid-js/mermaid-cli -i ERD-DatabaseSchema.mmd -o ERD-DatabaseSchema.png -w 2600 -s 2 -b white
 ```
 
-Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+Then run `node tools/check/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`tools/check/diagrams.check.mjs`).
 
 The frontmatter selects ELK, as in the other ERDs; keep it, and keep every `style … fill:none` line. Measured with the same crossing script as the other diagrams, adapted for flowchart lines, this layout has 13 line crossings and no line through an unrelated box. Ten of those crossings cannot be avoided: `ZBX_ITEM` and `ZBX_HISTORY` both link to the same five history tables, and two boxes linked to the same five always cross ten times in a two-column drawing. Dagre gives 38 crossings and 1 line through a box. The other layouts tried were worse: separate frames for the two diagrams gave 70 crossings, only their two outer frames 124, tables framed by their `ERD-Database.mmd` domain 39, and no frames at all 24, on a strip 6.6 times taller than wide. With this layout, `NETWORK_SIMPLEX` and `LINEAR_SEGMENTS` placement both also give 13, on taller canvases; `considerModelOrder` changes nothing; `direction TB` gives 13 on a canvas 2.8 times wider than tall; and `mergeEdges: true` gives 13 too, but stays off as in the other diagrams.
 

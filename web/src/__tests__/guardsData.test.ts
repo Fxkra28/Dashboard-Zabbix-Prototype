@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import apiSource from '../api.ts?raw';
-import * as g from '../lib/guards';
+import apiSource from '../api?raw';
+import * as g from '../guards';
 
 /**
  * The guards for every data answer the pages read, each against a made-up answer that holds every
@@ -56,6 +56,26 @@ const cases: Case[] = [
         },
       ],
       summary: { total: 1, current: 1, critical: 0, warn: 0, stale: 0, unavailable: 0, down: 0, otherHigh: 0 },
+    },
+  },
+  {
+    name: 'busiest hosts',
+    guard: g.topHostsGuard,
+    sample: {
+      generatedAt: 1_800_000_000,
+      metrics: [{ key: 'cpu', label: 'CPU utilisation', considered: 8, current: 1, rows: [{ hostid: '3', host: '3.1 FW', itemid: '301', value: 93.4, clock: 1_800_000_000 }] }],
+    },
+  },
+  {
+    name: 'web monitoring',
+    guard: g.webMonitoringGuard,
+    sample: {
+      generatedAt: 1_800_000_000,
+      total: 2,
+      ok: 1,
+      failed: 1,
+      unknown: 0,
+      failures: [{ hostid: '4', host: 'SITE-WEB', name: 'Checkout', itemid: '401', step: 2, clock: 1_800_000_000 }],
     },
   },
   { name: 'item list', guard: g.itemListGuard, sample: [item], optional: ITEM_OPT.map((p) => `[0].${p}`) },

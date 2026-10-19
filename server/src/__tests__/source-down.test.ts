@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
-import { registerErrorHandler } from '../errors.js';
-import { registerRequestId } from '../requestId.js';
-import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../zabbix.js';
+import { registerErrorHandler } from '../http/errors.js';
+import { registerRequestId } from '../http/requestId.js';
+import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../clients/zabbix.js';
 
 /** When Zabbix cannot be read, every reader gets the same sentence and a reference; the method, setting and Zabbix's words go to the log under the same request id. */
 

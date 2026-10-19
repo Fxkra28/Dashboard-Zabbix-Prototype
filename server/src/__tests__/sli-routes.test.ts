@@ -9,12 +9,12 @@ import { buildTestApp } from './helpers/app.js';
 
 const { zbxMock, humanizeMock } = vi.hoisted(() => ({ zbxMock: vi.fn(), humanizeMock: vi.fn() }));
 
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock };
 });
-vi.mock('../ai.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../ai.js')>();
+vi.mock('../clients/ai.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/ai.js')>();
   return { ...actual, humanize: humanizeMock };
 });
 
@@ -66,7 +66,7 @@ function estate(over: Record<string, (p: Params) => unknown> = {}) {
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-09-17T03:00:00Z'));
-  const { config } = await import('../config.js');
+  const { config } = await import('../core/config.js');
   config.ai.enabled = true;
 });
 afterEach(() => {
@@ -195,7 +195,7 @@ describe('GET /api/explain/sla', () => {
 
 describe('explain caching and facts', () => {
   it('explains a problem again once it is acknowledged, instead of repeating "not acknowledged" for an hour', async () => {
-    const { invalidate } = await import('../cache.js');
+    const { invalidate } = await import('../core/cache.js');
     invalidate(''); // tests in this file share one cache
     let acknowledged = '0';
     estate({
@@ -221,7 +221,7 @@ describe('explain caching and facts', () => {
   });
 
   it('tells the model how many devices were never measured, next to the figure they inflate', async () => {
-    const { invalidate } = await import('../cache.js');
+    const { invalidate } = await import('../core/cache.js');
     invalidate('');
     const icmp = (hostid: string, state: string, lastclock: string) =>
       ['icmpping', 'icmppingloss', 'icmppingsec'].map((key_) => ({ itemid: `${hostid}${key_}`, hostid, key_, delay: '1m', value_type: '3', state, lastclock }));
@@ -311,7 +311,7 @@ describe('analytics fixes', () => {
   });
 
   it('recognises the SNMP capacity keys HCML’s devices actually use', async () => {
-    const { capacityMetricFor } = await import('../routes/analytics.js');
+    const { capacityMetricFor } = await import('../services/analytics.js');
     expect(capacityMetricFor('system.cpu.util[cpmCPUTotal5minRev.19]')).toBe('cpu');
     expect(capacityMetricFor('system.cpu.util[fgSysCpuUsage.0]')).toBe('cpu');
     expect(capacityMetricFor('system.cpu.util')).toBe('cpu');

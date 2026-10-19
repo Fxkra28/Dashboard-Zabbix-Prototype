@@ -1,5 +1,5 @@
-import { CATEGORY_ORDER, DEVICE_CLASS_LABELS, naturalCompare, wanPairKey, type DeviceClass, type SiteRef } from '../../naming.js';
-import type { SliProfile } from '../../config.js';
+import { CATEGORY_ORDER, DEVICE_CLASS_LABELS, naturalCompare, wanPairKey, type DeviceClass, type SiteRef } from '../../domain/naming.js';
+import type { SliProfile } from '../../core/config.js';
 import { DERIVED_LABEL, aggregate, type SliGroup, type SliHost, type SliPath, type SliReport, type SliWeb } from '../../sli/engine.js';
 
 /**

@@ -37,7 +37,7 @@ that matter more than the schemas do.
 ## Keeping it honest
 
 ```bash
-cd server && npx tsx scripts/openapi.check.ts
+npm run check:api    # at the repository root; the same as ./server/node_modules/.bin/tsx tools/check/openapi.check.ts
 ```
 
 Zero dependencies. It extracts every `app.get(`/`app.post(` from `server/src`, extracts every path key

@@ -1,0 +1,48 @@
+# 22. Testing
+
+[setup.md](../../setup.md) · previous: [§21](21-alert-noise-flapping.md) · next: [§23](23-hardening-timeouts-rate-limiting-headers.md)
+
+`cd server && npm test`, 1670 tests in 77 files, no live Zabbix required. `cd web && npm test`, 1132 tests in 78 files, in jsdom.
+
+The mock point. Every Zabbix call in the server funnels through one `fetch` in
+[`zabbix.ts`](../../server/src/clients/zabbix.ts), exposed as `zbx()` and `zbxWrite()`. Mocking that single module
+covers all 22 route modules and the services behind them, so route tests drive the real handlers, the real cache and the
+real error mapping, only the network is fake.
+
+```ts
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
+  return { ...actual, zbx: zbxMock, zbxWrite: zbxWriteMock };
+});
+```
+
+The spread of `actual` matters: `errors.ts` branches on `instanceof ZabbixAuthError`, so a stubbed
+error class would make every failure-mode assertion pass for the wrong reason.
+
+Route modules all have the plugin signature `(app: FastifyInstance) => Promise<void>`, so each
+mounts on a bare Fastify instance and is driven with `app.inject()`: no listening socket.
+
+What is tested, and why those things. The suite is weighted toward code that fails *silently*
+with a plausible wrong answer, not code that throws:
+
+| Area | The failure it guards against |
+|---|---|
+| `mergedSeconds()` | Two triggers on one host counted as two outages, availability could compute as negative |
+| `requiredRole()` table | A regex typo silently downgrading an admin route to `viewer`. No error, no log line |
+| `cache.ts` | Losing in-flight coalescing: ten NOC screens become ten times the Zabbix load |
+| `HOST_NAME_PATTERN` | The invented pattern that matched zero real HCML hosts and would have scored their estate at 0% |
+| `severitiesAtLeast()` | An empty `severities` array, which makes Zabbix return nothing: a bad parameter becoming an empty report |
+| API surface snapshot | A route added or renamed without a matching RBAC rule |
+| The report files (`export-*.test.ts`) | A PDF or workbook a reader refuses, a device named `=HYPERLINK(...)` that Excel would evaluate, and a copied colour, logo or sentence drifting from the web app's |
+| Failure modes | A typed 503 swallowing a genuine 500, or vice versa |
+| The layers (`layering.test.ts`, on both sides) | A route that imports another route, a service that imports a route, a feature on the web that reaches into another, a shipped file that imports a test: the folder rules of [ADR-0013](../architecture/adr/0013-layers-features-and-tools.md) as failures, not as advice |
+
+Layout. On the server, tests live in `server/src/__tests__/` so they resolve modules exactly as the app does.
+`tsconfig.json` excludes that directory (tests must not ship in `dist/`); `tsconfig.test.json` puts
+it back for typechecking, and `npm run typecheck` runs both: vitest transpiles without
+typechecking, so without the second pass the tests would drift out of sync unnoticed.
+
+On the web, a test sits beside the file it tests (`Sidebar.tsx`, `Sidebar.test.tsx`) in its feature folder. What cuts
+across features stays in `web/src/__tests__/`: the routes, back and forward, the narrow screen, the markup rules, the
+layering and the stylesheet. `tsconfig.json` leaves the tests out of the build in both places (`src/__tests__` and
+`*.test.ts(x)`), and `npm run typecheck` checks them with their own config.

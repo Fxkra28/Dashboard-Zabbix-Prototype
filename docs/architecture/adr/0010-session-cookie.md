@@ -11,7 +11,7 @@ sent it as `Authorization: Bearer` on every request. Any script running on the p
 and send it somewhere else, where it worked on every route, acknowledge included, until it ended.
 With [ADR-0009](0009-renew-an-open-portals-sign-in.md) a stolen token can also be renewed without
 end. The Content-Security-Policy that would limit an injected script is still report-only
-(tracker IN-02).
+(tracker IN-02; it has been enforced since 14 October, SC-24).
 
 The live stream had the same token in its URL, `/api/stream?token=…`, because `EventSource`
 cannot set a header. A URL reaches access logs, error logs and browser history. nginx and the BFF

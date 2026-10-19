@@ -8,8 +8,8 @@ import Fastify from 'fastify';
 async function load(env: Record<string, string>) {
   vi.resetModules();
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
-  const { assertConfig, config, trustProxyOption } = await import('../config.js');
-  const { assertUsers } = await import('../auth.js');
+  const { assertConfig, config, trustProxyOption } = await import('../core/config.js');
+  const { assertUsers } = await import('../security/auth.js');
   return { assertConfig: () => assertConfig(() => undefined), assertUsers, config, trustProxyOption };
 }
 
@@ -74,7 +74,7 @@ describe('passwords stored as scrypt hashes (SC-22)', () => {
   const CHEAP = { N: 1024, r: 8, p: 1 };
 
   it('are refused when the hash is of the empty password or "admin", as the plain text would be, without printing the hash', async () => {
-    const { hashPassword } = await import('../passwords.js');
+    const { hashPassword } = await import('../security/passwords.js');
     for (const guess of ['', 'admin']) {
       const hash = await hashPassword(guess, CHEAP);
       const { assertUsers } = await load({ ...AUTH_ON, PORTAL_USERS: `ana:${hash}:admin,budi:s3cret-budi-pass:viewer` });
@@ -84,7 +84,7 @@ describe('passwords stored as scrypt hashes (SC-22)', () => {
   });
 
   it('start when the hash is of a real password, for a PORTAL_USERS entry and for PORTAL_PASS', async () => {
-    const { hashPassword } = await import('../passwords.js');
+    const { hashPassword } = await import('../security/passwords.js');
     const hash = await hashPassword('a-long-real-password', CHEAP);
     expect((await load({ ...AUTH_ON, PORTAL_USERS: `ana:${hash}:admin` })).assertUsers).not.toThrow();
     expect((await load({ ...AUTH_ON, PORTAL_PASS: hash })).assertUsers).not.toThrow();

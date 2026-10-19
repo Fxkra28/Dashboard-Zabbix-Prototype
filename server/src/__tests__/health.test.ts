@@ -4,10 +4,10 @@ import { readFileSync } from 'node:fs';
 import http, { type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { config } from '../config.js';
-import { setupAuth, tokenClaims } from '../auth.js';
-import { subscribe } from '../routes/stream.js';
-import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../zabbix.js';
+import { config } from '../core/config.js';
+import { setupAuth, tokenClaims } from '../security/auth.js';
+import { subscribe } from '../services/stream.js';
+import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../clients/zabbix.js';
 import {
   READY_STALE_MS,
   READY_TIMEOUT_MS,
@@ -16,7 +16,7 @@ import {
   registerHealth,
   type ModelState,
   type Probes,
-} from '../health.js';
+} from '../http/health.js';
 
 /**
  * GET /api/health: the old fields stay as they were and stay public; version, start time, build, screens and a
@@ -29,13 +29,13 @@ vi.hoisted(() => {
   process.env.JWT_SECRET = 'test-only-secret-at-least-32-bytes-long';
   process.env.PORTAL_USERS = 'ana:viewer-pass:viewer';
 });
-vi.mock('../zabbix.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../zabbix.js')>()),
+vi.mock('../clients/zabbix.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../clients/zabbix.js')>()),
   zbx: zbxMock,
 }));
 
 // A screen that subscribes starts a read of the problem list: keep it away from Zabbix.
-vi.mock('../queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
+vi.mock('../domain/queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
 
 const pkgVersion = (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 

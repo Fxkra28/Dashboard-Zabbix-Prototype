@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, renderHook, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AppRoutes } from '../App';
-import Layout, { titleFor } from '../components/Layout';
-import { APP_TITLE, usePageTitle } from '../hooks/usePageTitle';
+import Layout, { titleFor } from '../features/shell/Layout';
+import { APP_TITLE, usePageTitle } from '../features/shell/usePageTitle';
 
 const Where = () => <output data-testid="where">{useLocation().pathname}</output>;
 
@@ -44,6 +44,39 @@ describe('an address that is not a page (FR-06)', () => {
     open('/no-such-page');
     await screen.findByText(/does not match a page/);
     expect(document.title).toBe(`Page not found · ${APP_TITLE}`);
+  });
+});
+
+describe('the way past the menu (UX-10)', () => {
+  it('puts a skip link before the sidebar, and it moves focus to the main landmark', async () => {
+    open('/no-such-page');
+    await screen.findByText(/does not match a page/);
+    const skip = screen.getByRole('link', { name: 'Skip to content' });
+    expect(skip).toHaveAttribute('href', '#main');
+    // First in the document, so the first Tab stop.
+    expect(skip.compareDocumentPosition(screen.getByRole('complementary')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const main = screen.getByRole('main');
+    expect(main).toHaveAttribute('id', 'main');
+    fireEvent.click(skip);
+    expect(main).toHaveFocus();
+  });
+
+  it('has no skip link on a wall, which has no menu to skip, and keeps it everywhere else', () => {
+    const inLayout = (url: string) =>
+      render(
+        <MemoryRouter initialEntries={[url]}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<p>Page</p>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>,
+      );
+    const { unmount } = inLayout('/?wall=1');
+    expect(screen.queryByRole('link', { name: 'Skip to content' })).toBeNull();
+    unmount();
+    inLayout('/');
+    expect(screen.getByRole('link', { name: 'Skip to content' })).toBeInTheDocument();
   });
 });
 

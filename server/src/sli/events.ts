@@ -1,4 +1,4 @@
-import { zbx, ZabbixApiError } from '../zabbix.js';
+import { zbx, ZabbixApiError } from '../clients/zabbix.js';
 
 /**
  * Event history without silent truncation.

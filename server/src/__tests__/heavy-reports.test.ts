@@ -3,12 +3,14 @@ import { buildTestApp } from './helpers/app.js';
 
 /** A new `days` or `severity` is a cold read of thousands of SQL statements, so only HEAVY_REPORTS_AT_ONCE run at once and the rest wait; a cached answer never waits. */
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock };
 });
 
-const { analyticsRoutes, heavy, HEAVY_REPORTS_AT_ONCE } = await import('../routes/analytics.js');
+const { analyticsRoutes } = await import('../routes/analytics.js');
+
+const { heavy, HEAVY_REPORTS_AT_ONCE } = await import('../services/analytics.js');
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 20));
 

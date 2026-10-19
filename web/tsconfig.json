@@ -18,7 +18,8 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  // Tests are typechecked by tsconfig.test.json and never built. See the `typecheck` script.
-  "exclude": ["src/__tests__"],
+  // Tests (src/__tests__ and the *.test.ts(x) files beside the code) are typechecked by tsconfig.test.json and never built.
+  // See the `typecheck` script.
+  "exclude": ["src/__tests__", "src/**/*.test.ts", "src/**/*.test.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

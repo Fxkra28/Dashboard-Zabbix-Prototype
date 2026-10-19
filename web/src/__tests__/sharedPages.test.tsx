@@ -3,12 +3,12 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import { api } from '../api';
-import { resetAuthProbe } from '../hooks/useAuth';
-import ProblemsTable from '../components/ProblemsTable';
-import Hosts from '../pages/Hosts';
-import LatestData from '../pages/LatestData';
-import Network from '../pages/Network';
-import Sites from '../pages/Sites';
+import { resetAuthProbe } from '../shared/hooks/useAuth';
+import ProblemsTable from '../features/problems/ProblemsTable';
+import Hosts from '../features/hosts/Hosts';
+import LatestData from '../features/hosts/LatestData';
+import Network from '../features/network/Network';
+import Sites from '../features/network/Sites';
 import type { HostOverview, LatestItem, NetDevice, NetInterface, SitesResponse } from '../types';
 import { problem } from './problems';
 

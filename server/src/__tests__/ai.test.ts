@@ -44,7 +44,7 @@ async function loadAi(env: Record<string, string>) {
   // dotenv does not overwrite variables that are already set, so these win over
   // whatever server/.env holds on the machine running the suite.
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
-  return import('../ai.js');
+  return import('../clients/ai.js');
 }
 
 /** Shape an OpenAI chat-completions envelope around whatever the model "said". */
@@ -217,7 +217,7 @@ describe('humanize: configuration', () => {
     vi.stubEnv('AI_PROVIDER', 'openai-compatible');
     vi.stubEnv('AI_BASE_URL', 'http://localhost:11434/v1');
     vi.stubEnv('ANTHROPIC_API_KEY', '');
-    const { config } = await import('../config.js');
+    const { config } = await import('../core/config.js');
     expect(config.ai.enabled).toBe(true);
   });
 });
@@ -321,7 +321,7 @@ describe('native Ollama requests', () => {
     // value restarts it and drops the prompt cache the next question needs.
     const { bodies } = stubOllama();
     const { humanize, warmModel, prefillModel } = await loadAi(NATIVE_ENV);
-    const { streamAnswer } = await import('../chat.js');
+    const { streamAnswer } = await import('../services/assistant.js');
 
     expect(await collect(streamAnswer([{ role: 'user', content: 'Ada yang down?' }], 'SNAPSHOT'))).toBe('Nothing is down.');
     await humanize('problem', {});
@@ -346,7 +346,7 @@ describe('native Ollama requests', () => {
   it('keeps the snapshot a byte-identical prefix of the system text, with per-question lines after it', async () => {
     const { bodies } = stubOllama();
     await loadAi(NATIVE_ENV);
-    const { streamAnswer, systemText } = await import('../chat.js');
+    const { streamAnswer, systemText } = await import('../services/assistant.js');
 
     await collect(streamAnswer([{ role: 'user', content: 'Ada yang down di MOPU?' }], 'SNAP', undefined, { focus: 'FOCUS: MOPU / MAC' }));
     await collect(streamAnswer([{ role: 'user', content: 'Which sites missed SLA?' }], 'SNAP'));

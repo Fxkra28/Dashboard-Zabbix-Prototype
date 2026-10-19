@@ -89,7 +89,7 @@ portal's route turns them into 27 meters, 21 of them old readings.
   interfaces, where "Out" is the site's download. The other direction and the interface's own status are
   read too, and shown when they matter (follow-ups, below).
 * **Operators and admins only.** The meters are interface data. A wall that signs in as a viewer shows the
-  Overview alone.
+  Overview and, since 15 October, the Hosts, which are host data (follow-ups, below).
 * **Only the last value.** Nothing is kept, so the portal can say how busy a link is now and not how busy
   it was last week. The Graphs page draws the history.
 * **Not seen live here.** The development copy of Zabbix holds data to 14 September, so every meter on it
@@ -121,8 +121,8 @@ Critical (by hourly average) in hours when the gauge's own direction was not, an
 939 hours with its gauge never above Normal. So the other direction is not a second line on every tile:
 23 tiles would be crowded for the sake of one or two links. It is read for every meter, on the gauge's own
 scale and zones, and written under the dial only when it is High or Critical, counted in the summary, and
-a click on the title opens the Graphs page with both directions chosen. An old reading of it is never
-drawn.
+a click on the title opens the Graphs page with both directions chosen. The tile's edge turns red or
+amber too, as the line is too small to read from across a room. An old reading of it is never drawn.
 
 * **It assumes a link that is the same size both ways**, because the widget gives one maximum. A link that
   is not (a broadband one, where the upload is a fraction of the download) would read too low in the
@@ -134,11 +134,14 @@ drawn.
 **A wall that turns, and fits.** A wall has no one to click it or scroll it. So the Dashboard turns by
 itself on a wall for an operator or admin: the Overview, then the meters, 30 seconds each (`rotate=` in
 the address changes the seconds, 0 stops it). An address that names a view (`view=`) holds it. A click on a
-tab, or on Pause, stops the turning until Resume. A viewer's wall has the Overview alone. And what is under
-the wall's bar is drawn smaller, all by one factor and never below 0.8, until it fits the screen, because
-the height of a tile depends on what it says (a line for the other direction, an old reading's two lines)
-and the Overview's own height depends on how the problem names wrap. Past 35 meters they go on further
-slides, an even share each. On the restored data the Overview alone was 1,185 px tall at 1080p, and 27 meters of mixed readings,
+tab, or on Pause, stops the turning until Resume. A viewer's wall has the Overview and, since 15 October, the Hosts. And the whole wall,
+its bar included, is drawn at the scale that fits the screen, all by one factor, because the height of a
+tile depends on what it says (a line for the other direction, an old reading's two lines) and the
+Overview's own height depends on how the problem names wrap. The scale follows the height of the window in
+proportion to 1080p, which the wall is designed for: down to 0.8 of that proportion on a shorter screen
+(0.53 at 720 px), and up to the proportion on a taller one (1.33 at 1440 px, 2 at 2160 px, never past 3), so
+a wall on a 4K screen is not a small drawing in a large room. Past 35 meters they go on further slides, an
+even share each. On the restored data the Overview alone was 1,185 px tall at 1080p, and 27 meters of mixed readings,
 drawn from made-up numbers, 1,175 px.
 
 * The Overview has a card for the internet links (how many need someone to look, and which way), so the
@@ -148,4 +151,20 @@ drawn from made-up numbers, 1,175 px.
 * Considered: stopping the turning while a High problem is open. The restored data has 18 open, so the
   wall would never turn. Considered: ordering the tiles by severity. The positions are what an operator
   learns, and the card and the summary already say what needs a look.
+
+**The Hosts view (15 October).** HCML's Zabbix home carries more than the gauges: host availability, two Top
+hosts widgets, web monitoring, system information, problems by severity, a map and a clock, and two more
+dashboards of their own for availability and for web checks. The portal showed the gauges, the problems and
+the counts, and the Dashboard gets a third view, Hosts, for what it did not show: availability, the devices of
+each kind, web monitoring and the ten busiest hosts by CPU and by memory.
+
+* **For everyone.** It is host data, not interface data, so a viewer has it. A viewer's Dashboard has two tabs,
+  and a viewer's wall turns between the two. The meters stay for operators and admins.
+* **Current figures only.** The portal's rule applies (`isFresh`): a value older than three intervals, and
+  ten minutes at least, is not listed, and an old web result is never OK. On a copy of Zabbix that has
+  stopped, the lists are empty and the scenarios Unknown, and the page says so.
+* **Three requests, held by the Dashboard.** The devices, the busiest hosts and the web scenarios are asked
+  for once for the view and the wall, a minute apart, and one that fails does not take the others with it.
+* Considered: the map and the clock of the Zabbix home. The Maps page has the topology and the wall has a
+  clock. Considered: system information and problems by severity. The Overview has them.
 

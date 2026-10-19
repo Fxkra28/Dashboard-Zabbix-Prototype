@@ -1,9 +1,9 @@
-import { cached } from '../cache.js';
-import type { SliProfile } from '../config.js';
-import { DEVICE_CLASS_LABELS, naturalCompare, type DeviceClass } from '../naming.js';
-import { getProblems, openProblems, type ZbxProblem } from '../queries.js';
-import type { ServiceNode, ServiceSla, ServicesResponse } from '../routes/services.js';
-import { getMonthlySli } from '../routes/sli.js';
+import { cached } from '../core/cache.js';
+import type { SliProfile } from '../core/config.js';
+import { DEVICE_CLASS_LABELS, naturalCompare, type DeviceClass } from '../domain/naming.js';
+import { getProblems, openProblems, type ZbxProblem } from '../domain/queries.js';
+import type { ServiceNode, ServiceSla, ServicesResponse } from '../services/services.js';
+import { getMonthlySli } from '../services/sli.js';
 import { aggregate, type DataStatus, type SliGroup, type SliHost, type SliReport } from './engine.js';
 
 /**

@@ -30,13 +30,13 @@ const LOCAL = {
   AI_MAX_CONCURRENT: '1',
 };
 
-/** `ai.ts` and `chat.ts` fresh, with `env` applied to the `config` they capture. */
+/** `ai.ts` and `services/assistant.ts` fresh, with `env` applied to the `config` they capture. */
 async function load(env: Record<string, string>) {
   vi.resetModules();
   // Nothing from the machine running the tests may leak into the case.
   for (const name of ['AI_API_KEY', 'ANTHROPIC_API_KEY', 'AI_BASE_URL', 'AI_TIMEOUT_MS']) vi.stubEnv(name, undefined);
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
-  const [ai, chat] = await Promise.all([import('../ai.js'), import('../chat.js')]);
+  const [ai, chat] = await Promise.all([import('../clients/ai.js'), import('../services/assistant.js')]);
   return { ...ai, ...chat };
 }
 

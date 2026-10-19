@@ -6,7 +6,7 @@ import { LOGO_PNG_BASE64, decodePng } from '../export/logo.js';
 import { buildPdf, columnBoxes, pdfNumber } from '../export/pdf.js';
 import { ELLIPSIS, fitText, fontWidths, textWidth, toWinAnsi, wrapParagraph, wrapText, wrapWords, type WinAnsiText } from '../export/pdfFonts.js';
 import { buildSlaReportDoc } from '../export/slaReport.js';
-import { SITES } from '../naming.js';
+import { SITES } from '../domain/naming.js';
 import { PALETTE, TONES, rgb } from '../export/theme.js';
 import type { BarChart, Cell, Note, ReportDoc, Table, Tone } from '../export/types.js';
 import { sampleDoc } from './helpers/docFixture.js';

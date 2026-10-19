@@ -122,7 +122,7 @@ describe('the Assistant conversation and the end of a session', () => {
   it('stays removed when an answer lands after sign-out began, until the next sign-in', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json(200, { ok: true, user: { name: 'ana', role: 'viewer' }, expiresIn: 3600 })));
     const { logout, login } = await loadApi();
-    const { saveConversation } = await import('../lib/chatStore');
+    const { saveConversation } = await import('../shared/lib/chatStore');
     const turns = [{ role: 'user' as const, content: 'Which hosts are unreachable?' }];
 
     await logout();
@@ -137,7 +137,7 @@ describe('the Assistant conversation and the end of a session', () => {
   it('stays removed after a refused session too', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json(401, { error: 'unauthorized' })));
     const { api } = await loadApi();
-    const { saveConversation, startConversation } = await import('../lib/chatStore');
+    const { saveConversation, startConversation } = await import('../shared/lib/chatStore');
     await expect(api.hosts()).rejects.toThrow('Unauthorized');
 
     saveConversation([{ role: 'user', content: 'late' }]);

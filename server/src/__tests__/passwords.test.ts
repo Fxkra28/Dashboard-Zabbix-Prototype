@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SCRYPT_DEFAULTS, hashPassword, isGuessable, parseStoredPassword, verifyPassword } from '../passwords.js';
+import { SCRYPT_DEFAULTS, hashPassword, isGuessable, parseStoredPassword, verifyPassword } from '../security/passwords.js';
 
 /**
  * Password storage: plain text as before, or a self-describing scrypt hash,

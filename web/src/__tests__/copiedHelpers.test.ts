@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import * as web from '../lib/sites';
-import * as webTime from '../lib/time';
-import * as server from '../../../server/src/naming';
+import * as web from '../shared/lib/sites';
+import * as webTime from '../shared/lib/time';
+import * as server from '../../../server/src/domain/naming';
 import * as serverTime from '../../../server/src/sli/time';
 
 /**
@@ -11,7 +11,7 @@ import * as serverTime from '../../../server/src/sli/time';
  * repository holds both packages, so this runs there. Every name below is made up or comes from the
  * naming convention the code itself documents.
  */
-describe('lib/sites.ts and server/src/naming.ts', () => {
+describe('shared/lib/sites.ts and server/src/domain/naming.ts', () => {
   const NAMES = [
     ...server.SITES.flatMap((s) => [`${s.code}.1 ${s.aliases[0]}01`, `${s.code}.2.3 ${s.aliases[s.aliases.length - 1].toLowerCase()}-02`, `INET : ${s.name} WAN 1`, `SERVER : CUCM ${s.aliases[0]}`]),
     '', '   ', '0.1 SAMPLE', '15.1 SAMPLE', '1', '1.', '1.1', '.5 SAMPLE', 'x 1.2 SAMPLE', 'jakarta', 'Jakarta core', 'SAMPLE-SWITCH', '3.2.4 ÄÖÜ', '14.1 TWSB OFFICE', '10.9.9 FPU ARUBA 9',
@@ -35,7 +35,7 @@ describe('lib/sites.ts and server/src/naming.ts', () => {
   });
 });
 
-describe('lib/time.ts and server/src/sli/time.ts', () => {
+describe('shared/lib/time.ts and server/src/sli/time.ts', () => {
   // Fixed offset, two with daylight saving in different hemispheres, and one with a half-hour shift.
   const ZONES = ['Asia/Jakarta', 'UTC', 'America/New_York', 'Europe/London', 'Pacific/Auckland', 'Australia/Lord_Howe'];
   const MONTHS = Array.from({ length: 24 }, (_, i) => `${2025 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`);

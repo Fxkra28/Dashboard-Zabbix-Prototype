@@ -1,7 +1,7 @@
 /**
  * The light theme's values, duplicated here only as fallbacks for the canvas.
  *
- * styles.css is the source of truth: everything that can read a CSS custom property does, which is
+ * The stylesheet (src/styles/) is the source of truth: everything that can read a CSS custom property does, which is
  * what lets the dark theme exist. ECharts paints to a canvas and cannot resolve `var()`, so
  * TimeSeriesChart reads the tokens at render and falls back to these if it runs without a document.
  *

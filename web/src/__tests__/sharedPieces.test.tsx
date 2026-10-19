@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
-import { AckPill } from '../components/AckPill';
-import { Field, FieldGroup, FieldSpacer } from '../components/Field';
-import { HostTable, type HostTableRow } from '../components/HostTable';
-import { Pager } from '../components/Pager';
+import { AckPill } from '../features/problems/AckPill';
+import { Field, FieldGroup, FieldSpacer } from '../shared/components/Field';
+import { HostTable, type HostTableRow } from '../features/hosts/HostTable';
+import { Pager } from '../shared/components/Pager';
 import type { SiteSource } from '../types';
 
 /**

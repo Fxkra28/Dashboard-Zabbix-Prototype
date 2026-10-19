@@ -1,14 +1,15 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { webStyles } from './helpers/webStyles.js';
 
 /**
  * The typefaces are served from this site. Nothing runs a browser against the built app here, so
- * this reads the files as text and bytes: the @font-face rules in styles.css, what they point at in
+ * this reads the files as text and bytes: the @font-face rules in the stylesheet (web/src/styles/), what they point at in
  * public/fonts, the licences that have to travel with the files, and the <head>.
  */
 const web = (rel: string) => fileURLToPath(new URL(`../../../web/${rel}`, import.meta.url));
-const css = readFileSync(web('src/styles.css'), 'utf8');
+const css = webStyles();
 const html = readFileSync(web('index.html'), 'utf8');
 const fontsDir = web('public/fonts');
 

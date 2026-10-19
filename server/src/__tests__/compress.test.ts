@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { MIN_BYTES, pickEncoding, registerCompression } from '../compress.js';
+import { MIN_BYTES, pickEncoding, registerCompression } from '../http/compress.js';
 
 /**
  * Compression as a browser sees it, through `app.inject()`: decoded bodies

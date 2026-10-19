@@ -31,7 +31,7 @@ npx @mermaid-js/mermaid-cli -i ERD-Mermaid.mmd -o ERD-Mermaid.pdf -w 2600 -b whi
 npx @mermaid-js/mermaid-cli -i ERD-Mermaid.mmd -o ERD-Mermaid.png -w 2600 -s 2 -b white
 ```
 
-Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+Then run `node tools/check/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`tools/check/diagrams.check.mjs`).
 
 `--pdfFit` sizes the page to the chart; without it the diagram is squeezed onto A4 and unreadable.
 
@@ -91,8 +91,8 @@ anywhere in the codebase, no `.sql` file, and `docker-compose.yml` defines exact
 `portal-bff` and `portal-web`. Neither is a datastore.
 
 Every fact the portal displays is Zabbix's, read over JSON-RPC through the single client in
-[`server/src/zabbix.ts`](../../server/src/zabbix.ts). The only persistence in the process is an in-memory
-TTL `Map` in [`server/src/cache.ts`](../../server/src/cache.ts), which is discarded on restart.
+[`server/src/clients/zabbix.ts`](../../server/src/clients/zabbix.ts). The only persistence in the process is an in-memory
+TTL `Map` in [`server/src/core/cache.ts`](../../server/src/core/cache.ts), which is discarded on restart.
 
 So this ERD does not show the portal's tables and foreign keys, it has none. What it shows, and
 what actually matters when working on this codebase is a two-layer domain model:
@@ -483,28 +483,28 @@ Where each derived entity is built, and from what.
 
 | Entity | Built by | Inputs |
 |---|---|---|
-| `Site`, `SiteHost` | `getSites()`, [`routes/sites.ts`](../../server/src/routes/sites.ts) | `getHostsWithMeta()` + `getProblems()` |
-| `Link`, `LinkPath` | `getLinks()`, [`routes/links.ts`](../../server/src/routes/links.ts) | `item.get` on `icmpping*`, plus item tags |
-| `Incident` | `fetchIncidents()`, [`routes/analytics.ts`](../../server/src/routes/analytics.ts) | `event.get` problems + a batched recovery lookup |
+| `Site`, `SiteHost` | `getSites()`, [`services/sites.ts`](../../server/src/services/sites.ts) | `getHostsWithMeta()` + `getProblems()` |
+| `Link`, `LinkPath` | `getLinks()`, [`services/links.ts`](../../server/src/services/links.ts) | `item.get` on `icmpping*`, plus item tags |
+| `Incident` | `fetchIncidents()`, [`services/analytics.ts`](../../server/src/services/analytics.ts) | `event.get` problems + a batched recovery lookup |
 | `HostAvailability` | `getAvailability()` | `Incident[]` grouped by host, intervals merged |
 | `NoisyTrigger` | `getNoise()` | `Incident[]` grouped by trigger |
 | `AgingReport` | `getAging()` | `getProblems()`, unacknowledged only |
 | `CapacityRow` | `getCapacity()` | `item.get` + `trend.get`, falling back to `history.get` |
-| `MapElement` | `/api/maps/detail`: [`routes/maps.ts`](../../server/src/routes/maps.ts) | `map.get` elements, one `host.get` for label macros, and `getProblems()` |
-| `Dimension`, `HostGap` | `getScorecard()`, [`routes/inventory.ts`](../../server/src/routes/inventory.ts) | `getHostsWithMeta()` |
-| `ServiceNode` | `getServiceTree()`, [`routes/services.ts`](../../server/src/routes/services.ts) | `service.get` + one `sla.getsli` per SLA |
-| `SlaSli` | `getSli()`, [`routes/sla.ts`](../../server/src/routes/sla.ts) | `sla.getsli` flattened, names from `service.get` |
-| `ProblemExplanation` | `humanize()`: [`server/src/ai.ts`](../../server/src/ai.ts) | one problem, reshaped and sent to an LLM |
-| `ChatSnapshot` | `buildSnapshot()`: [`server/src/chat.ts`](../../server/src/chat.ts) | problems + sites + SLA + services, capped and rendered as plain text |
+| `MapElement` | `/api/maps/detail`: [`services/maps.ts`](../../server/src/services/maps.ts) | `map.get` elements, one `host.get` for label macros, and `getProblems()` |
+| `Dimension`, `HostGap` | `getScorecard()`, [`services/inventory.ts`](../../server/src/services/inventory.ts) | `getHostsWithMeta()` |
+| `ServiceNode` | `getServiceTree()`, [`services/services.ts`](../../server/src/services/services.ts) | `service.get` + one `sla.getsli` per SLA |
+| `SlaSli` | `getSli()`, [`services/sla.ts`](../../server/src/services/sla.ts) | `sla.getsli` flattened, names from `service.get` |
+| `ProblemExplanation` | `humanize()`: [`server/src/clients/ai.ts`](../../server/src/clients/ai.ts) | one problem, reshaped and sent to an LLM |
+| `ChatSnapshot` | `buildSnapshot()`: [`server/src/services/assistant.ts`](../../server/src/services/assistant.ts) | problems + sites + SLA + services, capped and rendered as plain text |
 
 ### How a site is resolved
 
 `Site` has no Zabbix equivalent at all, so its definition lives entirely in code:
-`resolveSite()` in [`routes/sites.ts`](../../server/src/routes/sites.ts). First match wins:
+`resolveSite()` in [`services/sites.ts`](../../server/src/services/sites.ts). First match wins:
 
 1. Host tag named by `SITE_TAG` (default `site`) → `source: 'tag'`
 2. The host's own name, parsed by `siteFromHostName()` in
-   [`naming.ts`](../../server/src/naming.ts) against HCML's `<code>.<class>.<seq>` convention, or an
+   [`naming.ts`](../../server/src/domain/naming.ts) against HCML's `<code>.<class>.<seq>` convention, or an
    `INET:` / `SERVER:` prefix → `source: 'name'`
 3. Inventory `site_city`, else `location` → `source: 'inventory'`
 4. Host group: with `SITE_GROUP_PREFIX` set, the first group with that prefix, prefix stripped;

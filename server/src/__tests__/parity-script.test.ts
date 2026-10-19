@@ -5,12 +5,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 /**
- * web/scripts/parity.check.mjs, and the documents that count what it lists.
+ * tools/check/parity.check.mjs, and the documents that count what it lists.
  *
  * The script is what says whether the two copies still match, and CI runs only its self-test, so
  * this holds the rules it keeps: the list names files, not folders, a listed file must be in both
  * copies, and README_copy.md has one allowed place. It also keeps the numbers the documents state
- * (17 files, 21 with the .env files) equal to the list, so they cannot drift apart.
+ * (18 files, 22 with the .env files) equal to the list, so they cannot drift apart.
  */
 const repo = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
 const read = (rel: string) => readFileSync(repo(rel), 'utf8');
@@ -24,7 +24,7 @@ interface Parity {
   staleListEntries(root: string): string[];
   selfTest(): string[];
 }
-const parity = (await import(pathToFileURL(repo('web/scripts/parity.check.mjs')).href)) as Parity;
+const parity = (await import(pathToFileURL(repo('tools/check/parity.check.mjs')).href)) as Parity;
 
 const scratch = mkdtempSync(join(tmpdir(), 'parity-script-test-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -127,15 +127,15 @@ describe('the documents count what the script lists', () => {
     return found;
   };
 
-  it('says 21 files differ in README.md, setup.md, ADR-0005 and contributing.md', () => {
-    expect(withEnv).toBe(21);
+  it('says 22 files differ in README.md, the glossary of setup.md, ADR-0005 and contributing.md', () => {
+    expect(withEnv).toBe(22);
     expect(numbers('README.md', /Exactly \*{0,2}(\d+) files\*{0,2} differ/g)).toEqual([withEnv]);
-    expect(numbers('setup.md', /Byte-identical source; (\d+) files differ/g)).toEqual([withEnv]);
+    expect(numbers('docs/setup/28-glossary.md', /Byte-identical source; (\d+) files differ/g)).toEqual([withEnv]);
     expect(numbers('docs/architecture/adr/0005-provider-neutral-ai-layer.md', /divergence is now (\d+) files/g)).toEqual([withEnv]);
     expect(numbers('docs/contributing.md', /exactly \*{0,2}(\d+)\*{0,2} differing files/g)).toEqual([withEnv]);
   });
 
-  it('says 17 files are named in the script, in README.md and contributing.md', () => {
+  it('says 18 files are named in the script, in README.md and contributing.md', () => {
     expect(numbers('README.md', /with the (\d+) files that may differ \(/g)).toEqual([perCopy]);
     expect(numbers('docs/contributing.md', /by name: (\d+) files, and the four/g)).toEqual([perCopy]);
     expect(numbers('docs/contributing.md', /names its (\d+) files one by one/g)).toEqual([perCopy]);

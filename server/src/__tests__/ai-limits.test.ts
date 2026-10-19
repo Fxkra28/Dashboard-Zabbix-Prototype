@@ -9,20 +9,20 @@ import Fastify, { type FastifyInstance } from 'fastify';
  * guard.
  */
 
-vi.mock('../chat.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../chat.js')>()),
+vi.mock('../services/assistant.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/assistant.js')>()),
   getSnapshot: vi.fn(),
   streamAnswer: vi.fn(),
   buildFocus: vi.fn(async () => null),
 }));
-vi.mock('../ai.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../ai.js')>()),
+vi.mock('../clients/ai.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../clients/ai.js')>()),
   humanize: vi.fn(),
   warmModel: vi.fn(async () => undefined),
   prefillModel: vi.fn(async () => true),
 }));
-vi.mock('../queries.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../queries.js')>()),
+vi.mock('../domain/queries.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../domain/queries.js')>()),
   getProblems: vi.fn(),
 }));
 
@@ -60,13 +60,13 @@ async function portal(env: Record<string, string> = {}, chargeEach = { chat: 0, 
 
   const [{ registerErrorHandler }, { registerRateLimit }, { setupAuth, tokenClaims }, chatModule, aiModule, queries, limits] =
     await Promise.all([
-      import('../errors.js'),
-      import('../rateLimit.js'),
-      import('../auth.js'),
-      import('../chat.js'),
-      import('../ai.js'),
-      import('../queries.js'),
-      import('../limits.js'),
+      import('../http/errors.js'),
+      import('../http/rateLimit.js'),
+      import('../security/auth.js'),
+      import('../services/assistant.js'),
+      import('../clients/ai.js'),
+      import('../domain/queries.js'),
+      import('../clients/limits.js'),
     ]);
   const { chatRoutes } = await import('../routes/chat.js');
   const { explainRoutes } = await import('../routes/explain.js');
@@ -222,7 +222,7 @@ describe('the daily token budget of the hosted API', () => {
 describe('MinuteLimit', () => {
   it('lets max calls through, then names the seconds left, and opens a new minute when it is over', async () => {
     vi.resetModules();
-    const { MinuteLimit } = await import('../limits.js');
+    const { MinuteLimit } = await import('../clients/limits.js');
     let now = 1_000_000;
     const limit = new MinuteLimit(2, () => now);
 
@@ -239,7 +239,7 @@ describe('MinuteLimit', () => {
 
   it('keeps its table bounded when every call comes from a new key', async () => {
     vi.resetModules();
-    const { MinuteLimit } = await import('../limits.js');
+    const { MinuteLimit } = await import('../clients/limits.js');
     let now = 0;
     const limit = new MinuteLimit(1, () => now);
     for (let i = 0; i < 6_000; i++) limit.take(`ip:${i}`);
@@ -254,7 +254,7 @@ describe('MinuteLimit', () => {
 describe('DailyTokens', () => {
   async function budget(limits = { perUser: 1_000, total: 0 }, zone = 'Asia/Jakarta', start = '2026-10-07T16:59:00Z') {
     vi.resetModules();
-    const { DailyTokens } = await import('../limits.js');
+    const { DailyTokens } = await import('../clients/limits.js');
     const clock = { t: Date.parse(start) };
     return { clock, tokens: new DailyTokens(() => limits, () => zone, () => clock.t) };
   }

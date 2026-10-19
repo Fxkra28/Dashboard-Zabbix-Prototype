@@ -147,7 +147,7 @@ BFF. If sign-in answers 403 `csrf`, the proxy is not passing the browser's `Host
 ## What was tested
 
 These recipes were written from each product's documentation and from how this portal reads its
-headers (`server/src/auth.ts`, `setup.md` §23, ADR-0010). They were **not run** against a live
+headers (`server/src/security/auth.ts`, `setup.md` §23, ADR-0010). They were **not run** against a live
 proxy: nothing here could start one. Before you rely on one, run `nginx -t` or `caddy validate`,
 and the three `curl` checks above. The checks that do run in CI are the ones in
 `server/src/__tests__/deploy-docs.test.ts`: they only confirm that this page still names HSTS, the

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bearer, buildAuthApp, closeAuthApps, page } from './helpers/authApp.js';
-import { hashPassword } from '../passwords.js';
+import { hashPassword } from '../security/passwords.js';
 
 /**
  * Who can sign in, and what the BFF says about it: how PORTAL_USERS is read,

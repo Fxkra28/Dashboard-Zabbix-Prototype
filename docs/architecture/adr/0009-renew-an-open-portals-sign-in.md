@@ -12,7 +12,7 @@
 
 ## Context and Problem Statement
 
-A sign-in gives the browser a JWT that lasts 12 hours (`tokenLifetime()` in `server/src/auth.ts`, set by `SESSION_HOURS`),
+A sign-in gives the browser a JWT that lasts 12 hours (`tokenLifetime()` in `server/src/security/auth.ts`, set by `SESSION_HOURS`),
 and until now nothing could extend it. The Dashboard polls the BFF every 15 and 30 seconds, so within
 about 15 seconds of the twelfth hour a request came back 401, `web/src/api.ts` cleared the token, and
 the page jumped to the login screen. A wall screen switched on at 07:00 showed a login form from about
@@ -52,7 +52,7 @@ Chosen: **renew while open.**
   token. A name listed twice is refused too, with a warning at start: a token names its user, not
   which entry signed in, and taking the first entry let a sign-in with one entry's password renew
   into the other entry's role.
-* The web app (`web/src/hooks/useSessionRenewal.ts`) renews an hour before the session ends, or at
+* The web app (`web/src/features/shell/useSessionRenewal.ts`) renews an hour before the session ends, or at
   three quarters of what was left when that is under four hours. The page cannot read the token, so
   the deadline comes from `expiresIn`, which sign-in, renewal and `GET /api/auth/me` all return:
   the time the page received it plus that many seconds, never an expiry against the local clock, so

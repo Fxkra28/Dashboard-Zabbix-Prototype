@@ -2,9 +2,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import Fastify from 'fastify';
-import { config } from '../config.js';
-import { registerErrorHandler } from '../errors.js';
-import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError, zbx } from '../zabbix.js';
+import { config } from '../core/config.js';
+import { registerErrorHandler } from '../http/errors.js';
+import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError, zbx } from '../clients/zabbix.js';
 
 /**
  * The JSON-RPC client against a throwaway local HTTP server standing in for

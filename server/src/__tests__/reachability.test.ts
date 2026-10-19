@@ -6,7 +6,7 @@ import {
   rollUpAvailability,
   type IcmpItem,
   type IcmpReading,
-} from '../reachability.js';
+} from '../domain/reachability.js';
 
 /**
  * One host state, ping first. Every branch of `hostState` is pinned here: a
@@ -15,8 +15,8 @@ import {
  */
 
 const { zbxMock } = vi.hoisted(() => ({ zbxMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: zbxMock };
 });
 
@@ -155,9 +155,9 @@ describe('getIcmpByHost', () => {
   it('reads every monitored host’s ICMP items in one call and caches the result', async () => {
     const now = Math.floor(Date.now() / 1000);
     zbxMock.mockResolvedValue([item({ hostid: '7', lastclock: String(now - 40) })]);
-    const { invalidate } = await import('../cache.js');
+    const { invalidate } = await import('../core/cache.js');
     invalidate('');
-    const { getIcmpByHost } = await import('../reachability.js');
+    const { getIcmpByHost } = await import('../domain/reachability.js');
 
     const first = await getIcmpByHost();
     expect(first.get('7')).toMatchObject({ state: 'up', up: true });

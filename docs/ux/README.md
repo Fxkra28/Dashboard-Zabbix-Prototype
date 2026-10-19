@@ -15,7 +15,7 @@
 
 | Fact | Source |
 |---|---|
-| Three roles, ranked: viewer, operator, admin | `server/src/auth.ts` `ROUTE_RULES` |
+| Three roles, ranked: viewer, operator, admin | `server/src/security/auth.ts` `ROUTE_RULES` |
 | An unmatched route needs `viewer`, so a new route is private by default | `auth.ts:49` |
 | Only `/api/reports/inventory` needs admin | `auth.ts:42` |
 | Only `/api/links`, `/api/net` (the Dashboard's internet traffic meters, `/api/net/meters`, among them) and the write route (acknowledge, with close as an option) need operator | `auth.ts:43,45` |
@@ -23,7 +23,7 @@
 | 139 monitored hosts across 14 sites | Zabbix, measured 15 September 2026 |
 | Exactly one write exists: acknowledge and close | `server/src/routes/actions.ts` |
 | That write is off unless `ZABBIX_WRITE_TOKEN` is set, and returns 503 otherwise | `actions.ts:130-138` |
-| The Dashboard holds one long-lived SSE connection, exempt from the rate limiter and capped on its own (100 screens in all, 5 per user) | `server/src/rateLimit.ts:6,27`, `routes/stream.ts` |
+| The Dashboard holds one long-lived SSE connection, exempt from the rate limiter and capped on its own (100 screens in all, 5 per user) | `server/src/http/rateLimit.ts:6,27`, `services/stream.ts` |
 | Nothing the portal derives is stored anywhere | ADR-0003, ADR-0004 |
 
 Everything after this point is inference from those facts.
@@ -77,7 +77,7 @@ the network.
 
 `DESIGN.md` section 5 names it: the Dashboard doubles as a wall display, and `/api/stream` is exempt
 from the rate limiter specifically so a wall poller does not throttle itself
-(`server/src/rateLimit.ts:6,27`). It is capped instead, at 100 screens in all and 5 for one signed-in
+(`server/src/http/rateLimit.ts:6,27`). It is capped instead, at 100 screens in all and 5 for one signed-in
 user, so a wall of more than five screens on one shared login needs `STREAM_MAX_PER_USER` raised.
 
 This is a real, code-backed usage context with no user attached. Nobody is signed in as "the wall".
@@ -92,7 +92,7 @@ something else. Three consequences, all of which are now in the interface:
   when everything else is one blue.
 - A wall that is to turn to the internet meters has to be signed in as an operator or an admin: the
   meters are interface data, which a viewer does not get (`viewerPolicy.ts`). A wall signed in as a viewer
-  shows the Overview alone and asks for nothing more. An operator's session on a screen nobody watches is
+  turns between the Overview and the Hosts, which are not interface data, and asks for nothing more. An operator's session on a screen nobody watches is
   an operator's session, so the wall's account should be one made for it, and the write token (which is
   what lets an operator acknowledge) should stay off, as it is now.
 
@@ -102,9 +102,9 @@ The only journey traceable end to end in code. Every step names the file that pe
 
 | Stage | What happens | Where | What can go wrong |
 |---|---|---|---|
-| Notice | The Dashboard's SSE connection pushes a `problems` event; the count and the list change without a reload | `routes/stream.ts`, `hooks/useSSE.ts` | The connection drops. Until 24 September 2026 that was silent: the page kept showing the last good state with no indication it had stopped being live (friction point 1) |
-| Orient | Operator reads severity, host, duration. Severity is a filled chip, which is the only loud colour on the page | `ProblemsTable.tsx`, `lib/severity.ts` | Host names are Zabbix's, which are not always the names people use for the same box |
-| Understand | Optional: open Explain, which sends the problem to the model and returns plain language, cached an hour | `routes/explain.ts` | Off by default. When off, the operator is reading a trigger expression |
+| Notice | The Dashboard's SSE connection pushes a `problems` event; the count and the list change without a reload | `services/stream.ts`, `features/dashboard/useSSE.ts` | The connection drops. Until 24 September 2026 that was silent: the page kept showing the last good state with no indication it had stopped being live (friction point 1) |
+| Orient | Operator reads severity, host, duration. Severity is a filled chip, which is the only loud colour on the page | `ProblemsTable.tsx`, `shared/lib/severity.ts` | Host names are Zabbix's, which are not always the names people use for the same box |
+| Understand | Optional: open Explain, which sends the problem to the model and returns plain language, cached an hour | `services/explain.ts` | Off by default. When off, the operator is reading a trigger expression |
 | Decide | Operator decides this is known or being handled | none | Nothing records that a decision was made, only that an acknowledgement was sent |
 | Act | Acknowledge, with a message, optionally closing | `AckDialog.tsx` → `POST /api/problems/acknowledge` | Returns 503 if `ZABBIX_WRITE_TOKEN` is unset. The UI hides the control in that case, so the operator's route to acting is simply absent rather than explained |
 | Confirm | Affected cache keys are dropped and, for 15 s, refetched on a TTL of at most 2 s, then the SSE push carries the new state | `actions.ts` `WRITE_HOLD_MS` | For up to 15 seconds the problem can still read as open. Acting twice is the obvious failure |

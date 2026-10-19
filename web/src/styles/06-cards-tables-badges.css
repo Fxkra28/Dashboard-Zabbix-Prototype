@@ -1,0 +1,145 @@
+/* Cards / panels */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+}
+.panel h2 {
+  margin: 0 0 14px;
+  font-size: var(--t-lg);
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  gap: 18px;
+}
+.kpis {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-bottom: 20px;
+}
+
+/* KPI card */
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--accent, var(--primary));
+}
+.kpi .label {
+  color: var(--muted);
+  font-size: var(--t-base);
+  font-weight: 500;
+}
+.kpi .value {
+  font-size: var(--t-3xl);
+  font-weight: 700;
+  line-height: 1;
+}
+.kpi .sub {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+/* Tables */
+.table-wrap {
+  overflow-x: auto;
+  /* The containing block for the hidden "No data" text in its cells (NoData),
+     so a wide table's far columns cannot widen the page past the wrap. */
+  position: relative;
+}
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-base);
+}
+table.data th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: var(--t-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.data td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+table.data tr:last-child td {
+  border-bottom: none;
+}
+table.data tr:hover td {
+  background: var(--surface-2);
+}
+/* The Actions column stays in view while the rest of a wide table scrolls under it, so Explain, Ack
+   and the graph links are not past the card's edge. The fill is opaque to hide what scrolls beneath;
+   the hover rule above is the more specific one and still colours it. */
+table.data th.sticky-end,
+table.data td.sticky-end {
+  position: sticky;
+  right: 0;
+  background: var(--surface);
+}
+
+/* Badges / pills */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--on-severity);
+  white-space: nowrap;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--surface);
+}
+.pill.up {
+  color: var(--good-text);
+  border-color: var(--good-line);
+  background: var(--good-bg);
+}
+.pill.down {
+  color: var(--danger-text);
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+}
+

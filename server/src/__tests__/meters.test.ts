@@ -13,7 +13,7 @@ import {
   type MeterDefinition,
   type MeterItem,
   type ZDashboard,
-} from '../meters.js';
+} from '../services/meters.js';
 
 /** The pure parts of the meters: reading a gauge widget, its scale and colours, and what a reading means. Fixtures have the shape of HCML's "Global view". */
 

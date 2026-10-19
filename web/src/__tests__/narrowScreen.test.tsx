@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, renderHook, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import Layout from '../components/Layout';
-import { NARROW_QUERY, useNarrowScreen, useSidebarRail } from '../hooks/useUiPrefs';
-import styles from '../styles.css?raw';
+import Layout from '../features/shell/Layout';
+import { NARROW_QUERY, useNarrowScreen, useSidebarRail } from '../features/shell/useUiPrefs';
+import { stylesheet as styles } from './stylesheet';
 
 const RAIL_KEY = 'hcml.sidebar.collapsed';
 
@@ -170,7 +170,7 @@ describe('the stylesheet agrees with the hook (UX-14)', () => {
   /** The text between the braces of the first rule that opens with `head`. */
   const block = (head: string) => {
     const start = styles.indexOf(head);
-    expect(start, `${head} is in styles.css`).toBeGreaterThan(-1);
+    expect(start, `${head} is in the stylesheet`).toBeGreaterThan(-1);
     let depth = 0;
     for (let i = styles.indexOf('{', start); i < styles.length; i++) {
       if (styles[i] === '{') depth++;

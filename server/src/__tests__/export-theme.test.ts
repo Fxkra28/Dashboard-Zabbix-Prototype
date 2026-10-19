@@ -1,12 +1,12 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PALETTE, TOKEN_OF, TONES, rgb } from '../export/theme.js';
+import { webStyles } from './helpers/webStyles.js';
 
 /**
- * The report palette is a copy of the light-theme tokens in web/src/styles.css.
+ * The report palette is a copy of the light-theme tokens in web/src/styles/ (01-tokens.css).
  * A copy can drift, so this reads the stylesheet and compares.
  */
-const css = readFileSync(new URL('../../../web/src/styles.css', import.meta.url), 'utf8');
+const css = webStyles();
 const light = css.slice(css.indexOf(':root {'), css.indexOf(":root[data-theme='dark']"));
 
 const token = (name: string) =>
@@ -25,7 +25,7 @@ const contrast = (a: string, b: string) => {
 };
 
 describe('report palette', () => {
-  it.each(Object.entries(TOKEN_OF))('%s equals %s in styles.css', (key, name) => {
+  it.each(Object.entries(TOKEN_OF))('%s equals %s in the stylesheet', (key, name) => {
     expect(token(name), `${name} not found in the light token block`).toBeDefined();
     expect(PALETTE[key as keyof typeof PALETTE]).toBe(token(name));
   });

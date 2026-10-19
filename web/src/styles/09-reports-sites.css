@@ -1,0 +1,432 @@
+/* Inventory scorecard */
+.score-hero {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px 24px;
+  margin-bottom: 18px;
+  font-size: var(--t-base);
+  line-height: 1.55;
+}
+.score-hero-num {
+  font-size: var(--t-4xl);
+  font-weight: 800;
+  line-height: 1;
+  flex: none;
+}
+
+.score-bar {
+  display: block;
+  flex: 1;
+  min-width: 60px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--neutral-bg);
+  overflow: hidden;
+}
+.score-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  transition: width 0.3s ease;
+}
+
+.score-dim {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+.score-dim:last-child {
+  border-bottom: none;
+}
+.score-dim-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: var(--t-base);
+  font-weight: 500;
+  margin-bottom: 7px;
+}
+.score-hint {
+  font-size: var(--t-xs);
+  margin-top: 6px;
+}
+.tag.miss {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+.tag.main {
+  background: var(--tint);
+  color: var(--primary-strong);
+}
+
+/* Alert noise flags */
+.tag.flag-flapping {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+.tag.flag-unactioned {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+.tag.flag-chronic {
+  background: var(--tint);
+  color: var(--primary-strong);
+}
+.noise-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+}
+
+/* Links & WAN */
+.link-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--s-text, var(--s));
+  white-space: nowrap;
+}
+.link-state .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--s);
+}
+.link-bad {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.path-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.path-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--s);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+}
+.path-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: var(--t-base);
+}
+.path-leg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-sm);
+  padding: 3px 0;
+}
+.path-leg .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.path-leg-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Action aging */
+.aging-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.aging-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--t-sm);
+}
+.aging-label {
+  width: 74px;
+  color: var(--muted);
+  flex: none;
+}
+.aging-track {
+  flex: 1;
+  height: 16px;
+  background: var(--neutral-bg);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.aging-track > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-sm);
+  min-width: 2px;
+}
+.aging-count {
+  width: 30px;
+  text-align: right;
+  font-weight: 600;
+  flex: none;
+}
+
+/* Services tree */
+.svc-tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.svc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  padding-right: 12px;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.svc-row:last-child {
+  border-bottom: none;
+}
+.svc-row:hover {
+  background: var(--surface-2);
+}
+
+.svc-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.svc-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.svc-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s ease;
+}
+.svc-toggle:not(.placeholder) {
+  /* 24 px is the WCAG 2.2 minimum; the negative margin gives the row back what the box takes. */
+  width: 24px;
+  height: 24px;
+  margin: -2px;
+}
+.svc-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+.svc-toggle.placeholder {
+  cursor: default;
+}
+
+.svc-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.svc-name {
+  font-weight: 500;
+  font-size: var(--t-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.svc-count {
+  font-size: var(--t-xs);
+}
+
+.svc-sla {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--r-sm);
+}
+.svc-sla em {
+  font-style: normal;
+  font-weight: 400;
+  opacity: 0.65;
+}
+.svc-sla.ok {
+  background: var(--good-bg);
+  color: var(--good-text);
+}
+.svc-sla.miss {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.svc-cause {
+  font-size: var(--t-sm);
+  color: var(--muted);
+  padding-right: 12px;
+  padding-bottom: 8px;
+  margin-top: -3px;
+  line-height: 1.5;
+}
+.svc-cause-label {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+/* Site view */
+.site-coverage {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--mid);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: var(--t-sm);
+  color: var(--muted);
+  line-height: 1.55;
+}
+.site-coverage strong {
+  color: var(--text);
+  font-size: var(--t-md);
+}
+.site-coverage code {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  background: var(--neutral-bg);
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  font-size: var(--t-xs);
+}
+
+.site-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.site-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  padding: 16px 16px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  overflow: hidden;
+  font-family: inherit;
+}
+/* Status stripe carries the site's worst severity colour. */
+.site-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--site-color);
+}
+.site-card:hover {
+  border-color: var(--mid);
+}
+.site-card.sel {
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+
+.site-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.site-name {
+  font-weight: 600;
+  font-size: var(--t-md);
+  color: var(--text);
+}
+.site-hosts {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.site-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 34px;
+}
+.site-big {
+  font-size: var(--t-3xl);
+  font-weight: 700;
+  line-height: 1;
+  /* The stripe carries the severity (DESIGN.md R-4): Warning yellow as text is 1.54:1. */
+  color: var(--text);
+}
+.site-big-label {
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.site-big-label em {
+  font-style: normal;
+  color: var(--danger-text);
+  font-weight: 600;
+}
+.site-ok {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  color: var(--good-text);
+}
+
+.site-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+/* Only the card wraps its severity chips: its width is fixed and it clips. Table cells keep one line. */
+.site-foot .sev-strip {
+  flex-wrap: wrap;
+}
+.site-avail {
+  display: inline-flex;
+  gap: 8px;
+  font-size: var(--t-xs);
+}
+.site-avail .down {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+

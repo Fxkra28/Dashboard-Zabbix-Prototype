@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
-import { requiredRole } from '../auth.js';
-import { toMs } from '../routes/links.js';
+import { requiredRole } from '../security/auth.js';
+import { toMs } from '../services/links.js';
 
-vi.mock('../zabbix.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../zabbix.js')>();
+vi.mock('../clients/zabbix.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../clients/zabbix.js')>();
   return { ...actual, zbx: vi.fn().mockResolvedValue([]), zbxWrite: vi.fn() };
 });
 
@@ -22,9 +22,13 @@ async function registerAll() {
   // one silently produces an empty, passing surface.
   const plugins = await Promise.all([
     import('../routes/hosts.js').then((m) => m.hostRoutes),
+    import('../routes/devices.js').then((m) => m.deviceRoutes),
     import('../routes/problems.js').then((m) => m.problemRoutes),
     import('../routes/history.js').then((m) => m.historyRoutes),
     import('../routes/net.js').then((m) => m.netRoutes),
+    import('../routes/meters.js').then((m) => m.meterRoutes),
+    import('../routes/topHosts.js').then((m) => m.topHostRoutes),
+    import('../routes/webMonitoring.js').then((m) => m.webMonitoringRoutes),
     import('../routes/stream.js').then((m) => m.streamRoutes),
     import('../routes/reports.js').then((m) => m.reportRoutes),
     import('../routes/maps.js').then((m) => m.mapRoutes),
@@ -57,14 +61,15 @@ async function registerAll() {
 }
 
 describe('API surface', () => {
-  it('registers exactly the 35 route-module endpoints', async () => {
+  it('registers exactly the 39 route-module endpoints', async () => {
     // Plus /api/health and /api/ready (health.ts), POST /api/auth/login, GET
     // /api/auth/me, POST /api/auth/refresh and POST /api/auth/logout, which live in
-    // auth.ts, 41 endpoints in total.
+    // auth.ts, 45 endpoints in total.
     const { app, routes } = await registerAll();
     expect(routes.sort()).toMatchInlineSnapshot(`
       [
         "GET /api/chat/warm",
+        "GET /api/devices",
         "GET /api/explain/problem",
         "GET /api/explain/sla",
         "GET /api/freshness",
@@ -79,6 +84,7 @@ describe('API surface', () => {
         "GET /api/maps/detail",
         "GET /api/net/devices",
         "GET /api/net/interfaces",
+        "GET /api/net/meters",
         "GET /api/problems",
         "GET /api/reports/aging",
         "GET /api/reports/availability",
@@ -86,7 +92,9 @@ describe('API surface', () => {
         "GET /api/reports/inventory",
         "GET /api/reports/noise",
         "GET /api/reports/problems-by-group",
+        "GET /api/reports/top-hosts",
         "GET /api/reports/top-triggers",
+        "GET /api/reports/web-monitoring",
         "GET /api/services",
         "GET /api/services/derived",
         "GET /api/sites",
@@ -132,6 +140,7 @@ describe('API surface', () => {
       '/api/links',
       '/api/net/devices',
       '/api/net/interfaces',
+      '/api/net/meters',
       '/api/problems/acknowledge',
     ]);
     await app.close();

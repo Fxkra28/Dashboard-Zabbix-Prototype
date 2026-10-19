@@ -83,7 +83,7 @@ flowchart TB
     subgraph W5["5 &middot; On demand only"]
         EXPLAIN["<b>ExplainPanel</b><br>GET /api/explain/problem<br>never called on page load<br>renders plain paragraphs, not markdown"]
         CHATP["<b>Assistant</b><br>POST /api/chat<br>body read as a stream, frame by frame"]
-        MD["<b>lib/markdown.ts</b><br>141 lines, hand-rolled: the Assistant's<br>answers are the only markdown here"]
+        MD["<b>features/assistant/parseMarkdown.ts</b><br>141 lines, hand-rolled: the Assistant's<br>answers are the only markdown here"]
         ACK["<b>AckDialog</b><br>POST /api/problems/acknowledge<br>operator role &middot; the only write"]
 
         CHATP --> MD
@@ -136,4 +136,4 @@ flowchart TB
     class ACK written
     class BFF server
     class HASROLE,R401,GUARD,HIDDEN choice
-%% source-hash: 3cae81561f1d
+%% source-hash: db409db3a3ba

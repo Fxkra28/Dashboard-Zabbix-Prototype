@@ -1,9 +1,9 @@
 /**
- * Checks for the assistant's markdown parser (src/lib/markdown.ts).
+ * Checks for the assistant's markdown parser (src/features/assistant/parseMarkdown.ts).
  * Run from the repo root: ./server/node_modules/.bin/tsx web/scripts/markdown.check.ts
  */
 import assert from 'node:assert/strict';
-import { parseInline, parseMarkdown, type Block, type Inline } from '../src/lib/markdown.ts';
+import { parseInline, parseMarkdown, type Block, type Inline } from '../src/features/assistant/parseMarkdown.ts';
 
 const flat = (nodes: Inline[]): string =>
   nodes.map((n) => (n.type === 'bold' ? `<b>${flat(n.children)}</b>` : n.type === 'code' ? `<c>${n.text}</c>` : n.text)).join('');

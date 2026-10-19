@@ -55,14 +55,14 @@ Chosen: **hand-written writers in the BFF.**
 * Three things are copied from the web app, because the BFF cannot import the browser bundle or
   `web/public`: the light-theme colours (`theme.ts`), the logo (`logo.ts`, as base64) and the SLA
   page's wording. A test fails when a copy drifts: `export-theme.test.ts` compares every colour with
-  `styles.css`, `export-pdf.test.ts` compares the logo byte for byte, and `export-sla-report.test.ts`
+  `web/src/styles/01-tokens.css`, `export-pdf.test.ts` compares the logo byte for byte, and `export-sla-report.test.ts`
   reads the page's source for the sentences. Reports always take the light theme.
 * In the browser, `ReportDownload.tsx` shows the two buttons, *PDF report* and *Excel report*, on the
   SLA page and, for one calendar month on the ICMP basis, on the Availability page. It fetches the
   file and saves it under the name the BFF sent.
 
 Verified by the `export-*.test.ts` files in `server/src/__tests__/` and by
-`ReportDownload.test.tsx` and `reportApi.test.ts` in `web/src/__tests__/`. The server tests read the
+`web/src/features/sla/ReportDownload.test.tsx` and `web/src/__tests__/reportApi.test.ts`. The server tests read the
 PDF back (cross-reference table, page tree, bookmarks that point at real pages, every text inside its
 margin and its column) and unzip the workbook (every part listed and present, relationships, style
 ids, element order). They give both writers hostile names: a leading `=`, `+`, `-` or `@`, a literal
@@ -75,7 +75,9 @@ named by format, and a month change dropping the request still in flight.
 By hand, the PDF was checked with `pdfinfo`, `pypdf` in strict mode and a visual review of each page,
 and the workbook with `openpyxl`'s strict reader, macOS Quick Look and a check of element order
 against the schema. The workbook has not been opened in Microsoft Excel, and neither file has been
-run on HCML's own data, because Docker was down. On the test report (138 devices, 14 sites) the PDF
+run on HCML's own data, because Docker was down. Later both were downloaded from the running portal on
+HCML's restored data (12 October: size, pages and sheets read; 15 October: a 200 in the BFF log); the
+workbook still has not been opened in Microsoft Excel. On the test report (138 devices, 14 sites) the PDF
 is about 10 pages and 69 KB and the workbook about 23 KB. In a fresh process the first PDF took about
 60 ms and later ones about 10 ms, measured on 2 October 2026 on the development laptop.
 
@@ -164,6 +166,6 @@ Availability page's buttons download this report, not that page's own table.
 * Follows [ADR-0004](0004-derive-the-sla-in-the-portal.md), whose figures it prints, and
   [ADR-0003](0003-no-database.md), which is why the files are built per request and kept nowhere
 * The dependency rule: [`contributing.md`](../../contributing.md), *Zero new dependencies*
-* `setup.md` §18 *The SLA report as a file*; `server/src/routes/sliExport.ts`, `server/src/export/`,
-  `web/src/components/ReportDownload.tsx`
+* `setup.md` §18 *The SLA report as a file*; `server/src/routes/sliExport.ts`, `server/src/services/sliExport.ts`, `server/src/export/`,
+  `web/src/features/sla/ReportDownload.tsx`
 * Contract: [`../../api/openapi.yaml`](../../api/openapi.yaml) → `GET /api/sli/export`

@@ -72,7 +72,7 @@ function splice(nodes: Node[]): Node[] {
 
 const source = file('nginx.conf');
 const apiSource = file('src/api.ts');
-const configSource = readFileSync(fileURLToPath(new URL('../config.ts', import.meta.url)), 'utf8');
+const configSource = readFileSync(fileURLToPath(new URL('../core/config.ts', import.meta.url)), 'utf8');
 const conf = splice(parse(source));
 const server = conf.find((n) => n.name === 'server') as Node;
 const locations = (server.children ?? []).filter((n) => n.name === 'location');

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * The CI workflow, .github/workflows/docs.yml, read as plain text.
+ * The CI workflow, .github/workflows/ci.yml, read as plain text.
  *
  * Nothing runs the workflow until it is pushed, and a step that quietly goes missing looks the same
  * as a step that passes. This reads the file for the things the checklist asked CI to do, and for
@@ -18,7 +18,7 @@ interface Step {
 }
 
 const root = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
-const text = readFileSync(root('.github/workflows/docs.yml'), 'utf8');
+const text = readFileSync(root('.github/workflows/ci.yml'), 'utf8');
 
 // A plain scalar ends at ` #`, as in YAML.
 const lines = text
@@ -74,10 +74,12 @@ function readJobs(): Record<string, { permissions: Record<string, string>; steps
 }
 
 const jobs = readJobs();
-const validate = jobs.validate?.steps ?? [];
+const serverSteps = jobs.server?.steps ?? [];
+const webSteps = jobs.web?.steps ?? [];
+const checkSteps = jobs.checks?.steps ?? [];
 const images = jobs.images?.steps ?? [];
 const secretScan = jobs.secrets?.steps ?? [];
-const all = [...validate, ...images, ...secretScan];
+const all = [...serverSteps, ...webSteps, ...checkSteps, ...images, ...secretScan];
 
 /** The step that runs `command` in `dir`, if any. A command may be followed by more arguments. */
 const runs = (steps: Step[], command: string | RegExp, dir?: string) =>
@@ -88,10 +90,25 @@ const runs = (steps: Step[], command: string | RegExp, dir?: string) =>
       (dir === undefined || s['working-directory'] === dir),
   );
 
-describe('.github/workflows/docs.yml', () => {
-  it('reads as three jobs, each with its steps', () => {
-    expect(Object.keys(jobs).sort()).toEqual(['images', 'secrets', 'validate']);
-    expect(validate.length).toBeGreaterThan(10);
+/** The checkers CI runs, as the scripts named in `package.json` at the root and in the workflow's `checks` job. */
+const CHECKERS = [
+  'tools/check/openapi.check.ts',
+  'tools/check/erd.check.ts',
+  'web/scripts/css.check.mjs',
+  'web/scripts/tokens.check.mjs',
+  'web/scripts/markdown.check.ts',
+  'web/scripts/units.check.ts',
+  'tools/check/links.check.mjs',
+  'tools/check/diagrams.check.mjs',
+  'tools/check/parity.check.mjs',
+];
+
+describe('.github/workflows/ci.yml', () => {
+  it('reads as five jobs, each with its steps', () => {
+    expect(Object.keys(jobs).sort()).toEqual(['checks', 'images', 'secrets', 'server', 'web']);
+    expect(serverSteps.length).toBeGreaterThan(5);
+    expect(webSteps.length).toBeGreaterThan(5);
+    expect(checkSteps.length).toBeGreaterThan(8);
     expect(images.length).toBeGreaterThan(2);
     expect(secretScan.length).toBeGreaterThan(1);
   });
@@ -145,30 +162,38 @@ describe('.github/workflows/docs.yml', () => {
   });
 
   describe('the checks the checklist asked for (IN-10)', () => {
-    it.each(['server', 'web'])('installs from the lockfile, audits and typechecks %s', (dir) => {
-      expect(runs(validate, 'npm ci', dir)).toBe(true);
-      expect(runs(validate, 'npm audit --omit=dev --audit-level=high', dir)).toBe(true);
-      expect(runs(validate, 'npm run typecheck', dir)).toBe(true);
-      expect(runs(validate, 'npm test', dir)).toBe(true);
-    });
-
-    it('lints and builds the web app, which also typechecks vite.config.ts', () => {
-      expect(runs(validate, 'npm run lint', 'web')).toBe(true);
-      expect(runs(validate, 'npm run build', 'web')).toBe(true);
-    });
-
     it.each([
-      'server/scripts/openapi.check.ts',
-      'server/scripts/erd.check.ts',
-      'web/scripts/css.check.mjs',
-      'web/scripts/tokens.check.mjs',
-      'web/scripts/markdown.check.ts',
-      'web/scripts/units.check.ts',
-      'web/scripts/links.check.mjs',
-      'web/scripts/diagrams.check.mjs',
-      'web/scripts/parity.check.mjs',
-    ])('runs %s', (script) => {
-      expect(runs(validate, new RegExp(`\\s${script.replace(/\./g, '\\.')}(\\s|$)`))).toBe(true);
+      ['server', serverSteps],
+      ['web', webSteps],
+    ] as const)('installs from the lockfile, audits, typechecks and tests %s', (dir, steps) => {
+      expect(runs(steps, 'npm ci', dir)).toBe(true);
+      expect(runs(steps, 'npm audit --omit=dev --audit-level=high', dir)).toBe(true);
+      expect(runs(steps, 'npm run typecheck', dir)).toBe(true);
+      expect(runs(steps, 'npm test', dir)).toBe(true);
+    });
+
+    it('builds the server and the web app, and lints the web app; the build also typechecks vite.config.ts', () => {
+      expect(runs(serverSteps, 'npm run build', 'server')).toBe(true);
+      expect(runs(webSteps, 'npm run lint', 'web')).toBe(true);
+      expect(runs(webSteps, 'npm run build', 'web')).toBe(true);
+    });
+
+    it('gives the checks job the server dependencies, which hold the tsx that runs the TypeScript checkers', () => {
+      expect(runs(checkSteps, 'npm ci', 'server')).toBe(true);
+    });
+
+    it.each(CHECKERS)('runs %s', (script) => {
+      expect(runs(checkSteps, new RegExp(`\\s${script.replace(/\./g, '\\.')}(\\s|$)`))).toBe(true);
+    });
+
+    it('lists the same checkers in package.json, so `npm run check` is what CI runs', () => {
+      const pkg = JSON.parse(readFileSync(root('package.json'), 'utf8')).scripts as Record<string, string>;
+      const named = Object.entries(pkg).filter(([key]) => key.startsWith('check:')).map(([, value]) => value).join(' && ');
+      for (const script of CHECKERS) expect(named, script).toContain(script);
+      // And nothing else: a checker added to one place and not the other is the drift this guards.
+      const found = [...named.matchAll(/\b((?:tools\/check|web\/scripts)\/[\w.-]+)/g)].map((m) => m[1]);
+      expect([...new Set(found)].sort()).toEqual([...CHECKERS].sort());
+      expect(pkg.check).toBe(Object.keys(pkg).filter((key) => key.startsWith('check:')).map((key) => `npm run ${key}`).join(' && '));
     });
 
     it('builds both Docker images without pushing them, and checks the nginx config in the web one', () => {
@@ -189,6 +214,16 @@ describe('.github/workflows/docs.yml', () => {
       }
     });
 
+    it('caches npm by the lockfile of the folder it installs, and no other', () => {
+      for (const job of [jobs.server, jobs.web, jobs.checks]) {
+        const setup = job.steps.find((s) => s.uses?.startsWith('actions/setup-node@'));
+        expect(setup).toBeDefined();
+      }
+      const caches = [...text.matchAll(/cache-dependency-path: (\S+)/g)].map((m) => m[1]);
+      expect(caches.sort()).toEqual(['server/package-lock.json', 'server/package-lock.json', 'web/package-lock.json']);
+      for (const path of caches) expect(existsSync(root(path)), path).toBe(true);
+    });
+
     it('only runs npm scripts that the package defines', () => {
       for (const s of all) {
         const m = /^npm (?:run (\S+)|(test))$/.exec(s.run ?? '');
@@ -200,7 +235,7 @@ describe('.github/workflows/docs.yml', () => {
 
     it('only runs scripts that exist', () => {
       for (const s of all) {
-        for (const m of (s.run ?? '').matchAll(/\b((?:server|web)\/scripts\/[\w.-]+)/g)) {
+        for (const m of (s.run ?? '').matchAll(/\b((?:server|web)\/scripts\/[\w.-]+|tools\/(?:check|live)\/[\w.-]+)/g)) {
           expect(existsSync(root(m[1])), `${s.name}: ${m[1]}`).toBe(true);
         }
       }

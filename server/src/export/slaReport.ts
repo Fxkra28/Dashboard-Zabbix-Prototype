@@ -1,4 +1,4 @@
-import { naturalCompare, type SiteRef } from '../naming.js';
+import { naturalCompare, type SiteRef } from '../domain/naming.js';
 import type { DataStatus, SliGroup, SliHost, SliReport } from '../sli/engine.js';
 import type { BarChart, Cell, Kpi, Note, ReportDoc, Table, Tone } from './types.js';
 
@@ -6,14 +6,14 @@ import type { BarChart, Cell, Kpi, Note, ReportDoc, Table, Tone } from './types.
  * The monthly SLA report as a ReportDoc (types.ts), built from the two derived
  * reports of one month: the strict one and HCML's method. Pure: no Zabbix, no
  * config and no clock but the one it is handed, so the same two reports always
- * give the same document. The wording is the SLA page's (components/Sli.tsx
- * and pages/Sla.tsx), so a report and the screen it came from say the same
+ * give the same document. The wording is the SLA page's (features/sla/Sli.tsx
+ * and features/sla/Sla.tsx), so a report and the screen it came from say the same
  * thing; export-sla-report.test.ts fails if a copied sentence drifts.
  */
 
 const NO_DATA = 'No data';
 
-/** Copied from web/src/components/Sli.tsx: the browser bundle cannot be imported here. */
+/** Copied from web/src/features/sla/Sli.tsx: the browser bundle cannot be imported here. */
 export const DERIVED_BANNER = 'Derived from ICMP availability triggers: Zabbix has no services configured';
 export const METHOD_NOTE =
   'HCML’s report counts only high ping loss, so a device that is completely down still counts as up; ' +

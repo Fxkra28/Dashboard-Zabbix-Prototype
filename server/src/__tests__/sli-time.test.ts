@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { currentMonth, monthBounds, monthOf, parseMonth, previousMonth } from '../sli/time.js';
-import { BadRequestError } from '../validate.js';
+import { BadRequestError } from '../core/validate.js';
 
 /**
  * HCML's reports cut months at midnight Asia/Jakarta (UTC+7). An event at

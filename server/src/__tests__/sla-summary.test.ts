@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../routes/sli.js', () => ({ getMonthlySli: vi.fn() }));
+vi.mock('../services/sli.js', () => ({ getMonthlySli: vi.fn() }));
 vi.mock('../sli/tree.js', () => ({ getDerivedServices: vi.fn() }));
-import { getMonthlySli } from '../routes/sli.js';
+import { getMonthlySli } from '../services/sli.js';
 import { getDerivedServices } from '../sli/tree.js';
 import { derivedServiceLines, derivedSlaLines } from '../sli/summary.js';
 

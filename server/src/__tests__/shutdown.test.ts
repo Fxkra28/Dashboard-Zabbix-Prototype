@@ -4,12 +4,13 @@ import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { SHUTDOWN_TIMEOUT_MS, installShutdown } from '../shutdown.js';
-import { connectedClients, streamRoutes } from '../routes/stream.js';
-import { invalidate } from '../cache.js';
+import { SHUTDOWN_TIMEOUT_MS, installShutdown } from '../http/shutdown.js';
+import { streamRoutes } from '../routes/stream.js';
+import { connectedClients } from '../services/stream.js';
+import { invalidate } from '../core/cache.js';
 
 /** SIGTERM and SIGINT close the BFF. The signals come from a stand-in emitter, never the real process. */
-vi.mock('../queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
+vi.mock('../domain/queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
 
 const logger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 const fakeApp = (close: () => Promise<void>) => ({ log: logger(), close: vi.fn(close) }) as unknown as FastifyInstance & {
@@ -153,7 +154,7 @@ describe('index.ts', () => {
     const listen = code.indexOf('await app.listen(');
     expect(listen).toBeGreaterThan(-1);
     expect(callAt('installShutdown(app)')).toBeGreaterThan(listen);
-    expect(code).toMatch(/import \{[^}]*\binstallShutdown\b[^}]*\} from '\.\/shutdown\.js';/);
+    expect(code).toMatch(/import \{[^}]*\binstallShutdown\b[^}]*\} from '\.\/http\/shutdown\.js';/);
   });
 
   it('starts the first readiness check once the server is listening, on the check /api/health serves', () => {

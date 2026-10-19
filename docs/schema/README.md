@@ -81,7 +81,7 @@ npx @mermaid-js/mermaid-cli -i ERD.mmd -o ERD.pdf -w 2600 -b white --pdfFit
 npx @mermaid-js/mermaid-cli -i PDM.mmd -o PDM.pdf -w 2600 -b white --pdfFit
 ```
 
-Then run `node web/scripts/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`web/scripts/diagrams.check.mjs`).
+Then run `node tools/check/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`tools/check/diagrams.check.mjs`).
 
 `--pdfFit` sizes the page to the chart; without it the diagram is squeezed onto A4 and unreadable. For a
 raster copy to paste into slides, swap the output for `.png` and add `-s 2`.

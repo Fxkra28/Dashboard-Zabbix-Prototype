@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { api } from '../api';
-import { reportTimeZone, setReportTimeZone } from '../lib/time';
+import { reportTimeZone, setReportTimeZone } from '../shared/lib/time';
 
 /**
  * main.tsx asks /api/health once at load, so a page that never
@@ -9,7 +9,7 @@ import { reportTimeZone, setReportTimeZone } from '../lib/time';
  */
 
 vi.mock('../App', () => ({ default: () => null }));
-vi.mock('../components/ErrorBoundary', () => ({ reloadOnStaleChunks: vi.fn() }));
+vi.mock('../features/shell/ErrorBoundary', () => ({ reloadOnStaleChunks: vi.fn() }));
 
 afterEach(() => {
   setReportTimeZone(undefined);

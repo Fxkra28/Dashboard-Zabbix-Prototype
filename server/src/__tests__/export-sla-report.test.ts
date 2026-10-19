@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { naturalCompare } from '../naming.js';
+import { naturalCompare } from '../domain/naming.js';
 import { aggregate, type SliHost, type SliReport } from '../sli/engine.js';
 import { DERIVED_BANNER, METHOD_NOTE, buildSlaReportDoc, durationText, percentText, reportFileBase } from '../export/slaReport.js';
 import type { Cell, ReportDoc, Table, Tone } from '../export/types.js';
@@ -1171,9 +1171,10 @@ describe('the notes', () => {
 describe('wording shared with the SLA page', () => {
   /** The browser bundle cannot be imported here, so the page's source is read for the sentences it was copied from. */
   const web = new URL('../../../web/src/', import.meta.url);
-  const sliSource = new URL('components/Sli.tsx', web);
-  const slaSource = new URL('pages/Sla.tsx', web);
-  const present = existsSync(sliSource) && existsSync(slaSource);
+  const sliSource = new URL('features/sla/Sli.tsx', web);
+  const slaSource = new URL('features/sla/Sla.tsx', web);
+  // Only a build context without the web folder skips these. A web folder that lacks the files means they moved, and that fails.
+  const present = existsSync(web);
 
   /** The text of `export const NAME = 'a' + 'b';` */
   const literal = (source: string, name: string): string => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createGate } from '../gate.js';
+import { createGate } from '../core/gate.js';
 
 /** At most `limit` jobs at once, the rest in order, and a failure gives its place back. */
 

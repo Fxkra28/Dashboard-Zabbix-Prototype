@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { assertConfig, config, writeBackEnabled } from '../config.js';
-import { hostAllowed, hostnameOf, registerHostCheck } from '../hostCheck.js';
+import { assertConfig, config, writeBackEnabled } from '../core/config.js';
+import { hostAllowed, hostnameOf, registerHostCheck } from '../http/hostCheck.js';
 import { buildTestApp } from './helpers/app.js';
 
 /**
@@ -13,8 +13,8 @@ import { buildTestApp } from './helpers/app.js';
  * this machine is answered.
  */
 const { zbxWriteMock } = vi.hoisted(() => ({ zbxWriteMock: vi.fn() }));
-vi.mock('../zabbix.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../zabbix.js')>()),
+vi.mock('../clients/zabbix.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../clients/zabbix.js')>()),
   zbxWrite: zbxWriteMock,
 }));
 
@@ -237,7 +237,7 @@ describe('ALLOW_WRITE_WITHOUT_AUTH', () => {
   async function optIn(value: string | undefined) {
     vi.resetModules();
     vi.stubEnv('ALLOW_WRITE_WITHOUT_AUTH', value);
-    return (await import('../config.js')).config.auth.allowWriteWithoutAuth;
+    return (await import('../core/config.js')).config.auth.allowWriteWithoutAuth;
   }
 
   it('is off when unset, empty or anything but "true"', async () => {

@@ -28,9 +28,9 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 | Run it | [`getting-started.md`](getting-started.md) |
 | Back it up, or restore it | [`operations/backup-and-restore.md`](operations/backup-and-restore.md) |
 | Reach it from another machine | [`operations/tls.md`](operations/tls.md): TLS in front, with HSTS |
-| Call it | [`api/openapi.yaml`](api/openapi.yaml), 43 endpoints · [how to view it](api/README.md) |
+| Call it | [`api/openapi.yaml`](api/openapi.yaml), 45 endpoints · [how to view it](api/README.md) |
 | Download the monthly SLA report | [`../README.md`](../README.md#download-the-sla-report) for the buttons and the endpoint, [`../setup.md`](../setup.md) §18 for how the files are built |
-| Understand why it is shaped this way | [`architecture/adr/`](architecture/adr/): twelve decisions |
+| Understand why it is shaped this way | [`architecture/adr/`](architecture/adr/): thirteen decisions |
 | See how it works | [`architecture/`](architecture/): diagrams and the subsystem index |
 | See what it looks like | [`screenshots/README.md`](screenshots/README.md): the main pages as images, with every name replaced |
 | See who uses it | [`ux/README.md`](ux/README.md): the three roles and the acknowledge journey, derived from the code |
@@ -42,8 +42,8 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 
 | | |
 |---|---|
-| Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1026 tests, linted with eslint |
-| Back end | Fastify 5 + TypeScript on Node 24. 20 route modules, 43 endpoints, 1622 tests |
+| Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1132 tests, linted with eslint |
+| Back end | Fastify 5 + TypeScript on Node 24. 22 route modules, 45 endpoints, 1670 tests |
 | Data source | The Zabbix JSON-RPC API. Nothing else: no database, no volumes, no data files |
 | Writes | Exactly one: acknowledge/close, behind a separate token and the operator role |
 | Downloads | The monthly SLA report as a PDF or an Excel file, built when asked from the cached figures and never stored |
@@ -68,14 +68,19 @@ shows is a snapshot of that moment. [ADR-0008](architecture/adr/0008-stop-local-
 
 ```
 README.md                  install, configure, run
-setup.md                   34 sections, one per subsystem: the deep reference
+setup.md                   the index of the deep reference: 35 parts, one per subsystem, in docs/setup/
 AUDIT_REPORT.md            what two audits found, and what is still open
+tracker.md                 every row of work and its state; the history of the changes is in CHANGELOG.md
+package.json               the root scripts: `npm run verify` runs every check
+tools/                     check/ (the repository against itself) and live/ (tools that read a running portal)
+LICENSE  SECURITY.md       the terms the code is shared on, and how to report a vulnerability
 docs/
   index.md                 this file
   getting-started.md
   contributing.md          the house rules, and why each one exists
-  api/openapi.yaml         the contract: 43 endpoints
-  architecture/adr/        why it is the way it is: 11 decisions
+  setup/                   the deep reference, one file for each subsystem (indexed by setup.md)
+  api/openapi.yaml         the contract: 45 endpoints
+  architecture/adr/        why it is the way it is: 13 decisions
   schema/  flow/  erd/     the diagrams; erd/erd.md is the data model in prose
   screenshots/             the main pages as images, with host names, addresses and interface descriptions replaced
   ux/                      who uses it: the three roles and the acknowledge journey (derived, not interviewed)
@@ -83,7 +88,7 @@ docs/
 deploy/
   settings.example         every non-secret setting and its default, versioned
 .github/
-  workflows/docs.yml       typechecks, web lint, both test suites, the web build, the nine checkers, npm audit, a secret scan, both Docker builds
+  workflows/ci.yml         five jobs: server, web, the nine checkers, a secret scan, both Docker builds
   dependabot.yml           weekly pull requests for the actions, the npm packages and the base images
 ```
 

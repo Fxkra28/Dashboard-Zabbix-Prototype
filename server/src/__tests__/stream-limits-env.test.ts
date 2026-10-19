@@ -6,7 +6,7 @@ afterEach(() => vi.unstubAllEnvs());
 async function streamLimits(env: Record<string, string>) {
   vi.resetModules();
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
-  return (await import('../config.js')).config.stream;
+  return (await import('../core/config.js')).config.stream;
 }
 
 describe('config.stream', () => {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { tokenClaims } from '../auth.js';
+import { tokenClaims } from '../security/auth.js';
 
 /**
  * What docker-compose.yml hands the container for sign-in: no secret of its own and no password of
