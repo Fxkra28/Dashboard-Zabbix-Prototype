@@ -10,18 +10,30 @@ these add the other two, plus response time.
 
 Zabbix stores events; turning them into uptime is arithmetic it doesn't do. The BFF replays history:
 
-1. `event.get` for PROBLEM events in the window (severity-filtered).
-2. Each carries `r_eventid`; those recovery events are fetched in one batch for their clocks.
-3. Each problem becomes an interval, clipped to the window; still-open ones run to *now*.
-4. Overlapping intervals are merged per host: two simultaneous problems are one outage, not
+1. `event.get` for PROBLEM events in the window (severity-filtered), read in slices that halve until
+   none holds a full page, so a busy month is never a silently cut list. The same for the 31 days
+   before it, and `problem.get` for every problem still open now, whatever its age.
+2. Each carries `r_eventid`; the window's recovery events are read once, and any other recovery is
+   fetched by id in batches of 2,000 for its clock.
+3. An outage that began before that look-back and ended inside the window is found from the other
+   end (BK-04). A recovery event carries no link to its problem, so the first recovery of each trigger
+   that no known problem explains is followed back: the trigger's last problem before the look-back
+   is asked for, and kept when it names that recovery. Zabbix gives a recovery severity 0 whatever the
+   trigger's priority, so the severity floor is applied to the triggers, not to the recoveries.
+4. Each problem becomes an interval, clipped to the window; still-open ones run to *now*.
+5. Overlapping intervals are merged per host: two simultaneous problems are one outage, not
    two. Without this, availability can go *negative*, which is the trap here.
+
+All of it is `fetchIncidents()` in [`services/incidents.ts`](../../server/src/services/incidents.ts).
 
 Availability is then *"share of the period with no open problem at or above the chosen severity"*,
 and the page says exactly that, because it isn't the same thing as ICMP uptime.
 
-> The read is bounded (`EVENT_LIMIT`, 10 000) and sets `truncated: true` when the window filled a
-> page, and the UI then labels the figures a floor. Silently understating downtime while looking
-> authoritative would be worse than saying so.
+> The look for older outages is bounded: at most 200 triggers (`LONG_OUTAGE_LOOKUPS`). Past that the
+> report sets `truncated: true`, and the UI labels the figures a floor. Silently understating downtime
+> while looking authoritative would be worse than saying so. (A window so dense that one second holds
+> a full page of events is refused with an error rather than reported on.) Still missed: a problem
+> that began before the look-back and was resolved after the window ended.
 
 ## Action aging: `/api/reports/aging`
 
@@ -155,7 +167,7 @@ What the files leave out.
   Cyrillic or Chinese would show as a row of question marks. Accents and curly quotes print as
   written. The PDF is not PDF/A and is not tagged for screen readers.
 - The workbook has no chart. The same figures are in its tables.
-- There is no CSV, and no scheduled or emailed report.
+- There is no CSV of this report (the Alert noise page, the Inventory scorecard and the Graphs page's Show data have one each), and no scheduled or emailed report.
 - A group row's downtime adds up the downtime of all the group's devices, including devices with too
   little data to score. Those devices are left out of the group's average but not out of its
   downtime. `aggregate()` in `server/src/sli/engine.ts` does this and the SLA page shows the same

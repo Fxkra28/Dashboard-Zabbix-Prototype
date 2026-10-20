@@ -54,7 +54,9 @@ explicit rather than a matter of `app.use` call order.
 
 * Two build toolchains to keep working, and two `node_modules` trees.
 * **The type mirror is hand-maintained.** `web/src/types/` is not generated, and it has already
-  drifted: in six places it declares a field optional that the server always sends. Nothing checks it.
+  drifted: in six places it declares a field optional that the server always sends. Since 19 October
+  (FR-16) a test holds it to the OpenAPI file in one direction, which catches a page asking more of an
+  answer than the file promises, and not these six places, nor a server that stops matching the file.
 * A TypeScript/Node stack is a second language in a shop whose monitoring system is PHP. If HCML's
   team is PHP-first, this is a handover cost that was accepted rather than solved.
 * ECharts is large. It is imported selectively to keep the bundle down, which is a rule someone has

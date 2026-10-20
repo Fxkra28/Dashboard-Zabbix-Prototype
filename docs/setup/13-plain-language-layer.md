@@ -21,11 +21,12 @@ Browser ──/bff/api/explain/* ──► BFF ──► getProblems() / sla.get
 ```
 
 [`ai.ts`](../../server/src/clients/ai.ts) is the exact mirror of [`zabbix.ts`](../../server/src/clients/zabbix.ts): the
-credential is read from `config` and never reaches the browser, and the transport matches too:
-both hand-roll one `fetch` rather than taking a dependency for a single POST.
+credential is read from `config` and never reaches the browser, and the transport matches for the local
+backend: one hand-rolled `fetch` rather than a dependency for a single POST. The hosted backend uses
+Anthropic's SDK, as the table below says.
 
-`humanize()` is the only export. It picks a backend from `AI_PROVIDER`, hands both the *same* system
-prompt, instructions and JSON Schemas, and returns the parsed result:
+`humanize()` is the one function the explain routes call. It picks a backend from `AI_PROVIDER`, hands both the *same* system
+prompt, instructions and JSON Schemas, and returns the parsed result (the rest of `ai.ts` serves the assistant: the stream readers, the model slots and the warm-up):
 
 | Backend | Transport | "obey this schema" is spelled |
 |---|---|---|

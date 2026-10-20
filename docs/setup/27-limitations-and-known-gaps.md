@@ -16,7 +16,7 @@ not discovered by a reader.
 |---|---|
 | **It cannot collect anything** | Zabbix polls; the portal reads items. If Zabbix does not collect it, no portal feature can invent it |
 | **It cannot change monitoring** | One write exists, `event.acknowledge`. No host, item, trigger or template can be created, edited or deleted. See [ADR-0006](../architecture/adr/0006-read-only-with-one-write.md) |
-| **It remembers nothing** | Every derived value dies on restart. There is no audit trail of who acknowledged what, no saved views, no user table: [ADR-0003](../architecture/adr/0003-no-database.md) |
+| **It remembers nothing** | Every derived value dies on restart. The portal keeps no audit trail of its own (who acknowledged what is in the text Zabbix stores, `[portal:<user>]`, and in the BFF's log), no saved views, no user table: [ADR-0003](../architecture/adr/0003-no-database.md) |
 | **It cannot see past Zabbix's retention** | 31 days of raw history, 365 days of trends and events. A two-year question has no answer through this API |
 
 ## Goals only partly met
@@ -78,7 +78,10 @@ not discovered by a reader.
 - Hourly averages are integer-truncated for unsigned items by Zabbix itself, in `trends_uint`.
   Nothing downstream can recover the precision.
 - `web/src/types/` is a hand-maintained mirror of the server's types, and in six places it is
-  looser than the server. Nothing checks it. The server is authoritative.
+  looser than the server. Since 19 October a test holds it to `docs/api/openapi.yaml` in one
+  direction (FR-16: the app may not ask more of an answer than the file promises), and the file was
+  corrected against the server's own types and tried on 40 real answers. Nothing compares the file's
+  schemas with what the server sends, and nothing checks the six places. The server is authoritative.
 
 ## Documentation
 

@@ -1,6 +1,6 @@
 # Conceptual model: HCML Monitoring Portal
 
-The top of three levels. This one answers *what does the business talk about*: 26 entities and 33
+The top of three levels. This one answers *what does the business talk about*: 27 entities and 34
 associations, with no keys, no foreign keys and no types, because a conceptual model has none of those.
 The level below it, [`../vanilla/ERD-Domains.md`](../vanilla/ERD-Domains.md), answers *what does the portal
 read and derive*; the one below that, [`../database/ERD-Database.md`](../database/ERD-Database.md), answers
@@ -11,8 +11,8 @@ The single diagram is [`ERD-Conceptual.mmd`](ERD-Conceptual.mmd), pre-rendered a
 **Where it comes from.** Not from a schema: a conceptual entity is a judgement, not a generated artefact.
 Each one here was read out of the code and the two lower models together, and every cardinality is either
 checked against a foreign key in the physical model or, where there is no table at all, cited to the
-function that computes it. The 19 associations with a schema counterpart are listed with it; the 7 that have
-none are marked *conceptual only*.
+function that computes it. Each association's evidence is in the last column of the table below; the ones that have
+no counterpart in the schema are marked *conceptual only*, and counted under that table.
 
 **Why it merges things the other models separate.** Nobody at HCML says "a host interface", they say "the
 switch's management address". So `HOST`, `HOST_INTERFACE`, `HOST_INVENTORY` and `HOST_TAG`, four entities in
@@ -34,7 +34,7 @@ drawn at all. Map links (R30) are the visible casualty: Merise cannot associate 
 between two map elements is drawn device-to-device with the map scope stated in words instead.
 
 > This document is shared by both portals, byte for byte, as is the diagram it describes. They run one
-> source tree; only `.env` and the published port differ.
+> source tree; the running portals differ only in `.env`, the compose file and the published port.
 
 To regenerate the renders after editing the `.mmd`:
 
@@ -46,7 +46,7 @@ npx @mermaid-js/mermaid-cli -i ERD-Conceptual.mmd -o ERD-Conceptual.png -w 2600 
 Then run `node tools/check/diagrams.stamp.mjs` from the repo root. It records which source each render was made from, and CI fails on a source edited after its stamp (`tools/check/diagrams.check.mjs`).
 
 `LR`, not `TB`. A Merise graph puts an extra node on every edge, so its longest path is about double the
-logical model's: `TB` came out 3712 × 16590, a 1:4.5 tower. `LR` is 5168 × 1348. Even so the single canvas
+logical model's: `TB` came out 3712 × 16590, a 1:4.5 tower. `LR` is 5168 × 1286. Even so the single canvas
 is a reference sheet, not a reading diagram. Read the six domain views below instead.
 
 ---
@@ -63,7 +63,7 @@ config:
 ---
 flowchart LR
     EST["Estate<br>4 entities"]
-    MEAS["Measurement<br>4"]
+    MEAS["Measurement<br>5"]
     ALERTING["Alerting<br>4"]
     SITES["Sites &amp; paths<br>3"]
     LEVELS["Service levels<br>5"]
@@ -78,7 +78,7 @@ flowchart LR
     LEVELS --- GOV
 ```
 
-Every domain touches Estate, because Device is the hub: nine of the 33 associations have a Device leg.
+Every domain touches Estate, because Device is the hub: nine of the 34 associations have a Device leg.
 That is also why the single canvas is a hairball and these six views are not.
 
 | Conceptual domain | Logical domains it covers ([`../vanilla/ERD-Domains.md`](../vanilla/ERD-Domains.md)) |
@@ -134,7 +134,7 @@ flowchart TB
 Host State is an entity, not a property of Device. The portal answers "is it down?" ping first, because
 on 17 September 2026 sixteen of HCML's twenty-three devices marked *unavailable* by Zabbix answered ping,
 and forty-three devices had no interface at all. The verdict is five states and eight reasons with a
-documented precedence (`server/src/domain/reachability.ts:19,22,158-181`), which is more than an attribute can
+documented precedence (`server/src/domain/reachability.ts:17,20-28,186-230`), which is more than an attribute can
 carry. No existing ERD covers it.
 
 ***stations* carries the site signal, and that is why it is an association and not a foreign key.** A
@@ -160,12 +160,14 @@ flowchart TB
     OBSERVATION["<b>OBSERVATION</b><br>moment<br>value<br>minimum<br>mean<br>maximum<br>sample count"]
     INTERFACE_READING["<b>INTERFACE READING</b><br>port index<br>port name<br>alias<br>operational status<br>speed<br>bits in<br>bits out<br>utilisation<br>errors<br>discards<br>last collected"]
     CAPACITY_READING["<b>CAPACITY READING</b><br>metric<br>average<br>maximum<br>unit"]
+    INTERNET_METER["<b>INTERNET METER</b><br>title<br>direction<br>capacity<br>colour zones<br>current reading<br>when read<br>share of capacity<br>zone<br>link up or down<br>reading state"]
 
     R_CARRIES{"carries"}
     R_RECORDS{"records"}
     R_EXPOSES{"exposes"}
     R_SUMS{"sums up"}
     R_EVIDENCE{"derives from"}
+    R_READS{"reads"}
 
     DEVICE           ---|"(0,n)"| R_CARRIES
     R_CARRIES        ---|"(1,1)"| MEASUREMENT
@@ -177,6 +179,8 @@ flowchart TB
     R_SUMS           ---|"(1,1)"| CAPACITY_READING
     CAPACITY_READING ---|"(1,1)"| R_EVIDENCE
     R_EVIDENCE       ---|"(0,n)"| OBSERVATION
+    INTERNET_METER   ---|"(0,n)"| R_READS
+    R_READS          ---|"(0,n)"| MEASUREMENT
 
     classDef zbx     fill:#dbeafe,stroke:#2563eb,color:#14213d
     classDef derived fill:#dcfce7,stroke:#16a34a,color:#052e16
@@ -184,10 +188,10 @@ flowchart TB
     classDef stub    fill:#f8fafc,stroke:#cbd5e1,color:#64748b
 
     class MEASUREMENT,OBSERVATION zbx
-    class CAPACITY_READING,INTERFACE_READING derived
+    class CAPACITY_READING,INTERFACE_READING,INTERNET_METER derived
     class DEVICE stub
     class R_CARRIES,R_EVIDENCE,R_EXPOSES,R_RECORDS assoc
-    class R_SUMS assoc
+    class R_READS,R_SUMS assoc
 ```
 
 Observation is one entity at two granularities. The physical model has seven tables: five `history_*`
@@ -206,6 +210,17 @@ trends, or none at all. The same capacity figure means different things dependin
 source belongs to the association (`server/src/services/capacity.ts:161-177`).
 
 **Interface Reading is absent from every existing ERD** (`server/src/services/net.ts:7-14,39-54`).
+
+**Internet Meter was added on 20 October 2026**, for what the Dashboard's Internet traffic view draws
+(`server/src/services/meters.ts`). It is what HCML's own Zabbix dashboard already shows as a gauge, plus the
+portal's reading of it: the capacity and colour zones are the widget's, the value, the zone, the share of the
+capacity and the state are the portal's. A meter *reads* up to three Measurements of one interface: the item
+the gauge points at, the item of the same interface the other way (so that a link which is busy only on its
+upload can say so), and the interface's status item (so that a link which is down is not shown as idle). The
+role each plays is the property of the association, and it is many-to-many because one item can be the main
+reading of one meter and the other direction of another. Only the first has a key in Zabbix's schema
+(`widget_field.value_itemid`), and the dashboard tables are not among the 45 drawn in the physical model, so the
+association is *conceptual only* here, as the other two roles are found by item key and have no key at all.
 
 ---
 
@@ -466,7 +481,7 @@ never leaves the portal; Zabbix has no idea it exists.
 
 `O` observed · `D` derived · `L` local. "Merges" names what this entity absorbs from
 [`../vanilla/ERD-Domains.md`](../vanilla/ERD-Domains.md); an entity that merges nothing is earning nothing
-at this level, and there are only four of those.
+at this level, and the rows with a single name in the last column are the ones to question.
 
 | Entity | | Merges, or where it comes from |
 |---|---|---|
@@ -477,6 +492,7 @@ at this level, and there are only four of those.
 | Measurement | O | `ZBX_ITEM` + `ITEM_TAG` |
 | Observation | O | `ZBX_HISTORY` + `ZBX_TREND`: one concept, two granularities |
 | Interface Reading | D | `services/net.ts`, `InterfaceRow` + `OperStatus`. New |
+| Internet Meter | D | `METER` and the dashboard gauge widget it is drawn from (`services/meters.ts`). New |
 | Capacity Reading | D | `CAPACITY_ROW` |
 | Alert Rule | O | `ZBX_TRIGGER` |
 | Alert | O | `ZBX_EVENT` / `PROBLEM` + `PROBLEM_TAG` |
@@ -504,7 +520,10 @@ The response envelopes, `SITES_RESPONSE`, `LINKS_RESPONSE`, `SERVICES_RESPONSE`,
 because HTTP needs one object per response. `STATS` and `GROUP_PROBLEMS` are counters. `AGING_BUCKET` and
 `TOP_TRIGGER` are presentations of Alert and Alert Rule. `SITE_HOST` is *stations* (R2), `HOST_GAP` is
 *lacks* (R28), `GROUP_SCORE` is *lacks* counted per group, and `MAP_ELEMENT` is *shows* (R29): all
-associations, none of them things. `MAP_SELEMENT` and `MAP_LINK` disappear for the same reason.
+associations, none of them things. `MAP_SELEMENT` and `MAP_LINK` disappear for the same reason. `TOP_HOST`
+is a presentation of Device and Measurement (the busiest by CPU and by memory), `WEB_SCENARIO` is a Measurement
+of a device read as passed, failed or not known, and the tiles of the Devices page and the counts of the
+Dashboard's Hosts view are counters, like `STATS`.
 
 ---
 
@@ -519,7 +538,7 @@ the physical model where a foreign key backs the cardinality, and the code where
 | R1 | Device | (1,n) | belongs to | (0,n) | Device Group | M:N: a link table with a key on both sides |
 | R2 | Site | (1,n) | stations | (1,1) | Device | carries the signal · conceptual only, `services/sites.ts:83-104` |
 | R3 | Device Class | (0,n) | classes | (1,1) | Device | conceptual only, `naming.ts`, total, defaults to *other* |
-| R4 | Device | (1,1) | reaches | (1,1) | Host State | conceptual only, `reachability.ts:158`, total, disabled devices included |
+| R4 | Device | (1,1) | reaches | (1,1) | Host State | conceptual only, `reachability.ts:207-230`, total, disabled devices included |
 | R5 | Device | (0,n) | carries | (1,1) | Measurement | a NOT NULL foreign key |
 | R6 | Measurement | (0,n) | records | (1,1) | Observation | no foreign key on purpose. See Measurement above |
 | R7 | Device | (0,n) | exposes | (1,1) | Interface Reading | conceptual only, `services/net.ts:57-63`, SNMP devices only |
@@ -549,10 +568,11 @@ the physical model where a foreign key backs the cardinality, and the code where
 | R31 | Assistant Snapshot | (0,n) | summarises | (0,n) | Site, Alert, Derived Service Node | M:N, carries the section budget and the cut flag |
 | R32 | Conversation Turn | (1,1) | answers from | (0,n) | Assistant Snapshot | (0,n) because a snapshot is frozen for five minutes |
 | R33 | Explanation | (1,1) | explains | (0,1) | Alert, Service Agreement | (0,1): only a currently-open problem can be explained |
+| R34 | Internet Meter | (0,n) | reads | (0,n) | Measurement | M:N, carries the role (the gauge's own item, the other direction, or the status) · conceptual only, `services/meters.ts` |
 
-Ten are many-to-many: R1, R10, R20, R21, R22, R25, R28, R29, R30, R31. Five carry properties of their own:
-R2, R9, R18, R29, R31. Seven are conceptual only, with no counterpart in the schema: R2, R3, R4, R7, R13,
-R18, and the derived half of R25.
+Eleven are many-to-many: R1, R10, R20, R21, R22, R25, R28, R29, R30, R31, R34. Six carry properties of their own:
+R2, R9, R18, R29, R31, R34. Eight are conceptual only, with no counterpart in the schema: R2, R3, R4, R7, R13,
+R18, R34, and the derived half of R25.
 
 ---
 
@@ -574,6 +594,7 @@ So, concretely: a change to any of these obliges a change here.
 | `server/src/sli/tree.ts`: the node kinds | Derived Service Node, R26, R27 |
 | `server/src/services/assistantSnapshot.ts`: the caps, the freeze or the sections | Assistant Snapshot, R31, R32 |
 | `server/src/services/inventory.ts`: the dimensions | Governance Dimension, R28 |
+| `server/src/services/meters.ts`: what a meter reads, or the states it can be in | Internet Meter, R34 |
 | A new Zabbix API method in `server/src/clients/zabbix.ts` | Whether a new entity is observed rather than derived |
 
 And the other direction: nothing here should be added because the code grew a type. A new interface is a

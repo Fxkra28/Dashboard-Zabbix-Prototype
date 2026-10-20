@@ -7,7 +7,8 @@ Fastify's own client errors can come back from any POST and are not repeated per
 parser for (anything but JSON and plain text).
 
 It was written by reading `server/src`, not by transcribing the endpoint table in `setup.md` §5. That
-table is a useful reading aid and it has drifted twice; this file is checked.
+table is a useful reading aid and it has drifted twice; this file is checked, and since 20 October 2026 the table is too:
+`tools/check/facts.check.mjs` fails when an endpoint here has no row there, or a row names one that is not here.
 
 ## Viewing it without installing anything
 

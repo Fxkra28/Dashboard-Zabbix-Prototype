@@ -303,8 +303,8 @@ export default function Overview() {
 
                   <div className="grid two-col">
                     <div className="panel">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h2 style={{ margin: 0 }}>Live problems</h2>
+                      <div className="panel-head">
+                        <h2>Live problems</h2>
                         <span className="live-status">
                           {shownAt !== null && <span className="live-age">Updated {clockTime(shownAt)}</span>}
                           {/* Announced on a change of state only; the visible label's minute count would be read out every minute. */}

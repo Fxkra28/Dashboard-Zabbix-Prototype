@@ -36,6 +36,9 @@ than recovered. Terms are the ones this project uses in a specific way.*
 | Coverage | The fraction of an interval in which an item actually collected data. Distinguishes "up" from "we were not looking" |
 | Basis | The declared rules behind a figure, which triggers count, how gaps and no-data are treated. Present in every SLI response so two numbers can be compared honestly |
 | Data status | Whether a figure rests on real measurement, partial measurement, or none |
+| Device kind | One of eight kinds a host is put in from its template and its name: switches, firewalls, access points, radio repeaters, servers, WAN links, web services, other. The Devices page and the Dashboard's Hosts view count by it, and so does the SLA report |
+| Meter | One gauge of the Dashboard's Internet traffic view. It is drawn from a gauge widget of HCML's own Zabbix dashboard, with the capacity and colour zones the widget gives, the item's last value (or its last row in history), the zone as a word, and whether the interface behind it is up |
+| Wall | The Dashboard drawn for a screen nobody can click (`?wall=1`): it turns between its views by itself, and is drawn at the scale that fits the window. Also called wall mode |
 
 ## Project vocabulary
 
@@ -48,3 +51,6 @@ than recovered. Terms are the ones this project uses in a specific way.*
 | The Assistant | The conversational page. Sends the whole estate snapshot, streamed, never cached |
 | Stale-while-revalidate | Serving an expired cached value instantly while refreshing behind it. Allowed on four report families, never on problem or acknowledgement state |
 | Write-back | The single acknowledge/close path. Off unless `ZABBIX_WRITE_TOKEN` is set |
+| Guard | A hand-written run-time check that an answer from the BFF has the shape a page relies on (`web/src/guards/`). A mismatch becomes the page's ordinary error message, not a blank page |
+| Generated types | `web/src/generated/openapi.ts`, made from `docs/api/openapi.yaml` by `npm run gen:api`. A test makes the typecheck fail where the file promises less than the app's own types need |
+| Layers | The server's direction of import: `index.ts`, then `routes/`, then `services/`, then the shared folders. A test fails on a file that breaks it ([ADR-0013](../architecture/adr/0013-layers-features-and-tools.md)) |

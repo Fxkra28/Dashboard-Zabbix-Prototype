@@ -27,10 +27,11 @@ New to the abbreviations? Every one used in this file is explained in the
 
 ![Sites: one card per site, with its problems by severity and how many devices are down](docs/screenshots/sites.png)
 
-![Graphs: one item over a calendar month, with its minimum, average, maximum and last values and a Show data button](docs/screenshots/graphs.png)
+![Graphs: one item over a calendar month, with its minimum, average, maximum and last values and the Show data and Download CSV buttons](docs/screenshots/graphs.png)
 
-Host names, addresses and interface descriptions in these images are stand-ins; the counts, severities,
-times and site names are real. The dark theme, the narrow-screen layout and the Network page (every device
+Host names, addresses, interface descriptions and meter titles in these images are stand-ins; the counts,
+severities, times and site names are real. The Dashboard's Hosts and Internet traffic views, the Devices page,
+Show data with its CSV download, the dark theme, the narrow-screen layout and the Network page (every device
 reads "No data" there, because the Zabbix server of this restored copy is off) are in
 [`docs/screenshots/`](docs/screenshots/README.md), with how the names were replaced.
 
@@ -83,9 +84,9 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 
 | Piece | Version | What it does here |
 |---|---|---|
-| Node | 24 LTS (`node:24.11-alpine`, pinned by digest) | Picked for native `fetch` and `AbortSignal.timeout`. The Zabbix client is 174 lines and the model client a few hundred, both written straight onto them, so there is no HTTP-client dependency at all |
+| Node | 24 LTS (`node:24.11-alpine`, pinned by digest) | Picked for native `fetch` and `AbortSignal.timeout`. The Zabbix client is about 170 lines and the model client about 750, both written straight onto them, so there is no HTTP-client dependency at all |
 | TypeScript | ^5.9 | ESM throughout: `"type": "module"`, `NodeNext` resolution, ES2022 target, `strict: true`. Tests live under `src/` (same imports as the code) but are excluded from the shipped `dist/` and typechecked by a second config |
-| Fastify | ^5.12 | Plugin-scoped hooks are the reason the RBAC guard is a single `onRequest` at the root rather than a check repeated in every handler. 18 route modules register onto it → 40 endpoints, plus health, login, `/api/auth/me`, `/api/auth/refresh` and `/api/auth/logout` |
+| Fastify | ^5.12 | Plugin-scoped hooks are the reason the RBAC guard is a single `onRequest` at the root rather than a check repeated in every handler. 22 route modules register onto it → 39 endpoints, and `security/auth.ts` and `http/health.ts` add the other six: sign-in, `/api/auth/me`, `/api/auth/refresh`, `/api/auth/logout`, health and ready |
 | `@fastify/helmet` | ^13.1 | Security headers. CSP is off: nginx serves the SPA, and Fastify serves data, not pages: JSON, the event streams and the report files, which download as attachments |
 | `@fastify/cors` | ^11.3 | Exactly one allowed origin, from `WEB_ORIGIN` |
 | `@fastify/jwt` | ^10.2 | Signs the login token (12 hours unless `SESSION_HOURS` says otherwise) and reads it from the session cookie, or from an `Authorization: Bearer` header for scripts. No route takes it in the query string |
@@ -94,7 +95,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | `dotenv` | ^16.4 | `.env` in dev. In Docker, Compose passes the environment directly |
 | `@anthropic-ai/sdk` | ^0.124 | The `anthropic` backend of the AI layer, and nothing else. The OpenAI-compatible backend is hand-rolled on `fetch`: one response shape to maintain instead of a second SDK to keep current |
 | Report writers | not a package | `src/export/` writes the monthly SLA report as a PDF and as an Excel workbook, on request, with Node's built-in `zlib` and `crypto` modules and no PDF or spreadsheet library. ADR-0011 (`docs/architecture/adr/0011-build-the-sla-report-files-in-the-bff.md`) has the trade-off |
-| Vitest | ^5.0 | 1687 tests in 78 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
+| Vitest | ^5.0 | 1688 tests in 78 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
 | tsx | ^4.16 | `npm run dev` watch mode only. Production runs plain `node dist/index.js` |
 | ESLint (with `@eslint/js`, `typescript-eslint` and `globals`) | ^10.13 | Dev only, never shipped. `npm run lint` in `server/`: the recommended rules of ESLint and of typescript-eslint, and no warning allowed. The first run, on 19 October 2026, found 22 findings; the eight `eslint-disable` lines left each say why |
 
@@ -104,8 +105,8 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 |---|---|---|
 | React | ^18.3 | The library every screen of the web app is written in |
 | Vite | ^8.3 | Dev server proxies `/bff` → `:4000`, so dev and prod hit the same paths. The production build is static files |
-| `react-router-dom` | ^7.18 | All 19 pages are `lazy()`. The initial bundle is 210 kB JS + 37 kB CSS; a page after that costs between 2 and 17 kB |
-| ECharts + `echarts-for-react` | ^6.1 / ^3.0 | Registered selectively (line chart, grid, tooltip, legend, data zoom, canvas renderer) instead of the barrel, which pulls in roughly a megabyte of chart types nothing draws. Drawn with the `v5` theme ECharts 6 ships, so the parts the portal does not colour itself look as they did on 5.x. Imported only by `TimeSeriesChart`, so its 608 kB chunk loads on Graphs and Network and nowhere else |
+| `react-router-dom` | ^7.18 | All 19 pages are `lazy()`. The initial bundle is 222 kB JS + 47 kB CSS (73 kB of the JS gzipped); a page after that costs between 1 and 28 kB, the Dashboard being the largest, and the chart library (612 kB, 206 kB gzipped) loads only with a chart. Raw sizes of the 20 October build |
+| ECharts + `echarts-for-react` | ^6.1 / ^3.0 | Registered selectively (line chart, grid, tooltip, legend, data zoom, canvas renderer) instead of the barrel, which pulls in roughly a megabyte of chart types nothing draws. Drawn with the `v5` theme ECharts 6 ships, so the parts the portal does not colour itself look as they did on 5.x. Imported only by `TimeSeriesChart`, so its 612 kB chunk loads on Graphs and Network and nowhere else |
 | Custom CSS | not a package | One stylesheet in 18 numbered parts (`web/src/styles/`). HCML blue `#2B5584`, measured from the company logo, with Inter for text and IBM Plex Mono for IDs and figures. Light and dark come from one set of CSS variables, per [`DESIGN.md`](DESIGN.md). `web/scripts/tokens.check.mjs` computes the contrast of every pair in both themes and fails on a raw value used where a token exists |
 | Hand-rolled, on purpose | not a package | `shared/hooks/useSSE.ts` over native `EventSource`; `shared/hooks/useAsync.ts` for server state, in place of a query library; `features/assistant/parseMarkdown.ts` in 141 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
 | Vitest + Testing Library | ^5.0 / ^16.3 | 1173 tests in 81 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api/`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
@@ -124,7 +125,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 Deliberately not used: no ORM or database driver (the portal owns no data), no state-management
 library (server state is two small hooks), no component library, no PDF or spreadsheet library (the
 report writers are hand-rolled on `zlib` and `crypto`), and no second HTTP client: the Zabbix client
-(174 lines) and model client (`ai.ts`, 664) are both hand-rolled around native `fetch`.
+(about 170 lines) and model client (`ai.ts`, about 750) are both hand-rolled around native `fetch`.
 
 ### The two copies of this portal
 
@@ -168,7 +169,7 @@ hcml-portal/
 │   │   ├── domain/              # what a host, a site and a problem are: naming rules, reachability, the shared reads
 │   │   ├── security/            # cookie sign-in + 3-tier RBAC guard, password hashes, the page table, the viewer policy
 │   │   ├── http/                # what index.ts wires in: rate limit, request id, compression, error mapping, health, shutdown
-│   │   └── __tests__/           # vitest: 78 files, 1687 tests; layering.test.ts keeps the direction (routes → services → the shared folders)
+│   │   └── __tests__/           # vitest: 78 files, 1688 tests; layering.test.ts keeps the direction (routes → services → the shared folders)
 │   └── scripts/                 # validate-sli.ts (HCML's published figures), hash-password.ts
 ├── web/                         # React + TypeScript + Vite, its own package.json, lockfile and Dockerfile
 │   ├── src/
@@ -191,7 +192,7 @@ hcml-portal/
 │   ├── index.md                 # what is documented, and in what order to read it
 │   ├── getting-started.md       # clone → running portal
 │   ├── contributing.md          # the house rules, and why each one exists
-│   ├── setup/                   # how each subsystem works and why: 35 parts, indexed by setup.md
+│   ├── setup/                   # how each subsystem works and why: 38 parts, indexed by setup.md
 │   ├── api/openapi.yaml         # all 45 endpoints; checked by tools/check/openapi.check.ts, and the web's types against it by a web test
 │   ├── architecture/adr/        # 13 Architecture Decision Records (MADR)
 │   ├── schema/                  # the data model on three pages: CDM · ERD · PDM (start here)
@@ -239,7 +240,7 @@ cd server
 cp .env.example .env          # set ZBX_URL + ZABBIX_API_TOKEN; auth needs JWT_SECRET + PORTAL_PASS
 npm install
 npm run dev                   # http://localhost:4000
-npm test                      # 1687 tests, no live Zabbix needed
+npm test                      # 1688 tests, no live Zabbix needed
 
 curl localhost:4000/api/health   # { ok, ts, ai, writeBack, defaults, version, startedAt, build, ready, streams }
 ```
@@ -260,8 +261,8 @@ Point `ZBX_URL` at a Zabbix that already has hosts. An empty one makes for an em
 
 > **The demo-estate seed scripts have been removed** (21 Sep 2026). They wrote to whatever `ZBX_URL`
 > pointed at, which since 15 September is HCML's restored production data, and their
-> deliberately HCML-shaped host names could collide with real ones. The demo estate itself is parked
-> in the `proto1_pgdata` volume.
+> deliberately HCML-shaped host names could collide with real ones. The demo estate itself was parked
+> in the `proto1_pgdata` volume, which was removed on 19 October 2026, so it is gone.
 >
 > The scripts are gone for good. An earlier version of this note said they were recoverable from
 > commit `b4a4059`; that was checked on 21 Sep and is false. `tools/` was created on 8 September, one
@@ -359,7 +360,7 @@ Grouped by the question each one answers, not by the order they appear in the si
 |---|---|---|
 | Dashboard | `/` | Is anything wrong right now? The only page that streams. Everyone gets a second view, the Hosts: how many hosts are up, degraded, down or without data, the devices of each kind, the web scenarios that pass or fail, and the ten busiest hosts by CPU and by memory. Operators and admins get a third, the internet traffic meters: a gauge for each link, read from HCML's Zabbix dashboard, with a link that is down said to be down, the other direction shown when it is high, and a card for the links on the first view. A wall screen turns between the views by itself (`/?wall=1`, `rotate=` for the seconds, `view=` to hold one) |
 | Problems · Alert noise · Top 100 triggers | `/problems` · `/reports/noise` · `/reports/top-triggers` | What is firing, and what fires so often that nobody reads it any more |
-| Sites · Hosts · Devices · Latest data · Graphs · Maps | `/sites` · `/hosts` · `/devices` · `/latest` · `/graphs` · `/maps` | Where a device is, what kind it is, what it is reporting, and what it looked like an hour ago |
+| Sites · Hosts · Devices · Latest data · Graphs · Maps | `/sites` · `/hosts` · `/devices` · `/latest` · `/graphs` · `/maps` | Where a device is, what kind it is, what it is reporting, and what it looked like an hour ago. Graphs can show the points of a chart as a table (Show data) and download them as a CSV file |
 | Network · Links & WAN health | `/network` · `/links` | Operator role and above. The WAN view: which links are up, and what they cost in latency and loss |
 | Services · SLA · Availability & response | `/services` · `/sla` · `/reports/availability` | The monthly figure. Derived in the portal, validated against HCML's own published reports, and downloadable as a PDF or an Excel file |
 | Capacity trends | `/reports/capacity` | What is filling up, and roughly when it runs out |
@@ -403,7 +404,7 @@ stores nothing. No model is involved, so a report sends nothing to Anthropic. It
 with Node's built-in modules and no PDF or spreadsheet library. The endpoint is
 `GET /api/sli/export` (viewer role, so a script can fetch it with a bearer token, as under
 [Calling the API](#calling-the-api)). How the files are built, and what they leave out, is in
-`setup.md` §18 and in ADR-0011. Not built: a scheduled or emailed report, and a CSV file.
+`setup.md` §18 and in ADR-0011. Not built: a scheduled or emailed report, and a CSV of this report (the Alert noise page, the Inventory scorecard and the Graphs page's Show data have a CSV button each).
 
 ### Calling the API
 
@@ -481,7 +482,7 @@ its default, versioned.
 | `ZABBIX_API_TOKEN` | none, required | Read-only token. `ZBX_TOKEN` is a deprecated alias that warns at startup |
 | `ZABBIX_WRITE_TOKEN` | none | Separate write token for acknowledge/close. Blank ⇒ portal is strictly read-only and those routes return 503 |
 | `ZABBIX_TIMEOUT_MS` | `10000` | Ceiling on one Zabbix call. Prevents a hung Zabbix hanging every page |
-| `PORT` | `4000` | BFF listen port |
+| `PORT` / `HOST` | `4000` / `0.0.0.0` | BFF listen port and interface. `server/.env.example` sets `127.0.0.1` for dev; Docker needs the default |
 | `WEB_ORIGIN` | `http://localhost:5173` | The one origin CORS allows, with credentials |
 | `TRUST_PROXY` | `false` | Honour `X-Forwarded-For`. `true` trusts one proxy hop (the nginx in front), a positive integer N trusts N hops, anything else none. On behind nginx, off otherwise, trusting it with nothing in front lets a client forge its own IP |
 | `RATE_LIMIT_PER_MINUTE` | `300` | Per-IP request cap. `/api/stream`, `/api/health` and `POST /api/auth/logout` are exempt, and the stream is capped by the two settings below |
@@ -600,8 +601,8 @@ instead of re-reading ~2,400 tokens per question (first word in under a second i
 It is rebuilt at once when a problem opens, closes, is acknowledged or re-graded, and when a host's
 state change has held for a minute (links that flap every few seconds do not force a rebuild).
 Opening the Assistant page pre-reads the current snapshot. Questions naming a site get a short
-per-host focus block after it. The model answers one request at a time; a request that waits
-more than 20 s gets `503 ai_busy` with `Retry-After`.
+per-host focus block after it. Hosted Claude takes `AI_MAX_CONCURRENT` (4) requests at once and a local
+model takes one; a request that waits more than 20 s gets `503 ai_busy` with `Retry-After`.
 
 The limit is the model's context window. Against Ollama the BFF asks for `AI_NUM_CTX` (8 192
 tokens) on every request, so nothing needs setting in Ollama's own environment; through `/v1`
@@ -615,7 +616,7 @@ Ollama. Either way the snapshot is capped (20 problems, a budget per section) an
 
 ```bash
 cd server
-npm test          # 1687 tests
+npm test          # 1688 tests
 npm run lint      # eslint
 npm run typecheck # app and tests
 
@@ -656,7 +657,7 @@ copied from the web app drifts from its original.
 | [`docs/getting-started.md`](docs/getting-started.md) | From a fresh clone to a running portal, step by step |
 | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | The API contract: all 45 endpoints, checked against the code |
 | [`docs/architecture/adr/`](docs/architecture/adr/) | Why the system is shaped this way: 13 decision records |
-| [`setup.md`](setup.md) | How each part works and why, in 35 parts (the index of `docs/setup/`) |
+| [`setup.md`](setup.md) | How each part works and why, in 38 parts (the index of `docs/setup/`) |
 | [`docs/schema/`](docs/schema/) | The data model on three pages |
 | [`docs/flow/`](docs/flow/) | The same system in motion, on three more pages |
 | [`docs/contributing.md`](docs/contributing.md) | The house rules before you change anything |
@@ -676,14 +677,16 @@ Kept short and honest; the full list is [`setup.md` §27](setup.md#27-limitation
   environment variables. One thing is still the owner's to change: the Anthropic key flagged on 10 Sep. The key the running hosted
   portal holds was refused by Anthropic on 16 Oct, so Explain and the Assistant of that portal answer nothing
   until a valid one is in `.env`. The dev `server/.env` files hold a secret of their own since 13 October 2026. The audit items BE-12 to
-  BE-17 are closed.
-- Nothing persists. No audit trail of who acknowledged what, no saved views, no user table, and
+  BE-17 are closed. Both Zabbix tokens belong to a Super admin user (SC-23, checked 13 October), so "the read
+  token cannot write" holds for the portal's code and not yet for the credential.
+- Nothing persists. The portal keeps no audit trail of its own (who acknowledged what is in the text
+  Zabbix stores, `[portal:<user>]`, and in the BFF's log), no saved views, no user table, and
   a closed month's SLA is recomputed from scratch after every restart.
 - The SLA report files are new. The Excel file was checked with several readers but has not been
   opened in Microsoft Excel itself, and both files were checked on realistic test data. They have also
   been downloaded from the running portal on HCML's own (frozen) data, on 12 and 15 October, where only
   their size and shape were looked at. The PDF prints text outside Western European letters, Cyrillic or
-  Chinese for example, as `?`. There is no scheduled or emailed report and no CSV file.
+  Chinese for example, as `?`. There is no scheduled or emailed report and no CSV of the SLA report.
 - Every performance figure is single-user and single-shot. No p95, no concurrency data, and the
   cache hit rate has never been measured.
 
@@ -838,17 +841,17 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Typecheck | Running the TypeScript checker (`npm run typecheck`) to catch mistakes, without building anything |
 | TypeScript | JavaScript with types that are checked before the code runs. Both `server/` and `web/` are written in it |
 | Vite | The tool that serves the web app during development and builds it for production |
-| Vitest | The test runner. `npm test` runs 1687 tests in `server/` with Zabbix faked, so no live system is needed, and 1173 in `web/` |
+| Vitest | The test runner. `npm test` runs 1688 tests in `server/` with Zabbix faked, so no live system is needed, and 1173 in `web/` |
 | zlib, crypto | Two modules that come with Node itself: zlib compresses and unpacks data, and crypto does hashing. The SLA report's PDF and Excel writers are built on them, in place of a PDF or spreadsheet library |
 
 ### Documents
 
 | Term | What it means |
 |---|---|
-| ADR, MADR | Architecture Decision Record: a short document recording one design decision, the options that were rejected, and the trade-offs. MADR is the template these follow. There are 11, in `docs/architecture/adr/` |
+| ADR, MADR | Architecture Decision Record: a short document recording one design decision, the options that were rejected, and the trade-offs. MADR is the template these follow. There are 13, in `docs/architecture/adr/` |
 | CDM, ERD, PDM | The three views of the data model in `docs/schema/`: the conceptual data model (what the business talks about), the entity-relationship diagram at the logical level (what the portal works with), and the physical data model (what the database actually stores) |
 | `DESIGN.md` | The design direction: identity, colours, typefaces and mood |
 | OpenAPI | A standard file format that describes every endpoint of an API. The portal's is `docs/api/openapi.yaml`, and a script checks it against the code |
-| PDF, Excel file, CSV | A PDF is a document that looks the same on every screen and printer. An Excel file is a spreadsheet: here a workbook whose name ends in `.xlsx`. A CSV file is a plain-text table, one row per line with the values separated by commas. The SLA report downloads as a PDF or an Excel file, and the portal makes no CSV |
+| PDF, Excel file, CSV | A PDF is a document that looks the same on every screen and printer. An Excel file is a spreadsheet: here a workbook whose name ends in `.xlsx`. A CSV file is a plain-text table, one row per line with the values separated by commas. The SLA report downloads as a PDF or an Excel file, and makes no CSV. Three other pages have a CSV button: Alert noise, the Inventory scorecard and the Graphs page's Show data |
 | README | This file: the first document to read in a code repository |
-| `setup.md` | How each part of the portal works and why, in 35 parts |
+| `setup.md` | How each part of the portal works and why, in 38 parts |

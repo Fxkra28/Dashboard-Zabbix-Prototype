@@ -7,7 +7,7 @@ portal view maps to Zabbix concepts and API methods:
 
 | Portal page (sidebar)      | Zabbix native equivalent        | BFF endpoint                      | Zabbix API methods used                     |
 |----------------------------|---------------------------------|-----------------------------------|---------------------------------------------|
-| Dashboard              | Monitoring → Dashboard          | `/api/stats`, `/api/reports/problems-by-group`, `/api/problems`; the Hosts view also `/api/devices`, `/api/reports/top-hosts` and `/api/reports/web-monitoring`; operators and admins also `/api/net/meters` | `host/item/trigger/hostgroup.get` (counts), `problem.get`, `trigger.get` |
+| Dashboard              | Monitoring → Dashboard          | `/api/stats`, `/api/reports/problems-by-group`, `/api/problems`; the Hosts view also `/api/devices`, `/api/reports/top-hosts` and `/api/reports/web-monitoring`; operators and admins also `/api/net/meters` | `host/item/trigger/hostgroup.get` (counts), `problem.get`, `trigger.get`; for the meters `dashboard.get`, `item.get` and `history.get` |
 | Problems               | Monitoring → Problems           | `/api/problems`                   | `problem.get`, `trigger.get` (host names)   |
 | Sites                  | *(none: see [§14](14-site-view.md#14-site-view))* | `/api/sites`                  | `host.get` (+ tags, inventory, groups), `problem.get` |
 | Hosts                  | Monitoring → Hosts              | `/api/hosts/overview`             | `host.get` (+ interface availability), `problem.get` |

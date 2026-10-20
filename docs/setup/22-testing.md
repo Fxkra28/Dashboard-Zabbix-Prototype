@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§21](21-alert-noise-flapping.md) · next: [§23](23-hardening-timeouts-rate-limiting-headers.md)
 
-`cd server && npm test`, 1687 tests in 78 files, no live Zabbix required. `cd web && npm test`, 1173 tests in 81 files, in jsdom.
+`cd server && npm test`, 1688 tests in 78 files, no live Zabbix required. `cd web && npm test`, 1173 tests in 81 files, in jsdom.
 
 The mock point. Every Zabbix call in the server funnels through one `fetch` in
 [`zabbix.ts`](../../server/src/clients/zabbix.ts), exposed as `zbx()` and `zbxWrite()`. Mocking that single module
@@ -36,6 +36,12 @@ with a plausible wrong answer, not code that throws:
 | The report files (`export-*.test.ts`) | A PDF or workbook a reader refuses, a device named `=HYPERLINK(...)` that Excel would evaluate, and a copied colour, logo or sentence drifting from the web app's |
 | Failure modes | A typed 503 swallowing a genuine 500, or vice versa |
 | The web's types against the API contract (`openapiTypes.test.ts`) | A field the page needs that `docs/api/openapi.yaml` does not promise, or a kind the page cannot hold. The first run found 20 of the 36 answers the app reads disagreeing with the file: a site code typed as text, the SLA groups and hosts described as the availability rows, an interface row nobody sends, a map described as a list of its elements. The comparison is made by the compiler (`npm run typecheck`, one way, from what the file says to what the app accepts); the test file also fails when a file of `api/` reads a path it does not list, and when `src/generated/openapi.ts` is not what the generator makes from the file now |
+| The live stream's compression (`stream.test.ts`) | A frame that waits in the compressor's buffer so that a quiet estate looks dead, a stream that decodes to other text than the plain one, and an end at shutdown that the screen sees as a break (IN-11) |
+| The graph range (`graphs.test.ts`) | Two requests seconds apart missing each other's cache entry because the key held the second they came in at (BK-13) |
+| The words of the server's sentences (`plain-wording.test.ts`) | A sentence that sends the reader to the BFF log or names a setting: everyone reads these, an operator included (UX-20) |
+| Scrolling boxes (`TableWrap.test.tsx`) | A table box that scrolls and that a keyboard cannot reach (CK-01): it has a tab stop and a name only while it overflows |
+| The pages the audit scripts visit (`live-tools.test.ts`) | A page of the app that `page-audit.mjs` and `layout-sweep.mjs` never open (CK-04) |
+| The CSV of Show data (`chartCsv.test.ts`, `csv.test.ts`) | A cell a spreadsheet would run as a formula, a column that does not line up with the table, and a time in the wrong zone (MT-02) |
 | The layers (`layering.test.ts`, on both sides) | A route that imports another route, a service that imports a route, a feature on the web that reaches into another, a shipped file that imports a test: the folder rules of [ADR-0013](../architecture/adr/0013-layers-features-and-tools.md) as failures, not as advice |
 
 Layout. On the server, tests live in `server/src/__tests__/` so they resolve modules exactly as the app does.

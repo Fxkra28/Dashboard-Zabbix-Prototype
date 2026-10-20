@@ -8,7 +8,7 @@ plain CSS (primary `#2B5584`, Inter and IBM Plex Mono, one set of CSS variables 
 
 ```
 web/src/
-├── main.tsx, App.tsx    # the entry, and the router: 18 pages, each loaded on demand (lazy)
+├── main.tsx, App.tsx    # the entry, and the router: 19 pages, each loaded on demand (lazy)
 ├── api/                 # the typed fetch client → /bff/api/*, one file per feature (sla.ts, problems.ts, ...), client.ts (request, the 401 and the failure message), session.ts (when the session ends, renewal, sign-in), index.ts (the one `api` object)
 ├── types/               # the Zabbix-shaped TypeScript types, one file per feature behind index.ts (held to docs/api/openapi.yaml by a test)
 ├── guards/              # the checks that read a reply defensively, one file per feature behind index.ts, shape.ts holding the shared checks and misfit.ts what a page says when one fails
@@ -17,9 +17,9 @@ web/src/
 ├── styles/              # the whole theme (sidebar, cards, tables, chips, map svg): 18 numbered parts and index.css
 ├── features/            # one folder per part of the portal: its pages, components, hooks, logic and their tests
 │   ├── dashboard/       # Overview.tsx (/), the Hosts view (HostsView.tsx, Tabs.tsx), the wall's rotation and fit
-│   ├── problems/        # Problems.tsx (/problems) + per-row "Explain", ProblemsTable.tsx, AckDialog.tsx (the only write)
+│   ├── problems/        # Problems.tsx (/problems) + per-row "Explain", ProblemsTable.tsx, AckDialog.tsx (the only write), liveChange.ts (when a frame of the stream says to read the list again)
 │   ├── hosts/           # Hosts.tsx (/hosts), Devices.tsx (/devices), LatestData.tsx (/latest)
-│   ├── graphs/          # HostDetail.tsx (/graphs?hostid=), the item and range pickers, TimeSeriesChart.tsx (ECharts)
+│   ├── graphs/          # HostDetail.tsx (/graphs?hostid=), the item and range pickers, TimeSeriesChart.tsx (ECharts), chartTable.ts and chartCsv.ts (Show data, and the CSV file of the same table)
 │   ├── network/         # Sites.tsx (/sites), Maps.tsx (/maps), Network.tsx (/network), Links.tsx (/links)  [operator]
 │   ├── meters/          # InternetMeters.tsx, Gauge.tsx, useMeters.ts: the internet traffic meters
 │   ├── sla/             # Services.tsx (/services), Sla.tsx (/sla), Availability.tsx (/reports/availability), Sli.tsx, ReportDownload.tsx
@@ -28,9 +28,9 @@ web/src/
 │   ├── auth/            # Login.tsx (/login)
 │   └── shell/           # Layout.tsx, Sidebar.tsx (grouped, collapsible menu), ErrorBoundary.tsx, session renewal, UI prefs
 ├── shared/              # what two or more features use
-│   ├── components/      # KpiCard.tsx, StatusBadge.tsx, Pager.tsx, Field.tsx, states.tsx (loading/error/empty), icons.tsx (inline SVG)
+│   ├── components/      # KpiCard.tsx, StatusBadge.tsx, Pager.tsx, Field.tsx, states.tsx (loading/error/empty), TableWrap.tsx (a table box that scrolls gets a tab stop and a name), icons.tsx (inline SVG)
 │   ├── hooks/           # useAsync.ts (fetch + loading/error + optional polling), useAuth.ts (one shared /api/auth/me probe), useSSE.ts (the live stream, for the Dashboard and the Problems page), useUrlState.ts, ...
-│   └── lib/             # the "logics": severity.ts, time.ts, units.ts, plural.ts, freshness.ts, sites.ts, wall.ts, chatStore.ts
+│   └── lib/             # the "logics": severity.ts, time.ts, units.ts, plural.ts, freshness.ts, sites.ts, wall.ts, chatStore.ts, csv.ts (the one CSV writer, with its guard against spreadsheet formulas)
 └── __tests__/           # the tests that cut across features (routes, back/forward, narrow screens, markup) and the layering and stylesheet tests
 ```
 

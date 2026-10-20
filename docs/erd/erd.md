@@ -37,7 +37,8 @@ Then run `node tools/check/diagrams.stamp.mjs` from the repo root. It records wh
 
 **The file declares `layout: elk` in its frontmatter, and that matters.** Mermaid's default engine
 (dagre) lays this graph out with 16 edge crossings and 9 edges cut straight through unrelated entity
-boxes; ELK brings those to 2 and zero. Do not remove that frontmatter block, and keep
+boxes; ELK brings those to 2 and zero (measured on 14 September 2026, when the diagram had 46 relationships;
+it has 54 now and the count was not repeated). Do not remove that frontmatter block, and keep
 `mergeEdges: false`, setting it true raises the crossings to 7. `direction TB` is deliberate too:
 `LR` scores identically on crossings but produces a 5.8:1 canvas that shrinks the text.
 
@@ -99,13 +100,13 @@ what actually matters when working on this codebase is a two-layer domain model:
 
 | Layer | What it is | Where it lives |
 |---|---|---|
-| Zabbix entities | The objects the portal reads, and *only the fields it actually asks for* | Zabbix's MySQL database, reached via 13 read methods and 1 write |
+| Zabbix entities | The objects the portal reads, and *only the fields it actually asks for* | Zabbix's MySQL database, reached via 14 read methods and 1 write |
 | Portal entities | Objects the portal computes that Zabbix has no equivalent for | Nowhere: built per request, cached briefly, never stored |
 
 The tables do exist; they are Zabbix's. Since 15 September the dev stack runs Zabbix 7.0.30 on MySQL
 8.0, restored from HCML's own backup, and [`ERD-Database.md`](database/ERD-Database.md) draws 45 of its
-203 tables: the ones the portal's 14 API methods read or write, apart from the maintenance tables
-`maintenance.get` reads. Every column, key and foreign key there
+203 tables: the ones the portal's 15 API methods read or write, apart from the maintenance and dashboard tables
+`maintenance.get` and `dashboard.get` read. Every column, key and foreign key there
 was taken from the live schema, which is identical to stock Zabbix 7.0.30. Each blue entity below
 names its table in its header; [`ERD-DatabaseSchema.md`](database-schema/ERD-DatabaseSchema.md) lists them all.
 
@@ -121,7 +122,7 @@ How Zabbix objects become portal objects. Each arrow is labelled with the deriva
 
 ```mermaid
 flowchart LR
-    subgraph ZBX["Zabbix: 13 read methods, 1 write"]
+    subgraph ZBX["Zabbix: 14 read methods, 1 write"]
         direction TB
         HOST[["host<br/>+ tags, groups,<br/>interfaces, inventory"]]
         ITEM[[item]]
@@ -142,6 +143,9 @@ flowchart LR
         CAP[CAPACITY_ROW]
         NODE[SERVICE_NODE]
         EXPL[PROBLEM_EXPLANATION]
+        METER[METER]
+        WEBSC[WEB_SCENARIO]
+        TOPH[TOP_HOST]
     end
 
     HOST -- "resolveSite(): tag, name, inventory, group" --> SITE
@@ -151,6 +155,9 @@ flowchart LR
     INCIDENT -- "group by objectid, median duration + ack rate" --> NOISE
     HOST -- "score 4 governance dimensions" --> SCORE
     ITEM -- "trend.get, history fallback" --> CAP
+    ITEM -- "the gauge widget's item, the other direction, the status item" --> METER
+    ITEM -- "web.test.fail[scenario]" --> WEBSC
+    ITEM -- "the hottest cpu or memory item of a host" --> TOPH
     SERVICE -- "materialise the DAG" --> NODE
     SLA -- "graft SLI onto each service" --> NODE
     EVENT -- "humanize() through an LLM" --> EXPL
@@ -319,9 +326,14 @@ This bounds the blast radius of a Zabbix upgrade:
   `host.get` still filters on `flags` and `status` for it: the `hosts` table also holds templates
   (`status` 3) and host prototypes (`flags` 2), and neither is ever returned.
 - `host inventory`: 5 of its 70 fields.
+- `dashboard`: one dashboard, by name (`INTERNET_METERS_DASHBOARD`, default *Global view*), with its pages and
+  widgets through `selectPages`, for the Internet traffic meters (`dashboard.get`, since 14 October). Only the
+  gauge widgets are used, and of those only the item, the minimum and maximum and the colour thresholds. The
+  other widget types of the dashboard, and every other dashboard, are not read.
 - Whole entities never touched: `user`, `usergroup`, `template`, `action`, `mediatype`,
-  `script`, `dashboard`, `httptest`, `valuemap`, `proxy`, `correlation`,
-  `discoveryrule`. Portal authentication is entirely local (`PORTAL_USERS` in the environment), not
+  `script`, `httptest`, `valuemap`, `proxy`, `correlation`,
+  `discoveryrule`. A web scenario is seen only through its result item, `web.test.fail[<scenario>]`, as
+  the Hosts view's web monitoring reads it. Portal authentication is entirely local (`PORTAL_USERS` in the environment), not
   Zabbix users, although every Zabbix call runs *as* the Zabbix user that owns the API token, and
   that user's role and host-group rights decide what `host.get` returns
   ([API token & permissions](database/ERD-Database.md#api-token--permissions)).
@@ -358,8 +370,11 @@ erDiagram
     CAPACITY_METRIC ||--o{ CAPACITY_ROW : "rows"
     AGING_REPORT ||--|{ AGING_BUCKET : "exactly 4"
     PROBLEM_EXPLANATION ||--o{ TAG_EXPLAINED : "one per input tag"
-    CHAT_SNAPSHOT ||--o{ SITE : "up to 30, worst first"
-    CHAT_SNAPSHOT ||--o{ SERVICE_NODE : "up to 20 degraded"
+    CHAT_SNAPSHOT ||--o{ SITE : "worst first, in a budget of 900 characters"
+    CHAT_SNAPSHOT ||--o{ SERVICE_NODE : "the degraded ones, in a budget of 400 characters"
+    METERS_RESPONSE ||--o{ METER : "one for each gauge widget"
+    TOP_HOSTS_RESPONSE ||--o{ TOP_HOST : "cpu and memory, ten each"
+    WEB_MONITORING_RESPONSE ||--o{ WEB_SCENARIO : "every enabled scenario is counted, the failed ones listed"
 
     SITE {
         string name PK "derived, never stored"
@@ -473,6 +488,36 @@ erDiagram
         number degradedServices
         boolean truncated "a cap fired, the view is partial"
     }
+    METER {
+        string id PK "the dashboard page and the widget"
+        string title "the widget's name, from dashboard.get"
+        string itemid FK "empty when the widget points at no item"
+        string direction "in or out, from the item key"
+        string link "up, down or unknown, from the status item"
+        string units
+        number value
+        number clock
+        number min "the bottom of the gauge"
+        number max "the top of the gauge: the capacity of the link"
+        number fraction "value over max"
+        string zone "none, low, ok, warn or critical"
+        string state "ok, stale, nodata, unsupported, missing or invalid"
+    }
+    WEB_SCENARIO {
+        string itemid PK "web.test.fail[scenario]"
+        string hostid FK
+        string name "the scenario"
+        string state "ok, failed or unknown"
+        number step "the step that failed, counting from 1"
+        number clock
+    }
+    TOP_HOST {
+        string itemid PK
+        string hostid FK
+        string metric "cpu or memory"
+        number value "percent"
+        number clock
+    }
 ```
 
 ---
@@ -496,6 +541,9 @@ Where each derived entity is built, and from what.
 | `SlaSli` | `getSli()`, [`services/sla.ts`](../../server/src/services/sla.ts) | `sla.getsli` flattened, names from `service.get` |
 | `ProblemExplanation` | `humanize()`: [`server/src/clients/ai.ts`](../../server/src/clients/ai.ts) | one problem, reshaped and sent to an LLM |
 | `ChatSnapshot` | `buildSnapshot()`: [`server/src/services/assistantSnapshot.ts`](../../server/src/services/assistantSnapshot.ts) | problems + sites + SLA + services, capped and rendered as plain text |
+| `Meter` | `getMeters()`, [`services/meters.ts`](../../server/src/services/meters.ts) | `dashboard.get` by name, `item.get` for each gauge's item, its other direction and its status, and `history.get` for the last row of a silent item |
+| `WebScenario` | `getWebMonitoring()`, [`services/webMonitoring.ts`](../../server/src/services/webMonitoring.ts) | `item.get` with `webitems`, the `web.test.fail[...]` result of each enabled scenario |
+| `TopHost` | `getTopHosts()`, [`services/topHosts.ts`](../../server/src/services/topHosts.ts) | the CPU and memory items the capacity report finds, `item.get`, and only current values |
 
 ### How a site is resolved
 
@@ -556,6 +604,8 @@ Each of these is a deliberate in-process join.
 | sla → sli → service names | `sla.getsli` returns bare ids and a numeric matrix, with no names. |
 | events → top-100 triggers | Zabbix's own Top 100 report is not exposed through the API. |
 | hosts → governance scorecard | Zabbix stores the inventory fields but never scores them. |
+| gauge widget → item → meter | `dashboard.get` returns a widget's fields as strings (`itemid`, `min`, `max`, `thresholds.N.color`). The item's last value, the same interface the other way and its status item take further `item.get` calls, and a silent item takes one `history.get` for its newest row. |
+| web scenario → result item → state | Zabbix keeps a scenario's result in an item, `web.test.fail[<scenario>]`, and returns web items only when asked with `webitems`. Whether it passed is the portal's reading of that value, and an old one is never read as a pass. |
 
 ---
 
@@ -595,6 +645,10 @@ Portal-defined enums, which exist only in this codebase:
 | `SiteSource` | `tag` · `inventory` · `group` |
 | `DimensionKey` | `naming` · `site` · `owner` · `criticality` |
 | `CapacityRow.source` | `trend` · `history` · `none` |
+| `MeterState` | `ok` · `stale` · `nodata` · `unsupported` · `missing` · `invalid` |
+| `MeterLevel` (the zone of a meter) | `none` · `low` · `ok` · `warn` · `critical` |
+| `MeterLink` | `up` · `down` · `unknown` |
+| `DeviceKind` | `switch` · `firewall` · `access-point` · `repeater` · `server` · `wan-link` · `web` · `other` |
 | `Role` | `viewer` · `operator` · `admin` |
 
 **A note on severity 2.** The reporting default floor is Warning, not Average. HCML's estate fires
@@ -640,8 +694,9 @@ Things a reader would otherwise get wrong.
   list, so a historical `eventid` returns 404 rather than an explanation.
 
 - **The type definitions exist twice.** `web/src/types/` and the server-side interfaces are
-  hand-maintained mirrors with no code generation and no shared module. Nothing checks them against
-  each other. There is already one concrete drift: `NetDevice` extends `Host`, so it advertises
+  hand-maintained mirrors with no code generation and no shared module. Since 19 October a test holds the
+  web's types to `docs/api/openapi.yaml`, which was corrected against the server's types, but nothing
+  compares the two sets of interfaces with each other. There is already one concrete drift: `NetDevice` extends `Host`, so it advertises
   `maintenance_status` and interface `available`, but `/api/net/devices` requests neither: those
   fields are always absent at runtime despite the type promising them.
 
@@ -662,10 +717,10 @@ Things a reader would otherwise get wrong.
 
 ## The two portals
 
-`myown/hcml-portal` and `myown/hcml-portal-ollama` share one source tree; only `.env` and the
-published port differ (`:8081` answers with hosted Claude, `:8082` with a local `qwen3:8b`). The data
+`myown/hcml-portal` and `myown/hcml-portal-ollama` share one source tree; the running portals differ
+only in `.env`, the compose file and the published port (`:8081` answers with hosted Claude, `:8082` with a local `qwen3:8b`). The data
 model below therefore describes both, `CHAT_SNAPSHOT` included. The database diagram,
-`erd/Database/ERD-Database.md`, is unaffected either way: the assistant reads through the same API
+[`database/ERD-Database.md`](database/ERD-Database.md), is unaffected either way: the assistant reads through the same API
 calls as the pages, so it touches no extra table.
 
 ### Why the snapshot is an entity and not just a prompt

@@ -7,7 +7,7 @@ config:
     nodePlacementStrategy: BRANDES_KOEPF
 ---
 flowchart LR
-    %%  Conceptual model (Merise MCD): 26 entities, 33 associations.
+    %%  Conceptual model (Merise MCD): 27 entities, 34 associations.
     %%  The top of three levels. Below it: erd/vanilla (logical, what
     %%  the portal reads and derives) and erd/database (physical, what
     %%  MySQL stores). The levels index is in erd.md.
@@ -31,8 +31,8 @@ flowchart LR
     %%  generalisation cannot be drawn, and map links (R30) are drawn
     %%  device-to-device because Merise cannot associate an association.
 
-    %%  LR, not TB: at 26 entities with a diamond on every edge, TB gave a
-    %%  1:4.5 tower (3712 x 16590). LR is 5168 x 1328.
+    %%  LR, not TB: at 26 entities with a diamond on every edge (27 now), TB gave a
+    %%  1:4.5 tower (3712 x 16590). LR is 5168 x 1286.
 
     %%  Per-domain views, and the reasoning behind every cardinality:
     %%  ERD-Conceptual.md. Keep this file and that one in step.
@@ -53,12 +53,14 @@ flowchart LR
         OBSERVATION["<b>OBSERVATION</b><br>moment<br>value<br>minimum<br>mean<br>maximum<br>sample count"]
         INTERFACE_READING["<b>INTERFACE READING</b><br>port index<br>port name<br>alias<br>operational status<br>speed<br>bits in<br>bits out<br>utilisation<br>errors<br>discards<br>last collected"]
         CAPACITY_READING["<b>CAPACITY READING</b><br>metric<br>average<br>maximum<br>unit"]
+        INTERNET_METER["<b>INTERNET METER</b><br>title<br>direction<br>capacity<br>colour zones<br>current reading<br>when read<br>share of capacity<br>zone<br>link up or down<br>reading state"]
 
         R_CARRIES{"carries"}
         R_RECORDS{"records"}
         R_EXPOSES{"exposes"}
         R_SUMS{"sums up"}
         R_EVIDENCE{"derives from"}
+        R_READS{"reads"}
     end
 
     subgraph ALERTING["Alerting"]
@@ -139,6 +141,8 @@ flowchart LR
     R_SUMS          ---|"(1,1)"| CAPACITY_READING
     CAPACITY_READING ---|"(1,1)"| R_EVIDENCE
     R_EVIDENCE      ---|"(0,n)"| OBSERVATION
+    INTERNET_METER  ---|"(0,n)"| R_READS
+    R_READS         ---|"(0,n)"| MEASUREMENT
 
     %% Alerting
     ALERT_RULE      ---|"(1,n)"| R_WATCHES
@@ -222,7 +226,8 @@ flowchart LR
 
     class AVAILABILITY_PERIOD,AVAILABILITY_RESULT,CAPACITY_READING,DERIVED_NODE derived
     class DEVICE_CLASS,EXPLANATION,GOVERNANCE_DIM,HOST_STATE derived
-    class INCIDENT,INTERFACE_READING,LINK,NOISY_RULE derived
+    class INCIDENT,INTERFACE_READING,INTERNET_METER,LINK derived
+    class NOISY_RULE derived
     class SITE,SNAPSHOT,TURN,WAN_PATH derived
 
     class PORTAL_USER local
@@ -232,8 +237,9 @@ flowchart LR
     class R_COUNTS,R_EVIDENCE,R_EXPLAINS,R_EXPOSES assoc
     class R_HITS,R_LACKS,R_LEG,R_MAPLINK assoc
     class R_NESTS,R_RAISES,R_RANKS,R_REACHES assoc
-    class R_RECORDS,R_ROLLS,R_SCORES,R_SERVES assoc
+    class R_READS,R_RECORDS,R_ROLLS,R_SCORES assoc
+    class R_SERVES assoc
     class R_SHOWS,R_STANDS,R_STATIONS,R_SUMMARISES assoc
     class R_SUMS,R_TERMINATES,R_WATCHES,R_WITHIN assoc
     class R_YIELDS assoc
-%% source-hash: fa20aec6209a
+%% source-hash: aab355c5f308

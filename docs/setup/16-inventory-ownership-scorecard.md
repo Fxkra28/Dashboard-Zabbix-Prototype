@@ -34,7 +34,7 @@ devices    <site>.<class>[.<seq>] NAME     1.2.1 IDX02CORESWITCH    11.3.5 MOPU 
 services   <TYPE> : NAME                   INET : SAMPANG WAN 1     SERVER : CUCM JAKARTA
 ```
 
-Shipped as the default `HOST_NAME_PATTERN`:
+Shipped as the value of `HOST_NAME_PATTERN` in the `.env.example` templates (the code's own default is empty, which leaves naming unscored):
 
 ```
 ^(\d{1,2}\.\d{1,2}(\.\d{1,2})?\.?\s|(INET|WEB|SERVER)\s:\s).+$

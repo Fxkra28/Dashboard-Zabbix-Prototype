@@ -67,5 +67,5 @@ To go back: `docker tag <name>:rollback-14oct <name>:latest` for the four images
 
 ## Left alone
 
-* SC-23 (the Zabbix tokens belong to a Super admin), IN-27, IN-28, IN-30, IN-31 and SC-30: batches D and E, which need you in Zabbix or your word.
+* SC-23 (the Zabbix tokens belong to a Super admin), IN-27, IN-28, IN-30, IN-31 and SC-30: batches D and E, which need you in Zabbix or your word. Since then: IN-28 was done on 19 October ([§37](37-what-changed-on-19-october-2026-the-check-and-six-rows.md)) and SC-30 is partly done, as the `LICENSE` and `SECURITY.md` files exist since 16 October ([§36](36-what-changed-on-16-october-2026-the-folders.md)); SC-23, IN-27, IN-30 and IN-31 are still open on 20 October.
 * SC-06, SC-01 and IN-08, as before.

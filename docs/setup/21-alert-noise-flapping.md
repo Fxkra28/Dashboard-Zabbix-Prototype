@@ -49,11 +49,12 @@ NOC: retune the few at the top rather than triage the rest.
 ## Implementation note: one fetch, two reports
 
 Availability (§18) and this report ask different questions of the same history. Rather than
-duplicate the trickiest code in the codebase, `fetchIncidents(days, minSeverity)` does the shared
-work once: fetch PROBLEM events, batch-resolve their recoveries via `r_eventid`, clip to the window.
-Each report then groups the result its own way: availability by host (merging overlaps), noise by
-trigger. `EVENT_LIMIT` and the `truncated` flag apply to both, so neither ever presents a
-truncated count as authoritative.
+duplicate the trickiest code in the codebase, `fetchIncidents(window, minSeverity)` in
+[`services/incidents.ts`](../../server/src/services/incidents.ts) does the shared work once: fetch
+PROBLEM events (and the older outages that ended inside the window, §18), batch-resolve their recoveries
+via `r_eventid`, clip to the window. Each report then groups the result its own way: availability by
+host (merging overlaps), noise by trigger. The `truncated` flag, which says the look for older outages
+was cut short, applies to both, so neither ever presents a short count as authoritative.
 
 ## Trying it
 

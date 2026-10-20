@@ -22,9 +22,10 @@ the pages were not already paying:
 The snapshot is plain text, not JSON: roughly half the tokens for the same facts, and a small
 model reads *"3 hosts, 1 unreachable"* more reliably than nested braces. It is also capped.
 Ollama serves `qwen3:8b` with a 4 096-token window by default, and a prompt that overflows it is
-truncated from the *front*, which silently drops the system prompt and its rules. So lists are cut
-(40 problems, 30 sites, 10 SLAs, 20 services, about 5 500 characters overall), `meta.truncated`
-says so, and the page shows *partial view*. `OLLAMA_CONTEXT_LENGTH` raises the window. SLA and
+truncated from the *front*, which silently drops the system prompt and its rules. So the snapshot
+is built in sections and each has a character budget that it fills with whole lines and no more (the estate 350, sites 900,
+what is new 550, unreachable hosts 850, SLA standing 700, degraded services 400 and problems 1,850, about 5 500 characters
+overall), the problem list stops at 20, `meta.truncated` says so when a list was cut, and the page shows *partial view*. `OLLAMA_CONTEXT_LENGTH` raises the window. SLA and
 services are fetched with `Promise.allSettled`: a Zabbix without Services configured must not leave
 the assistant unable to say what is down.
 

@@ -39,6 +39,13 @@ The gates:
 3. Configuration. With no write token the route returns 503, and `GET /api/health` reports
    `writeBack: false` so the UI hides the buttons instead of offering a call that will fail.
 
+*Amended 20 October 2026 (tracker SC-23).* Gate 1 holds for the portal's code, which uses the read token only
+through `zbx()` and the write token only through `zbxWrite()`. It does not yet hold for the credential: checked on
+13 October, both tokens belong to the built-in `Admin` user, whose role is Super admin, so whoever held the read
+token could write with it. Until the read token belongs to a user whose role allows only the read methods (a change
+in Zabbix, which is HCML's to make), read "cannot write" in this record as "is never used to write", and
+"provably read-only" below as a statement about the code.
+
 Event ids must match `/^\d+$/` before reaching Zabbix, the message is capped at 2,048 characters, the
 acting user is logged, nine cache prefixes are invalidated with a 15-second hold, and the change is
 pushed to every open SSE client immediately.
@@ -59,6 +66,10 @@ pushed to every open SSE client immediately.
   audit log shows the portal, not the person. There is no Zabbix table that could hold that
   attribution, and the portal has nowhere to keep it either. See [ADR-0003](0003-no-database.md).
   The acting user is written to stdout and then forgotten.
+  *Amended 20 October 2026: since 7 October (tracker SC-08) the text of every acknowledgement starts with
+  `[portal:<user>]`, so Zabbix's own record (`acknowledges.message`) does name the person, as text, and the BFF
+  logs every attempt with the user, address, event ids and action ([§20](../../setup/20-acknowledge-close-write-back.md)).
+  Still true: the portal keeps no record of its own.*
 * Two credentials to provision, store and rotate rather than one.
 * `ROUTE_RULES` reserves `/api/problems/close` but no such route exists: a dead rule that reads
   like a missing feature.

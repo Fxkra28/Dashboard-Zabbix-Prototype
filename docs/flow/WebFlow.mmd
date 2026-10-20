@@ -38,8 +38,8 @@ flowchart TB
     subgraph W1["1 &middot; Boot"]
         HTML["<b>index.html</b><br>served by nginx from the static build<br>Cache-Control: no-cache"]
         MAIN["<b>main.tsx</b><br>React 18 root"]
-        APP["<b>App.tsx</b><br>BrowserRouter &middot; 18 routes<br>every page is lazy()"]
-        CHUNK["<b>page chunk</b><br>fetched on first visit only<br>1 to 16 kB &middot; /assets/ cached 1 year"]
+        APP["<b>App.tsx</b><br>BrowserRouter &middot; 19 pages<br>every page is lazy()"]
+        CHUNK["<b>page chunk</b><br>fetched on first visit only<br>1 to 28 kB &middot; /assets/ cached 1 year"]
 
         HTML --> MAIN --> APP --> CHUNK
     end
@@ -136,4 +136,4 @@ flowchart TB
     class ACK written
     class BFF server
     class HASROLE,R401,GUARD,HIDDEN choice
-%% source-hash: f8df566f97af
+%% source-hash: e7ee1e521f21

@@ -24,9 +24,9 @@ what to call it. Where should the portal get them?
 * No database ([ADR-0003](0003-no-database.md)) and no write to Zabbix
   ([ADR-0006](0006-read-only-with-one-write.md)).
 * Interface data is for operators and admins (`viewerPolicy.ts`), and the meters are interface data.
-* The Zabbix on the development laptop stopped polling on 14 September
-  ([ADR-0008](0008-stop-local-polling.md)). Whatever is built has to show an old reading as old and not
-  as current.
+* The Zabbix on the development laptop stopped polling on 17 September
+  ([ADR-0008](0008-stop-local-polling.md)), and the items behind the meters were last sampled at the backup of
+  14 September. Whatever is built has to show an old reading as old and not as current.
 
 ## Considered Options
 
@@ -78,7 +78,8 @@ portal's route turns them into 27 meters, 21 of them old readings.
   `thresholds.N.color`, `thresholds.N.threshold`) are Zabbix 7.0's. A later Zabbix may rename them, and
   the meters then read as missing or without a scale until the reader is changed. `meters.test.ts` pins the
   shape the reader expects.
-* **A thirteenth read method.** `dashboard.get` joins the twelve the portal calls. A narrower Zabbix role
+* **A fourteenth read method.** `dashboard.get` joins the thirteen the portal already called (this record said
+  twelve and thirteenth until 20 October 2026, when the calls were counted again from the code). A narrower Zabbix role
   for the read token (tracker SC-23) has to allow it.
 * **The capacity is as right as the widget.** Nothing here can tell that a widget says 50 Mbps for a link
   that is 100. Of the 27 meters, one is over its capacity on the stored data (113 percent), which is
@@ -92,8 +93,8 @@ portal's route turns them into 27 meters, 21 of them old readings.
   Overview and, since 15 October, the Hosts, which are host data (follow-ups, below).
 * **Only the last value.** Nothing is kept, so the portal can say how busy a link is now and not how busy
   it was last week. The Graphs page draws the history.
-* **Not seen live here.** The development copy of Zabbix holds data to 14 September, so every meter on it
-  is an old reading. The live look comes when the portal is pointed at HCML's own Zabbix.
+* **Not seen live here.** The items behind the meters stop at the backup of 14 September, so every meter on the
+  development copy of Zabbix is an old reading. The live look comes when the portal is pointed at HCML's own Zabbix.
 
 ## Follow-ups, 14 October 2026, later
 

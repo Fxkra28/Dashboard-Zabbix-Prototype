@@ -77,7 +77,7 @@ It imports nothing from the other folders.
 | [`sli/`](../../server/src/sli/) | The derived monthly SLA (§25): `engine.ts` computes it, `events.ts` reads event history without silent truncation, `intervals.ts` and `time.ts` do the arithmetic, `maintenance.ts` turns Zabbix maintenance into windows, `tree.ts` and `summary.ts` build the service tree and the summary on top. |
 | [`export/`](../../server/src/export/) | The report files (§18): `types.ts` is the document model, `slaReport.ts` builds it from the two derived reports, and `pdf.ts` and `xlsx.ts` write it, with `pdfFonts.ts`, `logo.ts`, `zip.ts` and `theme.ts` beneath them. No library. |
 | [`index.ts`](../../server/src/index.ts) | Builds the Fastify app and registers, in this order: helmet → CORS → rate limit → compression → no-store → stale headers → health → auth → the 22 route plugins (they hold 39 of the 45 endpoints; sign-in is in `security/auth.ts`, the health check and `/api/ready` in `http/health.ts`). Validates config before listening and exits rather than booting unsafely, and installs the `SIGTERM` handler once it listens. |
-| [`server/src/__tests__/`](../../server/src/__tests__/) | 1687 vitest tests. Zabbix is mocked at `clients/zabbix.ts`, the one point all API traffic funnels through. See [§22](22-testing.md#22-testing). |
+| [`server/src/__tests__/`](../../server/src/__tests__/) | 1688 vitest tests. Zabbix is mocked at `clients/zabbix.ts`, the one point all API traffic funnels through. See [§22](22-testing.md#22-testing). |
 
 ## The routes and their services
 
@@ -113,6 +113,7 @@ only a route has no logic of its own to hold.
 | Method + path | Returns | Cache |
 |---|---|---|
 | `GET /api/health` | `{ ok, ts, ai, writeBack, defaults, version, startedAt, build, ready, streams }`: capability flags (the UI hides actions that aren't configured), the build, whether Zabbix answers, and the screens streaming. Public; 200 even when Zabbix is down | `ready` 15 s |
+| `GET /api/ready` | the same facts as a signed-in `/api/health`, plus `ok`; answers 503 while the portal cannot read Zabbix, so a monitor that holds a token needs only the status code. Guarded like any route | `ready` 15 s |
 | `GET /api/hosts` | hosts + interfaces (ip/type/available) | 30 s |
 | `GET /api/hosts/overview` | hosts + per-host problem severity counts | 15 s |
 | `GET /api/hostgroups` | host groups (real hosts only) | 60 s |
@@ -149,7 +150,7 @@ only a route has no logic of its own to hold.
 | `GET /api/auth/me` | `{ authEnabled, user: { name, role }, expiresIn }`, drives the sidebar's role filter and times renewal | none |
 | `POST /api/auth/refresh` | a fresh cookie and `{ user, expiresIn }` for a still-valid session, so an open portal stays signed in (§8) | none |
 | `POST /api/auth/logout` | clears the session cookie; public, so an expired session can still sign out | none |
-| `GET /api/graph` | chart-ready series for 1 to 4 numeric items over a pinned window | 15 s |
+| `GET /api/graph` | chart-ready series for 1 to 4 numeric items over a pinned window | 15 s for a window that ends now, 10 min for one that does not |
 | `GET /api/net/interfaces?hostid=` | SNMP interfaces with oper/admin status, speed, utilisation | 15 s |
 | `GET /api/sli?month=&profile=` | the derived monthly SLA (§25) | 24 h for a closed month, 5 min for the current one |
 | `GET /api/sli/export?month=&format=` | the monthly SLA report as a PDF or Excel file, not JSON (§18) | none of its own beyond ten seconds of reuse: it reads the cached reports `/api/sli` fills |
@@ -164,6 +165,7 @@ TTLs: a problem's meaning doesn't change while it's open.
 > [`docs/api/openapi.yaml`](../api/openapi.yaml): every parameter, every status code, both
 > security schemes and every response schema. It is checked against the code by
 > `npx tsx tools/check/openapi.check.ts`, which fails if a route is registered and undocumented or
-> documented and unregistered. This table has no such check, which is how it once said "16 modules,
+> documented and unregistered. The table had no check of its own, which is how it once said "16 modules,
 > 35 endpoints" while listing all of them, and how it carried a duplicate `GET /api/auth/me` row
-> until 22 Sep 2026.
+> until 22 Sep 2026. Since 20 October 2026 `tools/check/facts.check.mjs` compares its rows with the spec, one for one
+> (the cache column and the descriptions are still read by a person).

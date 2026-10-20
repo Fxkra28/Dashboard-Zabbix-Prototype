@@ -16,14 +16,14 @@
 | Fact | Source |
 |---|---|
 | Three roles, ranked: viewer, operator, admin | `server/src/security/auth.ts` `ROUTE_RULES` |
-| An unmatched route needs `viewer`, so a new route is private by default | `security/auth.ts:49` |
-| Only `/api/reports/inventory` needs admin | `security/auth.ts:42` |
-| Only `/api/links`, `/api/net` (the Dashboard's internet traffic meters, `/api/net/meters`, among them) and the write route (acknowledge, with close as an option) need operator | `security/auth.ts:43,45` |
-| 18 pages, 17 of them behind the shell | `web/src/App.tsx` |
+| An unmatched route needs `viewer`, so a new route is private by default | `security/auth.ts:44` |
+| Only `/api/reports/inventory` needs admin | `security/auth.ts:37` |
+| Only `/api/links`, `/api/net` (the Dashboard's internet traffic meters, `/api/net/meters`, among them) and the write route (acknowledge, with close as an option) need operator | `security/auth.ts:38,40` |
+| 19 pages, 18 of them behind the shell | `web/src/App.tsx` |
 | 139 monitored hosts across 14 sites | Zabbix, measured 15 September 2026 |
 | Exactly one write exists: acknowledge and close | `server/src/routes/actions.ts` |
-| That write is off unless `ZABBIX_WRITE_TOKEN` is set, and returns 503 otherwise | `actions.ts:130-138` |
-| The Dashboard holds one long-lived SSE connection, exempt from the rate limiter and capped on its own (100 screens in all, 5 per user) | `server/src/http/rateLimit.ts:6,27`, `services/stream.ts` |
+| That write is off unless `ZABBIX_WRITE_TOKEN` is set, and returns 503 otherwise | `routes/actions.ts:39-51` |
+| The Dashboard holds one long-lived SSE connection, exempt from the rate limiter and capped on its own (100 screens in all, 5 per user) | `server/src/http/rateLimit.ts:6,26`, `services/stream.ts` |
 | Nothing the portal derives is stored anywhere | ADR-0003, ADR-0004 |
 
 Everything after this point is inference from those facts.
@@ -59,7 +59,7 @@ The one job the software is shaped around: see a problem, understand it, acknowl
 journey map below is this, and it is the only flow that can be traced end to end in code, because it
 is the only one that ends in an action rather than in a reader's head.
 
-A constraint on the design: `WRITE_HOLD_MS` is 15 seconds (`actions.ts`). Zabbix applies
+A constraint on the design: `WRITE_HOLD_MS` is 15 seconds (`services/actions.ts`). Zabbix applies
 a close a few seconds after `event.acknowledge` returns, so the first refetch can still show the
 problem as open. The interface has to be honest about that window rather than pretend the write was
 instant.
@@ -77,7 +77,7 @@ the network.
 
 `DESIGN.md` section 5 names it: the Dashboard doubles as a wall display, and `/api/stream` is exempt
 from the rate limiter specifically so a wall poller does not throttle itself
-(`server/src/http/rateLimit.ts:6,27`). It is capped instead, at 100 screens in all and 5 for one signed-in
+(`server/src/http/rateLimit.ts:6,26`). It is capped instead, at 100 screens in all and 5 for one signed-in
 user, so a wall of more than five screens on one shared login needs `STREAM_MAX_PER_USER` raised.
 
 This is a real, code-backed usage context with no user attached. Nobody is signed in as "the wall".
@@ -107,7 +107,7 @@ The only journey traceable end to end in code. Every step names the file that pe
 | Understand | Optional: open Explain, which sends the problem to the model and returns plain language, cached an hour | `services/explain.ts` | Off by default. When off, the operator is reading a trigger expression |
 | Decide | Operator decides this is known or being handled | none | Nothing records that a decision was made, only that an acknowledgement was sent |
 | Act | Acknowledge, with a message, optionally closing | `AckDialog.tsx` → `POST /api/problems/acknowledge` | Returns 503 if `ZABBIX_WRITE_TOKEN` is unset. The UI hides the control in that case, so the operator's route to acting is simply absent rather than explained |
-| Confirm | Affected cache keys are dropped and, for 15 s, refetched on a TTL of at most 2 s, then the SSE push carries the new state | `actions.ts` `WRITE_HOLD_MS` | For up to 15 seconds the problem can still read as open. Acting twice is the obvious failure |
+| Confirm | Affected cache keys are dropped and, for 15 s, refetched on a TTL of at most 2 s, then the SSE push carries the new state | `services/actions.ts` `WRITE_HOLD_MS` | For up to 15 seconds the problem can still read as open. Acting twice is the obvious failure |
 
 Where the friction is, in order of how much it costs:
 

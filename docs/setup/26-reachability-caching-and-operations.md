@@ -68,7 +68,9 @@ method counts each as 100 %; the SLA page lists them and the figures are unchang
 - JSON over 1 KB is compressed (`compress.ts`): brotli quality 4 or gzip level 6:
   `/api/problems` 459 KB → 25 KB in ~3 ms.
 - The live stream (`/api/stream`) runs one shared ticker, sends the problem list when something shown
-  changes, never resends an identical one, and respects back-pressure.
+  changes, never resends an identical one, and respects back-pressure. Its frames carry only the
+  fields the Dashboard reads, and go gzipped to a screen that accepts it (166,741 bytes become 18,693
+  on HCML's list, §7).
 - The web app polls one request at a time, aborts requests nobody needs any more, pauses in hidden
   tabs, dims stale data while new parameters load, and keeps the page when a refresh fails.
 - nginx gzips the app's own files over 1 KB; `/bff` is left to `compress.ts`.

@@ -12,7 +12,7 @@ erDiagram
     %%  Read this first: the portal owns no database.
     %%  There is no pg/prisma/knex dependency, no SQL, no .sql file. Every
     %%  ZBX_* entity lives in Zabbix's MySQL database (Zabbix 7.0.30) and is
-    %%  read over JSON-RPC (13 read methods, 1 write). Everything else is
+    %%  read over JSON-RPC (14 read methods, 1 write). Everything else is
     %%  computed per request and never stored; the only persistence is an
     %%  in-memory TTL cache.
 
@@ -172,11 +172,46 @@ erDiagram
             number max
             string source "trend, history or none"
         }
+        METER {
+            string id PK "the dashboard page and the widget"
+            string title "the widget's name, from dashboard.get"
+            string itemid FK "empty when the widget points at no item"
+            string direction "in or out, from the item key"
+            string link "up, down or unknown, from the status item"
+            string units
+            number value
+            number clock
+            number min "the bottom of the gauge"
+            number max "the top of the gauge: the capacity of the link"
+            string zones "the colour zones, from the widget's thresholds"
+            number fraction "value over max"
+            string zone "none, low, ok, warn or critical"
+            string state "ok, stale, nodata, unsupported, missing or invalid"
+            string other "the same interface the other way, on this scale"
+        }
+        WEB_SCENARIO {
+            string itemid PK "web.test.fail[scenario]"
+            string hostid FK
+            string name "the scenario"
+            string state "ok, failed or unknown"
+            number step "the step that failed, counting from 1"
+            number clock
+        }
+        TOP_HOST {
+            string itemid PK
+            string hostid FK
+            string metric "cpu or memory"
+            number value "percent"
+            number clock
+        }
 
         ZBX_ITEM             ||--o{ ZBX_ITEM_TAG         : "selectTags, link_group + link_role"
         ZBX_ITEM             ||--o{ ZBX_HISTORY          : "itemids, table picked by value_type"
         ZBX_ITEM             ||--o{ ZBX_TREND            : "itemids, hourly aggregates"
         ZBX_ITEM             ||--o| CAPACITY_ROW         : "derives: trend.get, history fallback"
+        ZBX_ITEM             |o--o| METER                : "derives: the gauge widget's item, with the other direction and the status item of the same interface"
+        ZBX_ITEM             ||--o| WEB_SCENARIO         : "derives: the result item web.test.fail[scenario], webitems"
+        ZBX_ITEM             ||--o| TOP_HOST             : "derives: the hottest cpu or memory item of the host"
     end
 
     subgraph EVENTS["Events &amp; Incidents"]
@@ -415,6 +450,8 @@ erDiagram
     %%  Cross-domain relationships
 
     ZBX_HOST             ||--o{ ZBX_ITEM             : "hostids"
+    ZBX_HOST             ||--o{ WEB_SCENARIO         : "hostids"
+    ZBX_HOST             ||--o{ TOP_HOST             : "hostids"
     ZBX_TRIGGER          }o--|| ZBX_HOST             : "selectHosts: FIRST HOST ONLY"
     ZBX_SERVICE          ||--o{ ZBX_EVENT            : "selectProblemEvents, the root causes"
     ZBX_HOST             ||--|| SITE_HOST            : "derives: resolveSite() tag, name, inventory, group"
@@ -423,10 +460,10 @@ erDiagram
     ZBX_HOST             ||--o{ HOST_GAP             : "derives: only when a dimension is missing"
     ZBX_EVENT            ||--o| PROBLEM_EXPLANATION  : "derives: humanize() through an LLM"
     ZBX_SLA              ||--o| SLA_EXPLANATION      : "derives: humanize() through an LLM"
-    CHAT_SNAPSHOT        ||--o{ ZBX_EVENT            : "derives: up to 40 problems, worst first"
-    CHAT_SNAPSHOT        ||--o{ SITE                 : "up to 30 sites, worst first"
-    CHAT_SNAPSHOT        ||--o{ SERVICE_NODE         : "up to 20 degraded services"
-    CHAT_SNAPSHOT        ||--o{ SERVICE_SLA          : "up to 10 enabled SLAs"
+    CHAT_SNAPSHOT        ||--o{ ZBX_EVENT            : "derives: up to 20 problems, worst first, in a budget of 1,850 characters"
+    CHAT_SNAPSHOT        ||--o{ SITE                 : "worst first, in a budget of 900 characters"
+    CHAT_SNAPSHOT        ||--o{ SERVICE_NODE         : "the degraded ones, in a budget of 400 characters"
+    CHAT_SNAPSHOT        ||--o{ SERVICE_SLA          : "in a budget of 700 characters"
     ZBX_HOST             |o--o{ ZBX_MAP_SELEMENT     : "elements[0].hostid, host elements only"
     ZBX_EVENT            }o--o{ MAP_ELEMENT          : "derives: open problems and worst severity per host"
 
@@ -465,5 +502,6 @@ erDiagram
     class NOISY_TRIGGER,PROBLEM_EXPLANATION,SCORECARD_DIMENSION,SERVICE_NODE derived
     class SERVICE_SLA,SITE,SITE_HOST,SLA_EXPLANATION derived
     class STATS,TAG_EXPLAINED,TOP_TRIGGER derived
+    class METER,TOP_HOST,WEB_SCENARIO derived
     class PORTAL_USER local
-%% source-hash: 90aa57515226
+%% source-hash: 55f19fbb457b

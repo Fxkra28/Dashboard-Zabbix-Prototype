@@ -20,7 +20,8 @@ Should the portal hand the month over as a file, where should that file be made,
 * The files are printed and attached to emails, so they need a fixed page and the light colours,
   whatever theme the reader's screen uses.
 * The dependency rule in [`contributing.md`](../../contributing.md), *Zero new dependencies*: 35
-  direct dependencies, 13 of them shipped, and each addition needs a real argument. A runtime
+  direct dependencies when this was written (40 on 20 October 2026, after the server's linter and the OpenAPI
+  types, which are dev tools; 13 shipped then and now), and each addition needs a real argument. A runtime
   dependency in the BFF also enters the image and the `npm audit` that CI runs on what ships.
 * No database ([ADR-0003](0003-no-database.md)) and no write to Zabbix
   ([ADR-0006](0006-read-only-with-one-write.md)): a file is built per request and kept nowhere.
@@ -83,7 +84,7 @@ is about 10 pages and 69 KB and the workbook about 23 KB. In a fresh process the
 
 ### Positive Consequences
 
-* No new dependency. The BFF still has 8 runtime dependencies. Nothing more to install, audit or
+* No new dependency. The BFF still has 8 runtime dependencies (the same on 20 October 2026). Nothing more to install, audit or
   update, and no font in the image.
 * The figures cannot disagree with the page. Both read the same cached reports, and the report's
   wording is tested against the page's. A month already loaded on the SLA page costs no further
@@ -129,7 +130,8 @@ is about 10 pages and 69 KB and the workbook about 23 KB. In a fresh process the
 
 Not done: a scheduled or emailed report, which would need HCML to say who gets it and when, a mail
 relay or a folder to write to, and somewhere for the schedule to live, while the portal keeps nothing
-([ADR-0003](0003-no-database.md)). Goal 6 stays partial. Also not done: a CSV file, a chart in the
+([ADR-0003](0003-no-database.md)). Goal 6 stays partial. Also not done: a CSV file of this report (other pages have one: Alert noise, the Inventory scorecard and, since
+19 October 2026, the Graphs page's Show data), a chart in the
 workbook, fonts beyond Western European letters, and an export of any page but the SLA report. The
 Availability page's buttons download this report, not that page's own table.
 

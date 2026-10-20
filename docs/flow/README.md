@@ -107,8 +107,8 @@ only exemptions, matched exactly against the route the router matched, so an enc
 address. The forgery check runs first: a POST sent with the cookie, and every sign-in and sign-out,
 needs `X-HCML-CSRF: 1` and, when the browser sends an `Origin`, one naming the portal's own host and
 port, or gets 403 `csrf`. A Bearer request skips the check, except on sign-in and sign-out. `POST /api/auth/logout` clears the cookie.
-In `server/src/security/auth.ts`: `ROUTE_RULES` 41-46, `roleAllows` 52, `PUBLIC_ROUTES` 55, `csrfRefusal` 138,
-`loadUsers` 183, `authenticate` 314, and the `onRequest` guard from 487.
+In `server/src/security/auth.ts`: `ROUTE_RULES` 36-41, `roleAllows` 47, `PUBLIC_ROUTES` 50, `csrfRefusal` 133,
+`loadUsers` 177, `authenticate` 308, and the `onRequest` guard from 476.
 
 ### 6 · Data: where a number comes from
 
@@ -138,7 +138,7 @@ not an hour. `server/src/routes/explain.ts:11`, `server/src/services/explain.ts:
 ### 8 · AI: the Assistant
 
 ```text
-Assistant ──POST /api/chat──► estate snapshot + ≤3,000 chars of history ──► model ──SSE: context → token… → done──► markdown.ts
+Assistant ──POST /api/chat──► estate snapshot + ≤3,000 chars of history ──► model ──SSE: context → token… → done──► parseMarkdown.ts
 ```
 
 The Assistant is the larger of the two AI paths by a wide margin: Explain sends one problem, this
@@ -154,8 +154,8 @@ Acknowledge ──POST /api/problems/acknowledge──► operator role + ZABBIX
 ```
 
 The portal's only write, behind a token separate from the read token. Leave `ZABBIX_WRITE_TOKEN`
-unset and the portal is provably read-only: `/api/health` reports `writeBack: false` and the UI hides
-the control. The invalidate and the push are drawn as a parallel fork in `DataFlow` but run in
+unset and the portal sends no write, provided the read token's role is read-only (tracker SC-23):
+`/api/health` reports `writeBack: false` and the UI hides the control. The invalidate and the push are drawn as a parallel fork in `DataFlow` but run in
 sequence: `event.acknowledge` is awaited first.
 [ADR-0006](../architecture/adr/0006-read-only-with-one-write.md), `server/src/routes/actions.ts:39`.
 

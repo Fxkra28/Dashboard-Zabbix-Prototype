@@ -34,7 +34,7 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 | See how it works | [`architecture/`](architecture/): diagrams and the subsystem index |
 | See what it looks like | [`screenshots/README.md`](screenshots/README.md): the main pages as images, with every name replaced |
 | See who uses it | [`ux/README.md`](ux/README.md): the three roles and the acknowledge journey, derived from the code |
-| Change something | [`../setup.md`](../setup.md), 34 sections, one per subsystem |
+| Change something | [`../setup.md`](../setup.md), 38 parts, one per subsystem |
 | Change it safely | [`contributing.md`](contributing.md): the house rules, and why each one exists |
 | Know what is wrong with it | [`../AUDIT_REPORT.md`](../AUDIT_REPORT.md) and `setup.md` §27 |
 
@@ -43,7 +43,7 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 | | |
 |---|---|
 | Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1173 tests, linted with eslint |
-| Back end | Fastify 5 + TypeScript on Node 24. 22 route modules, 45 endpoints, 1687 tests, linted with eslint |
+| Back end | Fastify 5 + TypeScript on Node 24. 22 route modules, 45 endpoints, 1688 tests, linted with eslint |
 | Data source | The Zabbix JSON-RPC API. Nothing else: no database, no volumes, no data files |
 | Writes | Exactly one: acknowledge/close, behind a separate token and the operator role |
 | Downloads | The monthly SLA report as a PDF or an Excel file, built when asked from the cached figures and never stored |
@@ -68,7 +68,7 @@ shows is a snapshot of that moment. [ADR-0008](architecture/adr/0008-stop-local-
 
 ```
 README.md                  install, configure, run
-setup.md                   the index of the deep reference: 35 parts, one per subsystem, in docs/setup/
+setup.md                   the index of the deep reference: 38 parts, one per subsystem, in docs/setup/
 AUDIT_REPORT.md            what two audits found, and what is still open
 tracker.md                 every row of work and its state; the history of the changes is in CHANGELOG.md
 package.json               the root scripts: `npm run verify` runs every check
@@ -82,13 +82,13 @@ docs/
   api/openapi.yaml         the contract: 45 endpoints
   architecture/adr/        why it is the way it is: 13 decisions
   schema/  flow/  erd/     the diagrams; erd/erd.md is the data model in prose
-  screenshots/             the main pages as images, with host names, addresses and interface descriptions replaced
+  screenshots/             the main pages as images, with host names, addresses, interface descriptions and meter titles replaced
   ux/                      who uses it: the three roles and the acknowledge journey (derived, not interviewed)
   operations/              backing up and restoring the .env files; TLS beyond localhost
 deploy/
   settings.example         every non-secret setting and its default, versioned
 .github/
-  workflows/ci.yml         five jobs: server, web, the nine checkers, a secret scan, both Docker builds
+  workflows/ci.yml         five jobs: server, web, the ten checkers, a secret scan, both Docker builds
   dependabot.yml           weekly pull requests for the actions, the npm packages and the base images
 ```
 

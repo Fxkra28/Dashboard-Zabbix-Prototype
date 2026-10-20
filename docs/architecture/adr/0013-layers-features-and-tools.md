@@ -82,9 +82,9 @@ checks.**
 * **Styles.** `styles.css` is 18 numbered parts in `web/src/styles/`, and `index.css` imports them in order. The
   order is the cascade, so a new rule goes into the part it belongs to, and the build serves the same one sheet:
   its SHA-256 is the same before and after.
-* **The setup guide.** `setup.md` is the index and `docs/setup/NN-title.md` are its 35 parts, each the text of
+* **The setup guide.** `setup.md` is the index and `docs/setup/NN-title.md` are its 35 parts (38 since 20 October, three parts of changes more), each the text of
   one section line for line. Only parts 11 and 19 differ between the copies, where `setup.md` as a whole did.
-* **Tools.** `tools/check/` holds the six checkers that read the repository, `tools/live/` the eight scripts that
+* **Tools.** `tools/check/` holds the six checkers that read the repository (a seventh, `facts.check.mjs`, was added on 20 October 2026), `tools/live/` the eight scripts that
   read a running portal (moved in from `myown/checks/`), and a root `package.json` with scripts only:
   `npm run check`, and `npm run verify` for typecheck, lint, test, build and check in one go. The checks that belong
   to one package stay in it (`web/scripts/`, `server/scripts/`). `.github/workflows/ci.yml` runs five jobs

@@ -1,7 +1,10 @@
 # Screenshots
 
-The main pages of the portal, as images. They were taken on 13 October 2026 from a running portal that
-reads HCML's restored Zabbix data, with the code of commit `cef91b3`.
+The main pages of the portal, as images. They were taken on 20 October 2026 from a running portal that
+reads HCML's restored Zabbix data, built from the working tree on top of commit `5cf5268`. The footer of the images says `Build 0044efe-dirty`, a label set by hand when the
+portal was started and one commit behind the tree it was built from. The set of 13
+October, from commit `cef91b3`, is replaced: it showed the Dashboard before its Hosts and Internet traffic
+views, and Graphs before the CSV download.
 Each is one screen, 1440 px wide, in the light theme unless it says otherwise.
 
 ## What is real and what is replaced
@@ -15,11 +18,14 @@ stops, writing nothing, if a real one is still there.
 | Host names | the site number at the start is kept, then a kind and a number: `1.4 SW-04`, `INET : JAKARTA WAN-114` |
 | IP addresses | an address in 198.18.0.0/15, a range reserved for testing, so it cannot be a real one |
 | Interface descriptions, link and tunnel names, the values of free-text problem tags | `link-` and three digits |
+| The title of each Internet traffic meter (free text from a widget of HCML's Zabbix dashboard) | `link-` and three digits, one for each title |
 
 Not replaced, because the pages need them or this repository already says them: counts, severities, times,
-site names, host group names, interface names such as `Gi1/0/8`, and the text of triggers that name no
-host. The figures are real, so the images show the size and shape of the estate, though not what its
-devices are called.
+site names, host group names, interface names such as `Gi1/0/8`, template names such as `Cisco IOS by SNMP`,
+and the text of triggers that name no host. The figures are real, so the images show the size and shape of
+the estate, though not what its devices are called. The Internet traffic image shows more of them than the
+others: the capacity of each link, the colour zones and the last reading Zabbix holds, which is from 14
+September on this data.
 
 The Zabbix server in the restored copy is off, so devices read "No data" and nothing is being polled. That
 is how the portal looks on this data, and it is left as it is.
@@ -30,8 +36,27 @@ is how the portal looks on this data, and it is left as it is.
 
 ![The Dashboard: counts for the estate, the live list of open problems and problems by host group](dashboard.png)
 
-Counts for the estate, the live list of open problems (worst first, kept current by a stream) and the
-problems of each host group.
+The Overview, the first of three views: counts for the estate, a card for the Internet links, the live
+list of open problems (worst first, kept current by a stream) and the problems of each host group. The
+other two views are the next two images.
+
+### Dashboard: Hosts
+
+![The Dashboard's Hosts view: hosts up, degraded, down and without data, the devices of each kind, web monitoring and the busiest hosts](dashboard-hosts.png)
+
+How many hosts are up, degraded, down or without data, the devices of each kind, the web scenarios that
+pass, fail or have no current result, and the ten busiest hosts by CPU and by memory. Everyone sees it. The
+two lists of busiest hosts say "No current value" because the Zabbix server of this restored copy is off,
+and a figure that is old is never listed.
+
+### Dashboard: Internet traffic
+
+![The Dashboard's Internet traffic view: a gauge for each link, with its capacity, its colour zones and its last reading](internet-traffic.png)
+
+A gauge for each gauge widget of HCML's Zabbix dashboard, with the capacity and the colour zones the widget
+gives, the value, and an old reading dimmed with its age. Operators and administrators only, because it is
+interface data. The titles are replaced here. A wall screen signed in as an operator or an administrator turns
+between the three views by itself.
 
 ### Problems
 
@@ -51,12 +76,25 @@ the top says is a guess.
 
 ### Graphs
 
-![Graphs: one item over a calendar month, with its minimum, average, maximum and last values and a Show data button](graphs.png)
+![Graphs: one item over a calendar month, with its minimum, average, maximum and last values and the Show data and Download CSV buttons](graphs.png)
 
 One item over a calendar month, read from hourly trends. Under the chart are its minimum, average,
 maximum and last values, and Show data opens every plotted point as a table, which the tooltip otherwise
 gives one point at a time. Download CSV beside it saves the same table as a file, one column for each
-selected item, with the unit in the column heading.
+selected item, with the unit in the column heading, whether or not the table is open.
+
+![Graphs with Show data open: the points of the chart as a table, with the Hide data and Download CSV buttons above it](graphs-show-data.png)
+
+With Show data open the table stays open when an item is added or removed or the range changes.
+
+### Devices
+
+![Devices: a tile for each kind of device with its count, and the list with site, interface, availability, problems and template](devices.png)
+
+A tile for each kind of device (switches, firewalls, access points, radio repeaters, servers, WAN links, web
+services, other) with its count, how many have problems and how many are down, and under them the list of
+the kind chosen, with its site, interface, availability, problems and template. Operators and administrators
+also get a Ports link on each row.
 
 ### Network
 
@@ -83,8 +121,9 @@ inside its card instead of widening the page.
 A screenshot goes into this folder only if its names were replaced, and every image here was looked at
 after it was taken, because the automatic check reads text and cannot read a chart. The pages left out
 are the ones that print figures a reader could take for HCML's own: the SLA report shows each site's
-availability for the month. [`../contributing.md`](../contributing.md) says never to commit estate data;
-this folder is the one exception, for that reason.
+availability for the month. The Internet traffic image is the nearest case, and what it shows is said above.
+[`../contributing.md`](../contributing.md) says never to commit estate data; this folder is the one exception,
+for that reason.
 
 The images were made with a private capture script that drives Chrome, rewrites the names in the page and
 refuses to write an image while a real one is left. It is kept beside the repository, not in it, because

@@ -16,12 +16,12 @@ needs, worked out from the same rules (`pageAccess.ts`), so the sidebar keeps no
 
 ## Three roles
 
-The portal is read-only today, so roles divide by sensitivity and cost, not write access:
+The portal is read-only but for one write (§20), so roles divide by sensitivity and cost, and only an operator may write:
 
 | Role | Gets | Rationale |
 |---|---|---|
-| viewer | all monitoring, Sites, Services, SLA, reports, and "Explain" | The plain-language layer exists *precisely* for non-engineers. Gating it higher would defeat its purpose. |
-| operator | + Network, Links & WAN health | Engineering surfaces; also where acknowledge/close write-back will land. |
+| viewer | all monitoring, Sites, Hosts, Devices (without the Ports link), Services, SLA, reports, the Dashboard's Overview and Hosts views, and "Explain" | The plain-language layer exists *precisely* for non-engineers. Gating it higher would defeat its purpose. |
+| operator | + Network, Links & WAN health, the Dashboard's Internet traffic view, and the Ports link of Devices | Engineering surfaces, which is interface data; also the one role that may acknowledge or close, when write-back is switched on (§20). |
 | admin | + Inventory & ownership scorecard | Governance, not monitoring. |
 
 Enforcement lives in [`auth.ts`](../../server/src/security/auth.ts) `ROUTE_RULES`, **first match wins, and anything

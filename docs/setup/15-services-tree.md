@@ -28,7 +28,7 @@ the same row as the status.
 
 ## Services are a DAG, not a tree
 
-A shared dependency legitimately sits under two parents (in the demo data, *Shared SD-WAN core*
+A shared dependency legitimately sits under two parents (in the demo data of September, since deleted, *Shared SD-WAN core*
 hangs off both Offshore and Onshore). Two consequences the code handles explicitly:
 
 - Recursion is path-guarded and depth-capped (`MAX_DEPTH`), so a malformed hierarchy can't hang

@@ -1,8 +1,8 @@
 # ERD by domain: HCML Monitoring Portal
 
-The same schema as [`ERD-Mermaid.mmd`](ERD-Mermaid.mmd), split for readability. 43 entities and 49 relationships are a lot to take in at once, so this document shows the domain map first, then each domain on its own with full attributes.
+The same schema as [`ERD-Mermaid.mmd`](ERD-Mermaid.mmd), split for readability. 46 entities and 54 relationships are a lot to take in at once, so this document shows the domain map first, then each domain on its own with full attributes.
 
-Nothing here differs from the single-diagram version (same entities, same attributes, same relationships, same names and PK/FK markers. Only the layout differs. One level up, the conceptual model) what the business talks about, with no keys or types is [`ERD-Conceptual.md`](../conceptual/ERD-Conceptual.md); the index of all three levels is in [`erd.md`](../erd.md#the-three-levels).
+Nothing here differs from the single-diagram version: same entities, same attributes, same relationships, same names and PK/FK markers. Only the layout differs. One level up is the conceptual model, which says what the business talks about, with no keys or types: [`ERD-Conceptual.md`](../conceptual/ERD-Conceptual.md). The index of all three levels is in [`erd.md`](../erd.md#the-three-levels).
 
 **Colour marks the layer:** blue `ZBX_*` is read from Zabbix over JSON-RPC · green is derived by the portal, which Zabbix has no equivalent for · amber is local to the portal · grey is an entity belonging to another domain, shown without attributes so the edge has somewhere to land.
 
@@ -22,7 +22,7 @@ config:
 flowchart LR
     HOSTS["<b>Hosts & Inventory</b><br/>5 Zabbix · 3 derived"]
     SITES["<b>Sites & Links</b><br/>4 derived"]
-    METRICS["<b>Metrics & Items</b><br/>4 Zabbix · 1 derived"]
+    METRICS["<b>Metrics & Items</b><br/>4 Zabbix · 4 derived"]
     EVENTS["<b>Events & Incidents</b><br/>3 Zabbix · 4 derived"]
     SERVICES["<b>Services & SLA</b><br/>4 Zabbix · 2 derived"]
     SCORECARD["<b>Governance scorecard</b><br/>2 derived"]
@@ -32,7 +32,7 @@ flowchart LR
 
     EVENTS -- "2" --> HOSTS
     AI -- "2" --> SERVICES
-    HOSTS -- "1" --> METRICS
+    HOSTS -- "3" --> METRICS
     SERVICES -- "1" --> EVENTS
     HOSTS -- "1" --> SITES
     METRICS -- "1" --> SITES
@@ -50,9 +50,9 @@ flowchart LR
 
 | Domain | Entities | Internal | Crossing |
 |---|---:|---:|---:|
-| [Hosts & Inventory](#hosts--inventory) | 8 | 6 | 6 |
+| [Hosts & Inventory](#hosts--inventory) | 8 | 6 | 8 |
 | [Sites & Links](#sites--links) | 4 | 2 | 3 |
-| [Metrics & Items](#metrics--items) | 5 | 4 | 2 |
+| [Metrics & Items](#metrics--items) | 8 | 7 | 4 |
 | [Events & Incidents](#events--incidents) | 7 | 7 | 6 |
 | [Services & SLA](#services--sla) | 6 | 8 | 4 |
 | [Governance scorecard](#governance-scorecard) | 2 | 1 | 1 |
@@ -127,6 +127,8 @@ erDiagram
     ZBX_ITEM["ZBX_ITEM · items"]
     ZBX_MAP_SELEMENT["ZBX_MAP_SELEMENT · sysmaps_elements"]
     ZBX_TRIGGER["ZBX_TRIGGER · triggers"]
+    WEB_SCENARIO
+    TOP_HOST
 
     ZBX_HOST             ||--o{ ZBX_HOST_INTERFACE   : "selectInterfaces"
     ZBX_HOST             ||--o| ZBX_HOST_INVENTORY   : "selectInventory, [] when disabled"
@@ -136,6 +138,8 @@ erDiagram
     ZBX_HOST_GROUP       ||--|| GROUP_PROBLEMS       : "derives: severity histogram per group"
 
     ZBX_HOST             ||--o{ ZBX_ITEM             : "hostids"
+    ZBX_HOST             ||--o{ WEB_SCENARIO         : "hostids"
+    ZBX_HOST             ||--o{ TOP_HOST             : "hostids"
     ZBX_TRIGGER          }o--|| ZBX_HOST             : "selectHosts: FIRST HOST ONLY"
     ZBX_HOST             ||--|| SITE_HOST            : "derives: resolveSite() tag, name, inventory, group"
     INCIDENT             }|--|| HOST_AVAILABILITY    : "derives: overlapping intervals merged per host"
@@ -151,9 +155,10 @@ erDiagram
     class HOST_AVAILABILITY,GROUP_SCORE,GROUP_PROBLEMS derived
     class HOST_GAP,INCIDENT,SITE_HOST,ZBX_ITEM external
     class ZBX_MAP_SELEMENT,ZBX_TRIGGER external
+    class WEB_SCENARIO,TOP_HOST external
 ```
 
-*Grey, no attributes:* `HOST_GAP`, `INCIDENT`, `SITE_HOST`, `ZBX_ITEM`, `ZBX_MAP_SELEMENT`, `ZBX_TRIGGER`. Detailed in [Governance scorecard](#governance-scorecard), [Events & Incidents](#events--incidents), [Sites & Links](#sites--links), [Metrics & Items](#metrics--items), [Maps](#maps), [Events & Incidents](#events--incidents).
+*Grey, no attributes:* `HOST_GAP`, `INCIDENT`, `SITE_HOST`, `TOP_HOST`, `WEB_SCENARIO`, `ZBX_ITEM`, `ZBX_MAP_SELEMENT`, `ZBX_TRIGGER`. Detailed in [Governance scorecard](#governance-scorecard), [Events & Incidents](#events--incidents), [Sites & Links](#sites--links), [Metrics & Items](#metrics--items), [Metrics & Items](#metrics--items), [Metrics & Items](#metrics--items), [Maps](#maps), [Events & Incidents](#events--incidents).
 
 ---
 
@@ -213,7 +218,7 @@ erDiagram
 
     ZBX_HOST             ||--|| SITE_HOST            : "derives: resolveSite() tag, name, inventory, group"
     ZBX_ITEM             }|--|| LINK                 : "derives: 1..3 icmpping items, keyed hostid:target"
-    CHAT_SNAPSHOT        ||--o{ SITE                 : "up to 30 sites, worst first"
+    CHAT_SNAPSHOT        ||--o{ SITE                 : "worst first, in a budget of 900 characters"
 
     classDef zbx      fill:#dbeafe,stroke:#2563eb,color:#14213d
     classDef derived  fill:#dcfce7,stroke:#16a34a,color:#052e16
@@ -229,7 +234,7 @@ erDiagram
 
 ## Metrics & Items
 
-Items and their stored values: raw history in five MySQL tables and hourly trends in two, the table picked by the item's `value_type`. `lastvalue` and `lastclock` are not stored anywhere, Zabbix reads them back from history, so they go blank once the newest value is older than the history display period. `CAPACITY_ROW` aggregates a trend window, falling back to raw history on a young instance.
+Items and their stored values: raw history in five MySQL tables and hourly trends in two, the table picked by the item's `value_type`. `lastvalue` and `lastclock` are not stored anywhere, Zabbix reads them back from history, so they go blank once the newest value is older than the history display period. `CAPACITY_ROW` aggregates a trend window, falling back to raw history on a young instance. Three derived entities were added on 20 October 2026, for the Dashboard's views of 14 and 15 October: `METER` (one gauge of the Internet traffic view: a gauge widget of HCML's own Zabbix dashboard, read with `dashboard.get`, and the items behind it), `WEB_SCENARIO` (a web scenario's current result, read from its `web.test.fail[...]` item) and `TOP_HOST` (the busiest hosts by CPU and by memory). The dashboard's own tables are not drawn, as the maintenance tables are not: the portal reads them only to build a meter. A meter also reads the item of the same interface the other way and its status item, which this diagram shows as the one edge to `ZBX_ITEM`.
 
 ```mermaid
 ---
@@ -272,14 +277,51 @@ erDiagram
         number max
         string source "trend, history or none"
     }
+    METER {
+        string id PK "the dashboard page and the widget"
+        string title "the widget's name, from dashboard.get"
+        string itemid FK "empty when the widget points at no item"
+        string direction "in or out, from the item key"
+        string link "up, down or unknown, from the status item"
+        string units
+        number value
+        number clock
+        number min "the bottom of the gauge"
+        number max "the top of the gauge: the capacity of the link"
+        string zones "the colour zones, from the widget's thresholds"
+        number fraction "value over max"
+        string zone "none, low, ok, warn or critical"
+        string state "ok, stale, nodata, unsupported, missing or invalid"
+        string other "the same interface the other way, on this scale"
+    }
+    WEB_SCENARIO {
+        string itemid PK "web.test.fail[scenario]"
+        string hostid FK
+        string name "the scenario"
+        string state "ok, failed or unknown"
+        number step "the step that failed, counting from 1"
+        number clock
+    }
+    TOP_HOST {
+        string itemid PK
+        string hostid FK
+        string metric "cpu or memory"
+        number value "percent"
+        number clock
+    }
     ZBX_HOST["ZBX_HOST · hosts"]
 
     ZBX_ITEM             ||--o{ ZBX_ITEM_TAG         : "selectTags, link_group + link_role"
     ZBX_ITEM             ||--o{ ZBX_HISTORY          : "itemids, table picked by value_type"
     ZBX_ITEM             ||--o{ ZBX_TREND            : "itemids, hourly aggregates"
     ZBX_ITEM             ||--o| CAPACITY_ROW         : "derives: trend.get, history fallback"
+    ZBX_ITEM             |o--o| METER                : "derives: the gauge widget's item, with the other direction and the status item of the same interface"
+    ZBX_ITEM             ||--o| WEB_SCENARIO         : "derives: the result item web.test.fail[scenario], webitems"
+    ZBX_ITEM             ||--o| TOP_HOST             : "derives: the hottest cpu or memory item of the host"
 
     ZBX_HOST             ||--o{ ZBX_ITEM             : "hostids"
+    ZBX_HOST             ||--o{ WEB_SCENARIO         : "hostids"
+    ZBX_HOST             ||--o{ TOP_HOST             : "hostids"
     ZBX_ITEM             }|--|| LINK                 : "derives: 1..3 icmpping items, keyed hostid:target"
 
     classDef zbx      fill:#dbeafe,stroke:#2563eb,color:#14213d
@@ -287,7 +329,7 @@ erDiagram
     classDef local    fill:#fef3c7,stroke:#d97706,color:#451a03
     classDef external fill:#f1f5f9,stroke:#94a3b8,color:#475569
     class ZBX_ITEM,ZBX_ITEM_TAG,ZBX_HISTORY,ZBX_TREND zbx
-    class CAPACITY_ROW derived
+    class CAPACITY_ROW,METER,WEB_SCENARIO,TOP_HOST derived
     class LINK,ZBX_HOST external
 ```
 
@@ -379,7 +421,7 @@ erDiagram
     ZBX_SERVICE          ||--o{ ZBX_EVENT            : "selectProblemEvents, the root causes"
     INCIDENT             }|--|| HOST_AVAILABILITY    : "derives: overlapping intervals merged per host"
     ZBX_EVENT            ||--o| PROBLEM_EXPLANATION  : "derives: humanize() through an LLM"
-    CHAT_SNAPSHOT        ||--o{ ZBX_EVENT            : "derives: up to 40 problems, worst first"
+    CHAT_SNAPSHOT        ||--o{ ZBX_EVENT            : "derives: up to 20 problems, worst first, in a budget of 1,850 characters"
     ZBX_EVENT            }o--o{ MAP_ELEMENT          : "derives: open problems and worst severity per host"
 
     classDef zbx      fill:#dbeafe,stroke:#2563eb,color:#14213d
@@ -462,8 +504,8 @@ erDiagram
 
     ZBX_SERVICE          ||--o{ ZBX_EVENT            : "selectProblemEvents, the root causes"
     ZBX_SLA              ||--o| SLA_EXPLANATION      : "derives: humanize() through an LLM"
-    CHAT_SNAPSHOT        ||--o{ SERVICE_NODE         : "up to 20 degraded services"
-    CHAT_SNAPSHOT        ||--o{ SERVICE_SLA          : "up to 10 enabled SLAs"
+    CHAT_SNAPSHOT        ||--o{ SERVICE_NODE         : "the degraded ones, in a budget of 400 characters"
+    CHAT_SNAPSHOT        ||--o{ SERVICE_SLA          : "in a budget of 700 characters"
 
     classDef zbx      fill:#dbeafe,stroke:#2563eb,color:#14213d
     classDef derived  fill:#dcfce7,stroke:#16a34a,color:#052e16
@@ -572,10 +614,10 @@ erDiagram
 
     ZBX_EVENT            ||--o| PROBLEM_EXPLANATION  : "derives: humanize() through an LLM"
     ZBX_SLA              ||--o| SLA_EXPLANATION      : "derives: humanize() through an LLM"
-    CHAT_SNAPSHOT        ||--o{ ZBX_EVENT            : "derives: up to 40 problems, worst first"
-    CHAT_SNAPSHOT        ||--o{ SITE                 : "up to 30 sites, worst first"
-    CHAT_SNAPSHOT        ||--o{ SERVICE_NODE         : "up to 20 degraded services"
-    CHAT_SNAPSHOT        ||--o{ SERVICE_SLA          : "up to 10 enabled SLAs"
+    CHAT_SNAPSHOT        ||--o{ ZBX_EVENT            : "derives: up to 20 problems, worst first, in a budget of 1,850 characters"
+    CHAT_SNAPSHOT        ||--o{ SITE                 : "worst first, in a budget of 900 characters"
+    CHAT_SNAPSHOT        ||--o{ SERVICE_NODE         : "the degraded ones, in a budget of 400 characters"
+    CHAT_SNAPSHOT        ||--o{ SERVICE_SLA          : "in a budget of 700 characters"
 
     classDef zbx      fill:#dbeafe,stroke:#2563eb,color:#14213d
     classDef derived  fill:#dcfce7,stroke:#16a34a,color:#052e16

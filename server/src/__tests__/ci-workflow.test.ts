@@ -99,6 +99,7 @@ const CHECKERS = [
   'web/scripts/markdown.check.ts',
   'web/scripts/units.check.ts',
   'tools/check/links.check.mjs',
+  'tools/check/facts.check.mjs',
   'tools/check/diagrams.check.mjs',
   'tools/check/parity.check.mjs',
 ];

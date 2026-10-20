@@ -5,7 +5,7 @@
 #   server   install from the lockfile, audit, typecheck, lint, test, build
 #   web      install from the lockfile, audit, typecheck, lint, test, build
 #   checks   what tools/check and the package scripts verify: the API contract, the ERD, the stylesheet and its tokens,
-#            the assistant's markdown parser, the unit formatters, the links, the diagrams
+#            the assistant's markdown parser, the unit formatters, the links, the numbers the docs state, the diagrams
 #   secrets  a scan of what is pushed
 #   images   both Dockerfiles build, and nginx accepts its config
 # Locally, `npm run verify` (package.json) runs every step but the install, the audit, the secret scan and the image builds.
@@ -161,6 +161,9 @@ jobs:
 
       - name: Every relative link in the docs resolves, spelled exactly
         run: node tools/check/links.check.mjs
+
+      - name: The counts the docs state are the ones the code has
+        run: node tools/check/facts.check.mjs
 
       - name: Every diagram source still matches its stamp, and has its PDF
         run: node tools/check/diagrams.check.mjs

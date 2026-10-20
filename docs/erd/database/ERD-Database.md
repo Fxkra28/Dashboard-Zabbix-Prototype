@@ -4,14 +4,14 @@ The MySQL tables behind the portal. [`erd.md`](../erd.md) and [`ERD-Domains.md`]
 
 The single diagram is [`ERD-Database.mmd`](ERD-Database.mmd), pre-rendered as [`ERD-Database.pdf`](ERD-Database.pdf) (vector, the one to read) and [`ERD-Database.png`](ERD-Database.png). This file is the readable form: which API call touches which table, the domain map, then each domain on its own. One level up, the conceptual model (what the business talks about, with no keys or types) is [`ERD-Conceptual.md`](../conceptual/ERD-Conceptual.md); the index of all three levels is in [`erd.md`](../erd.md#the-three-levels).
 
-**Where it comes from.** Every table, column, type, key and foreign key here was read from the running database's `information_schema` on 15 September 2026 (metadata only, no rows. That database is HCML's backup restored into MySQL 8.0 (`zabbix` schema: 203 tables, 1 570 columns, 272 foreign-key columns), and its schema is identical to the stock `create.sql` shipped in the `zabbix/zabbix-server-mysql:ubuntu-7.0.30` image) same tables, same columns, same foreign keys, `dbversion` 7000000 / 7000030. Nothing in it is specific to HCML: it holds for any Zabbix 7.0.30 on MySQL. Which call reads which table was checked against the 7.0.30 frontend source in the running `zabbix-web` container; the `C*.php` line numbers below refer to files under `/usr/share/zabbix/include/classes/api/`.
+**Where it comes from.** Every table, column, type, key and foreign key here was read from the running database's `information_schema` on 15 September 2026 (metadata only, no rows). That database is HCML's backup restored into MySQL 8.0 (`zabbix` schema: 203 tables, 1 570 columns, 272 foreign-key columns). Its schema is identical to the stock `create.sql` shipped in the `zabbix/zabbix-server-mysql:ubuntu-7.0.30` image: same tables, same columns, same foreign keys, `dbversion` 7000000 / 7000030. Nothing in it is specific to HCML: it holds for any Zabbix 7.0.30 on MySQL. Which call reads which table was checked against the 7.0.30 frontend source in the running `zabbix-web` container; the `C*.php` line numbers below refer to files under `/usr/share/zabbix/include/classes/api/`.
 
-**What is in it.** 45 of the 203 tables: the ones whose rows come back to the portal (apart from the maintenance tables, which the method table below names but the diagram leaves out), the four `event.acknowledge` writes, and the ones Zabbix reads to answer or authorise those calls. Columns are cut the same way (keys, the columns the portal's data comes from, and the discriminators that give a key its meaning. Every foreign key between two tables shown is drawn) 44 of them, except four template self-references (`hosts.templateid`, `items.templateid`, `items.master_itemid`, `triggers.templateid`); 14 more relationships exist only in the data.
+**What is in it.** 45 of the 203 tables: the ones whose rows come back to the portal (apart from the maintenance tables, which the method table below names but the diagram leaves out), the four `event.acknowledge` writes, and the ones Zabbix reads to answer or authorise those calls. Columns are cut the same way: keys, the columns the portal's data comes from, and the discriminators that give a key its meaning. Every foreign key between two tables shown is drawn (44 of them), except four template self-references (`hosts.templateid`, `items.templateid`, `items.master_itemid`, `triggers.templateid`); 14 more relationships exist only in the data.
 
 Reading it: a solid line is a `FOREIGN KEY` constraint, labelled with its column, and with *cascade* when deleting the parent row deletes these too · a dashed line is a relationship that exists only in the data, which MySQL does not check · blue tables return rows to the portal · purple tables are written by `event.acknowledge` · grey tables are read inside Zabbix and never returned · white is a table from another domain, shown without columns so the line has somewhere to land. Cardinalities come from the schema too: a nullable foreign key makes the parent end zero-or-one, and a unique one makes the child end zero-or-one. Every `bigint` is `bigint unsigned`.
 
 > This document is shared by both portals, byte for byte, as is the diagram it describes. They run one
-> source tree; only `.env` and the published port differ.
+> source tree; the running portals differ only in `.env`, the compose file and the published port.
 
 To regenerate the renders after editing the `.mmd`:
 
@@ -55,15 +55,15 @@ instead, and the checker ignores dashed lines so that a dashed line turning soli
 
 ## Which API call reads which table
 
-The portal calls 14 Zabbix API methods, all through `server/src/clients/zabbix.ts`. Before any of them runs, the call is authorised through `token` and `users`. See [API token & permissions](#api-token--permissions). For the other direction, which entity in `ERD-Mermaid.mmd` each table serves, see [`ERD-DatabaseSchema.md`](../database-schema/ERD-DatabaseSchema.md).
+The portal calls 15 Zabbix API methods (14 that read and one that writes), all through `server/src/clients/zabbix.ts`. Before any of them runs, the call is authorised through `token` and `users`. See [API token & permissions](#api-token--permissions). For the other direction, which entity in `ERD-Mermaid.mmd` each table serves, see [`ERD-DatabaseSchema.md`](../database-schema/ERD-DatabaseSchema.md).
 
-The line numbers are where each method is called in the code on 16 October 2026, test files and comments left out. They move with every edit to those files, so treat them as a pointer to the file and re-run a search for the method name when one is off.
+The line numbers are where each method is called in the code on 20 October 2026, test files and comments left out. They move with every edit to those files, so treat them as a pointer to the file and re-run a search for the method name when one is off.
 
 | Method | Called from `server/src/` | Tables |
 |---|---|---|
 | `host.get` | `domain/queries.ts:118`, `http/health.ts:43`, `services/devices.ts:28`, `services/hosts.ts:52`, `:82`, `services/maps.ts:86`, `:119`, `services/net.ts:172`, `services/reports.ts:65`, `sli/engine.ts:436`, `:562` | `hosts`; `interface`, `hosts_groups` → `hstgrp`, `host_tag`, `host_inventory` for the matching `select*` |
 | `hostgroup.get` | `services/hosts.ts:94`, `services/reports.ts:69`, `:98`, `sli/maintenance.ts:137` | `hstgrp` (host groups only), `hosts_groups` |
-| `item.get` | `domain/reachability.ts:126`, `security/viewerPolicy.ts:38`, `services/capacity.ts:119`, `:244`, `services/history.ts:243`, `services/hosts.ts:112`, `:162`, `:179`, `:196`, `services/links.ts:108`, `services/meters.ts:457`, `:529`, `:542`, `services/net.ts:207`, `services/reports.ts:66`, `services/topHosts.ts:57`, `services/webMonitoring.ts:57`, `sli/engine.ts:441`, `:571` | `items`, `item_rtdata`, `item_tag`, `hosts`; the history tables for `lastvalue`, `lastclock`, `prevvalue` |
+| `item.get` | `domain/reachability.ts:126`, `security/viewerPolicy.ts:38`, `services/capacity.ts:119`, `:244`, `services/history.ts:244`, `services/hosts.ts:112`, `:162`, `:179`, `:196`, `services/links.ts:108`, `services/meters.ts:457`, `:529`, `:542`, `services/net.ts:207`, `services/reports.ts:66`, `services/topHosts.ts:57`, `services/webMonitoring.ts:57`, `sli/engine.ts:441`, `:571` | `items`, `item_rtdata`, `item_tag`, `hosts`; the history tables for `lastvalue`, `lastclock`, `prevvalue` |
 | `history.get` | `services/capacity.ts:166`, `services/history.ts:71`, `services/meters.ts:505`, `sli/engine.ts:388`, `:476` | one of `history`, `history_str`, `history_log`, `history_uint`, `history_text`, chosen by the `history` parameter |
 | `trend.get` | `sli/events.ts:139` | `trends` for float items, `trends_uint` for unsigned ones |
 | `trigger.get` | `domain/queries.ts:57`, `services/incidents.ts:178`, `services/reports.ts:67`, `sli/engine.ts:543` | `triggers`; `functions` → `items` → `hosts` for `selectHosts` |
@@ -74,7 +74,8 @@ The line numbers are where each method is called in the code on 16 October 2026,
 | `sla.getsli` | `services/services.ts:81`, `services/sla.ts:49` | `sla`, `sla_schedule`, `sla_excluded_downtime`; services matched through `sla_service_tag`, with their status history from `service_alarms` |
 | `map.get` | `services/maps.ts:97`, `:158` | `sysmaps`, `sysmaps_elements`, `sysmaps_links`, plus `sysmap_element_trigger` and `sysmaps_link_triggers` (not drawn) |
 | `maintenance.get` | `sli/maintenance.ts:126` | `maintenances`; `timeperiods` through `maintenances_windows`, `maintenances_hosts` and `maintenances_groups` for `selectTimeperiods`, `selectHosts` and `selectHostGroups` (none of them drawn) |
-| `event.acknowledge` | `routes/actions.ts:102` | writes `acknowledges`; updates `acknowledged` on `events` and `problem`; adds `task` with `task_close_problem` to close, or with `task_acknowledge` for the server to act on |
+| `dashboard.get` | `services/meters.ts:476` | `dashboard`; `dashboard_page`, `widget` and `widget_field` through `selectPages` (none of them drawn) |
+| `event.acknowledge` | `routes/actions.ts:106` | writes `acknowledges`; updates `acknowledged` on `events` and `problem`; adds `task` with `task_close_problem` to close, or with `task_acknowledge` for the server to act on |
 
 ---
 
@@ -437,7 +438,7 @@ erDiagram
 
 ## Acknowledge writes
 
-The only writes the portal can cause, all from one `event.acknowledge` call (`routes/actions.ts:102`). The `acknowledges` row and the `acknowledged` flag on `events` and `problem` change at once (`CEvent.php:1165-1203`). Closing does not: it queues `task` and `task_close_problem` (`:1228`), and the Zabbix server's task manager generates the recovery afterwards, so a closed problem can stay on the portal's list for a few seconds.
+The only writes the portal can cause, all from one `event.acknowledge` call (`routes/actions.ts:106`). The `acknowledges` row and the `acknowledged` flag on `events` and `problem` change at once (`CEvent.php:1165-1203`). Closing does not: it queues `task` and `task_close_problem` (`:1228`), and the Zabbix server's task manager generates the recovery afterwards, so a closed problem can stay on the portal's list for a few seconds.
 
 ```mermaid
 ---

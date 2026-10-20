@@ -44,7 +44,10 @@ the reason shown.
 Problem state is cached for 5 s, and several other views derive from it. Without invalidation an
 acknowledgement wouldn't appear until the TTL expired and the click would look like it did nothing.
 After a successful write the route calls `invalidate()` on `problems`, `stats`, `probsByGroup`,
-`sites`, `aging` and `services`. Measured: the very next `GET /api/problems` already showed
+`sites`, `aging`, `services`, `hosts:overview`, every `map:` detail and the assistant's `chat:snapshot`
+(`STALE_AFTER_WRITE` in `services/actions.ts`). Those keys then stay on a short TTL for 15 seconds
+(`WRITE_HOLD_MS`), because Zabbix applies a close a few seconds after `event.acknowledge` returns, and the
+new list is pushed to every open stream. Measured: the very next `GET /api/problems` already showed
 `acknowledged = 1`.
 
 ## On the page

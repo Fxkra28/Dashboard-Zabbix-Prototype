@@ -99,6 +99,6 @@ Two rules the sources must keep:
 ## If you need more than one page
 
 This folder is the readable set. The exhaustive reference is [`../erd/`](../erd/) and
-[`../erd/erd.md`](../erd/erd.md): the full logical model (43 entities across nine domains), all 45 MySQL tables the
+[`../erd/erd.md`](../erd/erd.md): the full logical model (46 entities across nine domains), all 45 MySQL tables the
 portal touches, the entity-to-table map, and a conceptual model at full scope. Those are reference sheets:
 they do not fit on a page, and are not meant to.

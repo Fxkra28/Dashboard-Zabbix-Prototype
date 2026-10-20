@@ -1,6 +1,6 @@
 # 35. What changed on 15 October 2026, the audit and the Hosts view
 
-[setup.md](../../setup.md) · previous: [§34](34-what-changed-on-14-october-2026-the-follow-ups-to-the-meters.md)
+[setup.md](../../setup.md) · previous: [§34](34-what-changed-on-14-october-2026-the-follow-ups-to-the-meters.md) · next: [§36](36-what-changed-on-16-october-2026-the-folders.md)
 
 *You asked me to check again what is done, what is partly done and what is not done, and to add the indicators that were missing (the re-audit and MT-08 in [`tracker.md`](../../tracker.md)). The audit changed the code in one small place and added tests. The Hosts view is new. All of it is built and tested in both copies. None of it is in the running portals, which have the build of section 33, until you ask for a rebuild.*
 

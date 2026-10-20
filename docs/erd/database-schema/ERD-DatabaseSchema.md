@@ -9,7 +9,7 @@ The same map as a diagram is [`ERD-DatabaseSchema.mmd`](ERD-DatabaseSchema.mmd),
 Reading it: a solid line means the entity's rows or fields are read from that table · a dashed line means the API only walks through the table, or computes a field from it · rounded boxes are entities, in the logical ERD's blue · cylinders are tables, each keeping its colour from `ERD-Database.mmd`: blue when its rows reach the portal, grey when they stay inside Zabbix · a table sits in the frame of the entity that reads it, so the only lines between frames are the three dashed ones to tables another domain reads: `ZBX_TRIGGER` → `items`, `ZBX_EVENT` → `items` and `ZBX_SERVICE` → `events`.
 
 > This page is shared by both portals, byte for byte. They run one source tree and read the same
-> tables; only `.env` and the published port differ.
+> tables; the running portals differ only in `.env`, the compose file and the published port.
 
 ---
 

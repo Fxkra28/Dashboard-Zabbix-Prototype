@@ -15,7 +15,7 @@
     "check:erd": "./server/node_modules/.bin/tsx tools/check/erd.check.ts",
     "check:styles": "node web/scripts/css.check.mjs && node web/scripts/tokens.check.mjs",
     "check:web": "./server/node_modules/.bin/tsx web/scripts/markdown.check.ts && ./server/node_modules/.bin/tsx web/scripts/units.check.ts",
-    "check:docs": "node tools/check/links.check.mjs && node tools/check/diagrams.check.mjs",
+    "check:docs": "node tools/check/links.check.mjs && node tools/check/facts.check.mjs && node tools/check/diagrams.check.mjs",
     "check:parity": "node tools/check/parity.check.mjs",
     "check": "npm run check:api && npm run check:erd && npm run check:styles && npm run check:web && npm run check:docs && npm run check:parity",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build && npm run check"

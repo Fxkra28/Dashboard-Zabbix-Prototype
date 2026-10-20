@@ -29,8 +29,9 @@ curl -s http://localhost:8080/api_jsonrpc.php \
 
 A JSON `result` array means you are ready. An `error` about permissions means the role is too narrow.
 
-**Leave `ZABBIX_WRITE_TOKEN` unset** unless you want the acknowledge button. Without it the portal is
-provably read-only and `/api/health` reports `writeBack: false` so the UI hides the control.
+**Leave `ZABBIX_WRITE_TOKEN` unset** unless you want the acknowledge button. Without it the portal
+sends no write, provided the read token's role is read-only as step 1 asks (tracker SC-23), and `/api/health`
+reports `writeBack: false` so the UI hides the control.
 [ADR-0006](architecture/adr/0006-read-only-with-one-write.md).
 
 Acknowledge and close also need sign-in. A dev server with `AUTH_ENABLED=false` refuses them, even
@@ -125,19 +126,28 @@ freshly copied `.env` will not start until both are filled in, or, for local wor
 ## What you should see
 
 Signed in, the first page is the Dashboard. The names here are stand-ins; [`screenshots/`](screenshots/README.md)
-has the other main pages, the dark theme and the narrow-screen layout.
+has the other main pages, the Dashboard's other views, the dark theme and the narrow-screen layout.
 
 ![The Dashboard: counts for the estate, the live list of open problems and problems by host group](screenshots/dashboard.png)
 
 ## Checks you can run
 
+From the repository root, everything at once (the typechecks, the lint, both test suites, both builds and
+every checker), or the checkers alone:
+
+```bash
+npm run install:all                       # npm ci in server/ and in web/
+npm run verify
+npm run check                             # the checkers alone
+```
+
+Or one at a time:
+
 ```bash
 cd server
-npm test                                  # 1687 tests, 78 files
+npm test                                  # 1688 tests, 78 files
 npm run lint                              # eslint
 npm run typecheck
-npx tsx tools/check/openapi.check.ts          # the API contract matches the code
-npx tsx tools/check/erd.check.ts              # the database ERD matches its .erd model
 npx tsx scripts/validate-sli.ts           # the derived SLA against HCML's published reports
 
 cd ../web
@@ -145,13 +155,14 @@ npm test                                  # 1173 tests, 81 files, in jsdom
 npm run lint                              # eslint
 npm run typecheck
 npm run gen:api                           # web/src/generated/openapi.ts, from docs/api/openapi.yaml
-../server/node_modules/.bin/tsx scripts/markdown.check.ts   # web/ has no tsx of its own
-../server/node_modules/.bin/tsx scripts/units.check.ts
-node scripts/css.check.mjs
-node scripts/tokens.check.mjs             # contrast, and no raw values past the tokens
-node tools/check/links.check.mjs              # every relative link in the docs resolves
-node tools/check/diagrams.check.mjs           # every diagram source still matches its stamp
-node tools/check/parity.check.mjs            # the two copies match (needs both folders side by side)
+
+cd ..                                     # the repository root again
+npm run check:api                         # the API contract matches the code
+npm run check:erd                         # the database ERD matches its .erd model
+npm run check:styles                      # the stylesheet parts, and contrast with no raw values past the tokens
+npm run check:web                         # the assistant's markdown renderer and the unit formatters
+npm run check:docs                        # every relative link resolves, every diagram source matches its stamp
+npm run check:parity                      # the two copies match (needs both folders side by side)
 ```
 
 The checkers add zero dependencies: they are standalone scripts. The tests and lint of both packages, and the web's generated API types, use
