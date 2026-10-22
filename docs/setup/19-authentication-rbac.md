@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§18](18-automated-reporting.md) · next: [§20](20-acknowledge-close-write-back.md)
 
-Implements `plan_1.2.md` (in `myown/plan/`, outside this repo) Phase 7 and closes its defect #5. Every source slide in
+Implements `plan_1.2.md` (in `myown/documents/plan/`, outside this repo) Phase 7 and closes its defect #5. Every source slide in
 HCML's review is stamped Private and Confidential, so an open portal is not deployable.
 
 `AUTH_ENABLED=true` turns on JWT login; the `onRequest` guard then rejects unauthenticated `/api/*`

@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§17](17-link-wan-health.md) · next: [§19](19-authentication-rbac.md)
 
-Implements `plan_1.2.md` (in `myown/plan/`, outside this repo) Phase 6, serving HCML Goal 6: *"hard to see SLA,
+Implements `plan_1.2.md` (in `myown/documents/plan/`, outside this repo) Phase 6, serving HCML Goal 6: *"hard to see SLA,
 capacity trends, and recurring issues."* Recurring issues were already covered by Top 100 triggers;
 these add the other two, plus response time.
 

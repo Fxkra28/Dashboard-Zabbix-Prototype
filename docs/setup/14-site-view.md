@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§13](13-plain-language-layer.md) · next: [§15](15-services-tree.md)
 
-Implements `plan_1.2.md` (in `myown/plan/`, outside this repo) Phase 1, serving HCML Goal 5 (*"dashboards are not
+Implements `plan_1.2.md` (in `myown/documents/plan/`, outside this repo) Phase 1, serving HCML Goal 5 (*"dashboards are not
 tailored for NOC, engineers, and management"*). HCML's estate is organised by site: JKT HQ, SBY,
 SSB, FPSO KAS3, BD-WHP, MOPU/MAC, MBH, MDA, MDK, Sapudi, Sumenep, ORF Porong, TWSB, GMS Pasuruan,
 but every view before this one was a flat host list. Management reads sites, not hostnames.

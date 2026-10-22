@@ -21,7 +21,7 @@ its container and Docker publishes it on `127.0.0.1` only. Nothing in this repos
 TLS, so before the portal is reached from another machine, put TLS in front of it:
 [`docs/operations/tls.md`](../operations/tls.md).
 
-Three hard rules drive the whole design (from the original build brief, `myown/plan/instruct.md`
+Three hard rules drive the whole design (from the original build brief, `myown/documents/plan/instruct.md`
 §0, outside both repos, so quoted rather than linked):
 
 1. The browser never calls Zabbix. Only the BFF has the API token.

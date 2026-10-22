@@ -3,7 +3,7 @@
 [setup.md](../../setup.md) · previous: [§9](09-caching-strategy.md) · next: [§11](11-running-deploying.md)
 
 The portal reads network gear exactly like any other host: it never speaks SNMP itself
-(build brief `myown/plan/instruct.md` §13). Zabbix's server/proxy polls devices; the portal reads
+(build brief `myown/documents/plan/instruct.md` §13). Zabbix's server/proxy polls devices; the portal reads
 the resulting items:
 
 - Availability: ICMP items `icmpping` (up/down), `icmppingloss` (%), `icmppingsec` (latency),

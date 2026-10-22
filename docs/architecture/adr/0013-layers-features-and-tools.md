@@ -152,7 +152,7 @@ of both configurations. Mutation checks showed that each layering rule fails whe
   `clients/` because `ai.ts` imports it, though it also guards routes. `schemas.ts` describes HTTP bodies and is in
   `core/`, because both `auth.ts` and `errors.ts` import it and putting it in `http/` would make two folders import
   each other. Another reader would choose differently, and the tests pin only the direction, not the choice.
-* **The restore patch is tied to the layout.** `myown/patches/bk-11-removed-endpoints.patch` restores five endpoints
+* **The restore patch is tied to the layout.** `myown/documents/patches/bk-11-removed-endpoints.patch` restores five endpoints
   that were removed on 12 October (BK-11). It was made again for this layout, twice, as the layout changed twice that day, and is checked with
   `patch -p1 -R --dry-run`, but a patch is not a module: the next layout change breaks it again. It was made again on
   19 October, after the server linter had removed a type from one of its tests, and a copy of the restored tree was

@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§15](15-services-tree.md) · next: [§17](17-link-wan-health.md)
 
-Implements `plan_1.2.md` (in `myown/plan/`, outside this repo) Phase 4, serving HCML Goal 1:
+Implements `plan_1.2.md` (in `myown/documents/plan/`, outside this repo) Phase 4, serving HCML Goal 1:
 
 > *"Host naming, site mapping, owner, criticality and dependency are not standardised → alarms are
 > hard to route to the right PIC."*

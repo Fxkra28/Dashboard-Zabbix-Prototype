@@ -153,8 +153,8 @@ in §5. The BFF had 41 endpoints then: 35 in route modules, plus health, ready a
 To bring them back, apply the patch in reverse from the folder of either copy, checking first:
 
 ```sh
-patch -p1 -R --dry-run < ../patches/bk-11-removed-endpoints.patch
-patch -p1 -R < ../patches/bk-11-removed-endpoints.patch
+patch -p1 -R --dry-run < ../documents/patches/bk-11-removed-endpoints.patch
+patch -p1 -R < ../documents/patches/bk-11-removed-endpoints.patch
 ```
 
 The patch covers the ten files that held code, tests and OpenAPI entries. It does not restore the prose of the
@@ -175,7 +175,7 @@ To undo, copy `docker-compose.yml.bak` back over `docker-compose.yml` in that fo
 literals, so delete it when you are satisfied, together with `.backup-22sep/docker-compose.yml.orig` and the parked
 PostgreSQL file, which also hold literals. The passwords still reach the containers as environment variables, so
 `docker inspect` shows them to anyone who can run it. The steps and the reasoning are in
-`myown/patches/in-23-README.md`.
+`myown/documents/patches/in-23-README.md`.
 
 ## The `.env.example` templates (IN-04, IN-19, IN-06)
 

@@ -31,7 +31,7 @@ Two rules came with it, one on each side. No import cycle among the files of `se
 
 ## A restore that stopped working
 
-`myown/patches/bk-11-removed-endpoints.patch` brings back the five endpoints BK-11 removed (§30). The linter had removed `type Params` from `api-hygiene.test.ts`, which the restored code uses, so a restored tree did not typecheck. The patch was made again, and a copy of the restored tree was typechecked, linted and tested: 1,702 server tests pass, and 1,173 web tests after `npm run gen:api`, which a restore needs now because a web test fails while the generated types are older than the OpenAPI file, which has its five paths back. A copy made for such a proof needs the four `.env.example` templates, or two tests fail for no real reason.
+`myown/documents/patches/bk-11-removed-endpoints.patch` brings back the five endpoints BK-11 removed (§30). The linter had removed `type Params` from `api-hygiene.test.ts`, which the restored code uses, so a restored tree did not typecheck. The patch was made again, and a copy of the restored tree was typechecked, linted and tested: 1,702 server tests pass, and 1,173 web tests after `npm run gen:api`, which a restore needs now because a web test fails while the generated types are older than the OpenAPI file, which has its five paths back. A copy made for such a proof needs the four `.env.example` templates, or two tests fail for no real reason.
 
 ## The screenshots
 

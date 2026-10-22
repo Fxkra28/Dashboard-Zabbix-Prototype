@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§16](16-inventory-ownership-scorecard.md) · next: [§18](18-automated-reporting.md)
 
-Implements `plan_1.2.md` (in `myown/plan/`, outside this repo) Phase 5, serving HCML Goal 3 (telecom deep
+Implements `plan_1.2.md` (in `myown/documents/plan/`, outside this repo) Phase 5, serving HCML Goal 3 (telecom deep
 visibility). HCML runs 12 main + 10 redundant SD-WAN links, 10 P2P radio links, 18 internet
 accesses and Starlink offshore. Their own topology slide flags
 *"SD-WAN (to_mda_via_sapudi)(internal4): High packet loss"*. That class of fault deserves a

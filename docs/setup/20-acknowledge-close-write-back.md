@@ -3,7 +3,7 @@
 [setup.md](../../setup.md) · previous: [§19](19-authentication-rbac.md) · next: [§21](21-alert-noise-flapping.md)
 
 The portal's only write. Everything else in this BFF is read-only by design
-(build brief `myown/plan/instruct.md` §0 rule 2; recorded as
+(build brief `myown/documents/plan/instruct.md` §0 rule 2; recorded as
 [ADR-0006](../architecture/adr/0006-read-only-with-one-write.md)), so this route is fenced
 deliberately rather than bolted on.
 

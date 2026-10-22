@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§14](14-site-view.md) · next: [§16](16-inventory-ownership-scorecard.md)
 
-Implements `plan_1.2.md` (in `myown/plan/`, outside this repo) Phase 2, serving HCML Goal 2: the review's
+Implements `plan_1.2.md` (in `myown/documents/plan/`, outside this repo) Phase 2, serving HCML Goal 2: the review's
 *stated core problem*:
 
 > Monitoring is still device-centric and reactive; the target is service-centric and proactive.

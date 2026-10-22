@@ -18,7 +18,7 @@ the code; for *why* the system is shaped this way go to
 
 > On the section citations in the code. Comments across `server/src` and `web/src` cite sections
 > of this file: `setup.md §9`, `§20`, `§18` and so on. Until 21 Sep 2026 they cited `instruct.md`,
-> the original build brief, which lives outside both repos at `myown/plan/instruct.md` and so
+> the original build brief, which lives outside both repos at `myown/documents/plan/instruct.md` and so
 > could not be followed from a clone. The rules themselves did not change; the citations now point at
 > the in-repo document that carries them.
 

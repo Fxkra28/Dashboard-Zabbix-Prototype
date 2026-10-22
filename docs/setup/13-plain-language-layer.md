@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§12](12-extending-the-portal.md) · next: [§14](14-site-view.md)
 
-Implements `plan_1.1.md` (in `myown/plan/`, outside this repo). HCML's own overview names the gap: *"the main issue is
+Implements `plan_1.1.md` (in `myown/documents/plan/`, outside this repo). HCML's own overview names the gap: *"the main issue is
 not the number of alarms, but the quality of information needed to act."* Tags like `class: os`,
 `scope: availability` and wording like *"Zabbix agent is not available (for 3m)"* are precise for an
 engineer and opaque to everyone else. This layer translates them.

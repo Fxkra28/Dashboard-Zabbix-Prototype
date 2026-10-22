@@ -87,6 +87,6 @@ That is now inverted. `zabbix-server` sits behind `profiles: ["poller"]`, so a p
 ## Links
 
 * Enables [ADR-0007](0007-keep-the-zabbix-api.md), which needs a frozen dataset to measure against
-* `myown/log/09-17-26-zabbix-stack.md` §5.3: the original decision
-* `myown/log/09-22-26.md`: the `depends_on` finding and the profile change
+* `myown/documents/log/09-17-26-zabbix-stack.md` §5.3: the original decision
+* `myown/documents/log/09-22-26.md`: the `depends_on` finding and the profile change
 * `Proto1/docker-compose.yml`: the `poller` profile

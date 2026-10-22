@@ -313,7 +313,7 @@ Three passages assert the opposite and must be corrected before anyone relies on
 | `hcml-portal/README.md` | 154 | "the scripts are recoverable from commit `b4a4059`" |
 | `hcml-portal-ollama/README.md` | 208 | "recoverable from `hcml-portal`'s commit `b4a4059`" |
 
-The false premise originates in `myown/log/09-08-26.md` §2.7 ("Promoted … into committed `tools/`") and
+The false premise originates in `myown/documents/log/09-08-26.md` §2.7 ("Promoted … into committed `tools/`") and
 was repeated without checking. **Fix:** state plainly that the files were untracked and are gone.
 Before re-asserting recoverability anywhere, `git cat-file -p b4a4059^{tree}` must actually list the path.
 
@@ -364,7 +364,7 @@ twice. Its §5 endpoint table also omits three live endpoints: `/api/graph`, `/a
 | **DOC-09** | ~~The recasing pass rewrote `](…)` link targets only; 13 lowercase paths survived in Mermaid `%%` comments and README prose~~ **Superseded by DOC-04:** the direction was backwards. **Fixed 21 Sep:** every folder reference (targets, display text, prose and `%%` comments) now matches the lowercase directories on disk. Verified: **296 links, 0 broken** under a case-sensitive resolver | — |
 | **DOC-10** | This report and the README claim only `.env` and the port differ between repos. The measured divergence is **18 files** (17 at audit time; the B3 fix made `server/.env.example` differ too) | State the real list once and reference it |
 | **DOC-11** | `server/.env` sets `JWT_SECRET` to the exact 29-character built-in placeholder the BFF is designed to refuse (`config.ts:7`) | Generate a real secret; this blocks `AUTH_ENABLED=true` |
-| **DOC-12** | ~~Source comments cite `instruct.md`, which is in neither repo (it lives at `myown/plan/instruct.md`)~~ **Fixed 21 Sep:** all **8** citations repointed at the equivalent `setup.md` section, identically in both repos; a provenance note at the top of `setup.md` records where they came from | — |
+| **DOC-12** | ~~Source comments cite `instruct.md`, which is in neither repo (it lives at `myown/documents/plan/instruct.md`)~~ **Fixed 21 Sep:** all **8** citations repointed at the equivalent `setup.md` section, identically in both repos; a provenance note at the top of `setup.md` records where they came from | — |
 | **DOC-13** | `ERD/Conceptual` is the only ERD leaf whose `.md` does not link its own `.mmd`/`.pdf`/`.png`: three orphaned renders per repo | Add the links |
 
 ## A4 · Verified clean
@@ -401,7 +401,7 @@ Reported because they were touched on 21 September or are reachable from the dec
   `README.md`, `CUSTOMIZE.md` and `presentation.md` point at it: one added on 21 Sep in
   `DECISION.md` §6b, which cites a rollback procedure "documented in `SETUP.md`".
 - **`presentation.md` links `instruct.md` six times** as a root sibling; it is at
-  `myown/plan/instruct.md`, which `DECISION.md` links correctly.
+  `myown/documents/plan/instruct.md`, which `DECISION.md` links correctly.
 - **The `howits.md` → `setup.md` rename is a worktree change only.** git still tracks `howits.md`;
   `git checkout .` or `git reset --hard` would resurrect it beside the untracked `setup.md`.
   `.git/config` has `ignorecase = true`, so git cannot see the directory recasings either.

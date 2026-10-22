@@ -3,7 +3,7 @@
 [setup.md](../../setup.md) · previous: [§6](06-frontend-structure.md) · next: [§8](08-authentication.md)
 
 Server-Sent Events are the simplest live-push transport (chosen over WebSocket in the build brief,
-`myown/plan/instruct.md` §2; recorded as [ADR-0002](../architecture/adr/0002-react-typescript-fastify.md)).
+`myown/documents/plan/instruct.md` §2; recorded as [ADR-0002](../architecture/adr/0002-react-typescript-fastify.md)).
 
 - BFF: [`routes/stream.ts`](../../server/src/routes/stream.ts) opens an `text/event-stream`, and [`services/stream.ts`](../../server/src/services/stream.ts) pushes an
   `event: problems` frame when something shown changed, from one shared 5 s ticker. A list identical

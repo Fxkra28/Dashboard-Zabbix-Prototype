@@ -10,7 +10,7 @@ Having decided on a separate application ([ADR-0001](0001-bff-over-zabbix-api.md
 written in? The answer has to survive a handover to whoever maintains it next.
 
 **A note on provenance, because it matters for how much weight this ADR carries.** The stack is
-written down in `myown/plan/instruct.md` §2 as "fixed for this build", and that document was cited
+written down in `myown/documents/plan/instruct.md` §2 as "fixed for this build", and that document was cited
 during the project as though it were an external constraint. **It is not: it was written by this
 project itself.** I chose the stack rather than inheriting it, so the reasons below have to stand on their
 own rather than pointing at a brief.
