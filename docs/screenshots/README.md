@@ -4,7 +4,7 @@ The main pages of the portal, as images. They were taken on 20 October 2026 from
 reads HCML's restored Zabbix data, built from the working tree on top of commit `5cf5268`. The footer of the images says `Build 0044efe-dirty`, a label set by hand when the
 portal was started and one commit behind the tree it was built from. The set of 13
 October, from commit `cef91b3`, is replaced: it showed the Dashboard before its Hosts and Internet traffic
-views, and Graphs before the CSV download.
+views, and Graphs before the CSV download. The Dashboard's Internet traffic view has no image here: see "Adding or replacing one".
 Each is one screen, 1440 px wide, in the light theme unless it says otherwise.
 
 ## What is real and what is replaced
@@ -18,14 +18,11 @@ stops, writing nothing, if a real one is still there.
 | Host names | the site number at the start is kept, then a kind and a number: `1.4 SW-04`, `INET : JAKARTA WAN-114` |
 | IP addresses | an address in 198.18.0.0/15, a range reserved for testing, so it cannot be a real one |
 | Interface descriptions, link and tunnel names, the values of free-text problem tags | `link-` and three digits |
-| The title of each Internet traffic meter (free text from a widget of HCML's Zabbix dashboard) | `link-` and three digits, one for each title |
 
 Not replaced, because the pages need them or this repository already says them: counts, severities, times,
 site names, host group names, interface names such as `Gi1/0/8`, template names such as `Cisco IOS by SNMP`,
 and the text of triggers that name no host. The figures are real, so the images show the size and shape of
-the estate, though not what its devices are called. The Internet traffic image shows more of them than the
-others: the capacity of each link, the colour zones and the last reading Zabbix holds, which is from 14
-September on this data.
+the estate, though not what its devices are called.
 
 The Zabbix server in the restored copy is off, so devices read "No data" and nothing is being polled. That
 is how the portal looks on this data, and it is left as it is.
@@ -38,7 +35,7 @@ is how the portal looks on this data, and it is left as it is.
 
 The Overview, the first of three views: counts for the estate, a card for the Internet links, the live
 list of open problems (worst first, kept current by a stream) and the problems of each host group. The
-other two views are the next two images.
+second view is the next image; the third, Internet traffic, has none.
 
 ### Dashboard: Hosts
 
@@ -51,12 +48,12 @@ and a figure that is old is never listed.
 
 ### Dashboard: Internet traffic
 
-![The Dashboard's Internet traffic view: a gauge for each link, with its capacity, its colour zones and its last reading](internet-traffic.png)
-
-A gauge for each gauge widget of HCML's Zabbix dashboard, with the capacity and the colour zones the widget
-gives, the value, and an old reading dimmed with its age. Operators and administrators only, because it is
-interface data. The titles are replaced here. A wall screen signed in as an operator or an administrator turns
-between the three views by itself.
+There is no image of it. The view draws a gauge for each gauge widget of HCML's Zabbix dashboard, with the
+capacity and the colour zones the widget gives, the value, and an old reading dimmed with its age, for
+operators and administrators only, because it is interface data. The capacity of each link is a figure HCML
+typed into its own Zabbix, and on 22 October 2026 the owner chose not to publish it, so the picture that was
+here was removed (it is still in the commit of 20 October). A wall screen signed in as an operator or an
+administrator turns between the three views by itself.
 
 ### Problems
 
@@ -121,7 +118,7 @@ inside its card instead of widening the page.
 A screenshot goes into this folder only if its names were replaced, and every image here was looked at
 after it was taken, because the automatic check reads text and cannot read a chart. The pages left out
 are the ones that print figures a reader could take for HCML's own: the SLA report shows each site's
-availability for the month. The Internet traffic image is the nearest case, and what it shows is said above.
+availability for the month. The Internet traffic view is the nearest case, and it was left out for that reason.
 [`../contributing.md`](../contributing.md) says never to commit estate data; this folder is the one exception,
 for that reason.
 

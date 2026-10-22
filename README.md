@@ -29,8 +29,8 @@ New to the abbreviations? Every one used in this file is explained in the
 
 ![Graphs: one item over a calendar month, with its minimum, average, maximum and last values and the Show data and Download CSV buttons](docs/screenshots/graphs.png)
 
-Host names, addresses, interface descriptions and meter titles in these images are stand-ins; the counts,
-severities, times and site names are real. The Dashboard's Hosts and Internet traffic views, the Devices page,
+Host names, addresses and interface descriptions in these images are stand-ins; the counts,
+severities, times and site names are real. The Dashboard's Hosts view, the Devices page,
 Show data with its CSV download, the dark theme, the narrow-screen layout and the Network page (every device
 reads "No data" there, because the Zabbix server of this restored copy is off) are in
 [`docs/screenshots/`](docs/screenshots/README.md), with how the names were replaced.
@@ -95,7 +95,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | `dotenv` | ^16.4 | `.env` in dev. In Docker, Compose passes the environment directly |
 | `@anthropic-ai/sdk` | ^0.124 | The `anthropic` backend of the AI layer, and nothing else. The OpenAI-compatible backend is hand-rolled on `fetch`: one response shape to maintain instead of a second SDK to keep current |
 | Report writers | not a package | `src/export/` writes the monthly SLA report as a PDF and as an Excel workbook, on request, with Node's built-in `zlib` and `crypto` modules and no PDF or spreadsheet library. ADR-0011 (`docs/architecture/adr/0011-build-the-sla-report-files-in-the-bff.md`) has the trade-off |
-| Vitest | ^5.0 | 1688 tests in 78 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
+| Vitest | ^5.0 | 1700 tests in 79 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
 | tsx | ^4.16 | `npm run dev` watch mode only. Production runs plain `node dist/index.js` |
 | ESLint (with `@eslint/js`, `typescript-eslint` and `globals`) | ^10.13 | Dev only, never shipped. `npm run lint` in `server/`: the recommended rules of ESLint and of typescript-eslint, and no warning allowed. The first run, on 19 October 2026, found 22 findings; the eight `eslint-disable` lines left each say why |
 
@@ -169,7 +169,7 @@ hcml-portal/
 │   │   ├── domain/              # what a host, a site and a problem are: naming rules, reachability, the shared reads
 │   │   ├── security/            # cookie sign-in + 3-tier RBAC guard, password hashes, the page table, the viewer policy
 │   │   ├── http/                # what index.ts wires in: rate limit, request id, compression, error mapping, health, shutdown
-│   │   └── __tests__/           # vitest: 78 files, 1688 tests; layering.test.ts keeps the direction (routes → services → the shared folders)
+│   │   └── __tests__/           # vitest: 79 files, 1700 tests; layering.test.ts keeps the direction (routes → services → the shared folders)
 │   └── scripts/                 # validate-sli.ts (HCML's published figures), hash-password.ts
 ├── web/                         # React + TypeScript + Vite, its own package.json, lockfile and Dockerfile
 │   ├── src/
@@ -192,15 +192,15 @@ hcml-portal/
 │   ├── index.md                 # what is documented, and in what order to read it
 │   ├── getting-started.md       # clone → running portal
 │   ├── contributing.md          # the house rules, and why each one exists
-│   ├── setup/                   # how each subsystem works and why: 38 parts, indexed by setup.md
+│   ├── setup/                   # how each subsystem works and why: 39 parts, indexed by setup.md
 │   ├── api/openapi.yaml         # all 45 endpoints; checked by tools/check/openapi.check.ts, and the web's types against it by a web test
 │   ├── architecture/adr/        # 13 Architecture Decision Records (MADR)
 │   ├── schema/                  # the data model on three pages: CDM · ERD · PDM (start here)
 │   ├── flow/                    # how it runs: WebFlow · ServerFlow · DataFlow, and nine one-line flows
 │   ├── ux/                      # who uses this: roles, the acknowledge journey (derived, not interviewed)
-│   ├── operations/              # backing up the .env files; TLS for any deployment beyond localhost
+│   ├── operations/              # backing up the .env files; TLS beyond localhost; what comes back after a restart
 │   └── erd/                     # the full data model (erd.md) and the reference set behind it
-├── deploy/                      # settings.example: every non-secret setting and its default
+├── deploy/                      # settings.example (every non-secret setting and its default) and rebuild.sh (rebuild the portals from the commit, then check them)
 ├── .github/workflows/ci.yml     # five jobs: server, web, checks, secret scan, Docker images
 ├── .github/dependabot.yml       # weekly pull requests for the actions, the npm packages and the base images
 ├── package.json                 # no dependencies: `npm run verify` runs every check from here (see tools/README.md)
@@ -240,7 +240,7 @@ cd server
 cp .env.example .env          # set ZBX_URL + ZABBIX_API_TOKEN; auth needs JWT_SECRET + PORTAL_PASS
 npm install
 npm run dev                   # http://localhost:4000
-npm test                      # 1688 tests, no live Zabbix needed
+npm test                      # 1700 tests, no live Zabbix needed
 
 curl localhost:4000/api/health   # { ok, ts, ai, writeBack, defaults, version, startedAt, build, ready, streams }
 ```
@@ -282,6 +282,8 @@ docker compose up -d --build
 To have `/api/health` show which build is running, pass the commit and time when building:
 `BUILD_COMMIT=$(git rev-parse --short HEAD) BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose up -d --build`.
 They are Docker build arguments, not `.env` settings the BFF reads, and they read `unknown` when left out.
+`deploy/rebuild.sh` does the whole rebuild: the rollback tags, these arguments, the wait for both containers to be healthy,
+the checks an anonymous caller can make, and the tag that says what is live. `--dry-run` shows what it would do.
 `portal-bff` has a healthcheck on `/api/health` (it passes while the process answers, whether or not Zabbix does) and
 `init: true`; `portal-web` starts once it is healthy. On `SIGTERM` the BFF ends its live streams, closes and exits, giving up after 8 s, inside Docker's
 10 s stop timeout.
@@ -616,7 +618,7 @@ Ollama. Either way the snapshot is capped (20 problems, a budget per section) an
 
 ```bash
 cd server
-npm test          # 1688 tests
+npm test          # 1700 tests
 npm run lint      # eslint
 npm run typecheck # app and tests
 
@@ -657,7 +659,7 @@ copied from the web app drifts from its original.
 | [`docs/getting-started.md`](docs/getting-started.md) | From a fresh clone to a running portal, step by step |
 | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | The API contract: all 45 endpoints, checked against the code |
 | [`docs/architecture/adr/`](docs/architecture/adr/) | Why the system is shaped this way: 13 decision records |
-| [`setup.md`](setup.md) | How each part works and why, in 38 parts (the index of `docs/setup/`) |
+| [`setup.md`](setup.md) | How each part works and why, in 39 parts (the index of `docs/setup/`) |
 | [`docs/schema/`](docs/schema/) | The data model on three pages |
 | [`docs/flow/`](docs/flow/) | The same system in motion, on three more pages |
 | [`docs/contributing.md`](docs/contributing.md) | The house rules before you change anything |
@@ -841,7 +843,7 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | Typecheck | Running the TypeScript checker (`npm run typecheck`) to catch mistakes, without building anything |
 | TypeScript | JavaScript with types that are checked before the code runs. Both `server/` and `web/` are written in it |
 | Vite | The tool that serves the web app during development and builds it for production |
-| Vitest | The test runner. `npm test` runs 1688 tests in `server/` with Zabbix faked, so no live system is needed, and 1173 in `web/` |
+| Vitest | The test runner. `npm test` runs 1700 tests in `server/` with Zabbix faked, so no live system is needed, and 1173 in `web/` |
 | zlib, crypto | Two modules that come with Node itself: zlib compresses and unpacks data, and crypto does hashing. The SLA report's PDF and Excel writers are built on them, in place of a PDF or spreadsheet library |
 
 ### Documents
@@ -854,4 +856,4 @@ others) are defined in more depth in [`setup.md` §28](setup.md#28-glossary).
 | OpenAPI | A standard file format that describes every endpoint of an API. The portal's is `docs/api/openapi.yaml`, and a script checks it against the code |
 | PDF, Excel file, CSV | A PDF is a document that looks the same on every screen and printer. An Excel file is a spreadsheet: here a workbook whose name ends in `.xlsx`. A CSV file is a plain-text table, one row per line with the values separated by commas. The SLA report downloads as a PDF or an Excel file, and makes no CSV. Three other pages have a CSV button: Alert noise, the Inventory scorecard and the Graphs page's Show data |
 | README | This file: the first document to read in a code repository |
-| `setup.md` | How each part of the portal works and why, in 38 parts |
+| `setup.md` | How each part of the portal works and why, in 39 parts |

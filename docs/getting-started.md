@@ -145,7 +145,7 @@ Or one at a time:
 
 ```bash
 cd server
-npm test                                  # 1688 tests, 78 files
+npm test                                  # 1700 tests, 79 files
 npm run lint                              # eslint
 npm run typecheck
 npx tsx scripts/validate-sli.ts           # the derived SLA against HCML's published reports

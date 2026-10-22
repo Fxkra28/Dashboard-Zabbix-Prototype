@@ -4,7 +4,7 @@ A deep-dive into the architecture, data flow, and the Zabbix-native features thi
 re-implements. Read [README.md](README.md) first for installation and configuration; this document
 explains *how it all fits together* and *why*.
 
-It is the reference you grep, not the one you read front to back: 38 parts, one per subsystem and, from §30, one for each day of changes, each a file in [`docs/setup/`](docs/setup/).
+It is the reference you grep, not the one you read front to back: 39 parts, one per subsystem and, from §30, one for each day of changes, each a file in [`docs/setup/`](docs/setup/).
 Sections 14 to 26 are the only written record of why the derived figures are calculated the way they
 are, so they matter most when a number has to be defended.
 
@@ -64,3 +64,4 @@ the code; for *why* the system is shaped this way go to
 | 36 | [What changed on 16 October 2026, the folders](docs/setup/36-what-changed-on-16-october-2026-the-folders.md) |
 | 37 | [What changed on 19 October 2026, the check and six rows](docs/setup/37-what-changed-on-19-october-2026-the-check-and-six-rows.md) |
 | 38 | [What changed on 19 and 20 October 2026, the splits, the linter and the screenshots](docs/setup/38-what-changed-on-19-and-20-october-2026-the-splits-the-linter-and-the-screenshots.md) |
+| 39 | [What changed on 22 October 2026, the answers, the restart policies and the rebuild](docs/setup/39-what-changed-on-22-october-2026-the-answers-the-restart-policies-and-the-rebuild.md) |

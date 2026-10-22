@@ -7,9 +7,19 @@ and share this file; the files that differ by design are listed in
 
 A build is named by the commit it was made from. The sidebar footer shows it once someone is signed in,
 and so does a signed-in `/api/health`. A `-dirty` suffix means the build was made from a working tree
-with changes that were not committed. Nothing is tagged: the commit is the version.
+with changes that were not committed. The commit is the version; since 22 October the commit that went live is also tagged `live-<date>`.
 
-## 20 October 2026: the documents and the screenshots brought up to date, and a check for the numbers (not committed, not yet in the running portals)
+## 22 October 2026: both portals rebuilt and live, the Zabbix containers restart with Docker, a rebuild script, the Internet traffic screenshot dropped (the script and the documents are not committed)
+
+At your word ("please applied IN-01 and IN-27"), after you answered the open questions of the documents round and I argued with several of the answers. The account is [§39 of the guide](docs/setup/39-what-changed-on-22-october-2026-the-answers-the-restart-policies-and-the-rebuild.md). Rows IN-01, IN-27 and DC-02 of [`tracker.md`](tracker.md).
+
+- IN-01: both portals were rebuilt from the clean commit `1b15d95` at 09:36 WIB (no `-dirty`: the first build named by a clean commit, the earlier ones read `uncommitted` or `-dirty`), so everything written since the build of 14 October is live: the Hosts view, the follow-ups to the meters, the audit fixes of 15 to 19 October, the folders, the CSV of Show data and the narrow header. The images they replaced are tagged `rollback-22oct`. It was done by the new `deploy/rebuild.sh`: a gate (parity and `npm run verify`), the rollback tags, hosted and then local-model, the wait for health, what an anonymous caller sees, and the annotated tag `live-2026-10-22`, which it never pushes. `--dry-run` prints what it would do, and `rebuild-script.test.ts` (12 tests) runs it as a dry run; ten deliberate breakages were each caught, and the first run found a real fault, an endless search for a free rollback tag, now bounded. Nothing that needs a sign-in has been looked at: `tools/live/signedin_check.py`, with the password in your own shell.
+- IN-27: `proto1-mysql-1` and `proto1-zabbix-web-1` are `unless-stopped`, set on the running containers with `docker update` (no restart) and in `Proto1/docker-compose.yml`, which is outside both repositories. `proto1-zabbix-server-1` stays off. [`docs/operations/after-a-restart.md`](docs/operations/after-a-restart.md) has the order and a check. An actual restart was not tried.
+- DC-02: `docs/screenshots/internet-traffic.png` is removed, with the sentences that said the Dashboard's Internet traffic view is shown there, so `docs/screenshots` has ten images. The image is still in the commit of 20 October (`1b15d95`), which is pushed, so it stays public in history until the repository is made private (SC-06) or the history is rewritten. `pic/` is not in git and keeps its own shot of the view.
+- Your answers: MT-05 (the links are the same size both ways) agreed, and ADR-0012 says so; MT-01 (ports) yes to all three uses, not built; MT-03 and IN-13 avoided for now; MT-04, MT-06 and MT-08 recorded. The evidence behind them names HCML's links and is kept outside the repository.
+- Counts: server 1,700 tests in 79 files (12 for the script), web 1,173 in 81; the guide has 39 parts.
+
+## 20 October 2026: the documents and the screenshots brought up to date, and a check for the numbers (committed as `1b15d95`, live since 22 October 2026)
 
 At your word ("update dokumentasi untuk sekiranya mengikuti update terbaru", for `pic/` and `docs/` of both copies), and then "tolong update dan maksimalkan juga", after I had listed what my first pass had only searched and not read. No behaviour changed: one line of the Dashboard's header and one checker were added. Rows DC-01 to DC-03 and UX-29 of [`tracker.md`](tracker.md); the account is [§38 of the guide](docs/setup/38-what-changed-on-19-and-20-october-2026-the-splits-the-linter-and-the-screenshots.md).
 
@@ -23,7 +33,7 @@ At your word ("update dokumentasi untuk sekiranya mengikuti update terbaru", for
 - Counts: server 1,688 tests in 78 files (one more: the row of `ci-workflow.test.ts` for the new checker), web 1,173 in 81. `links.check`, `facts.check`, `diagrams.check`, `erd.check` and `parity.check` pass in both copies.
 - Seen while shooting (UX-29): at 390 px and below the Dashboard's "Live problems" heading and its "Updated" time touched each other (0 px apart; both wrapped at 360 and 320 px). That header now uses the `.panel-head` class that seven other panels use, so under about 430 px the time sits 12 px below the heading and nothing wraps (`Overview.tsx`, one line; yours to keep or revert). An earlier version of this entry also said the Problems table hid Explain and Ack past the right edge at 1440 px. That was wrong: the Actions column is sticky (UX-14) and Explain stays at the box's right edge at every width I measured.
 
-## 19 October 2026, last: a server linter, a CSV of Show data and three splits (committed as `5cf5268`, not yet in the running portals)
+## 19 October 2026, last: a server linter, a CSV of Show data and three splits (committed as `5cf5268`, live since 22 October 2026)
 
 At your word ("tolong lakukan ini, untuk MT02 dan MT06, tolong konfirmasi ke saya"), the five things left out on purpose on 16 October. I asked about MT-02 and MT-06, and you answered: MT-02 yes, as I proposed; MT-06 "Tunda lagi". Nothing was rebuilt, so none of this is live; you committed it that evening as `5cf5268`, with the round below.
 
@@ -38,7 +48,7 @@ At your word ("tolong lakukan ini, untuk MT02 dan MT06, tolong konfirmasi ke say
 - Server 1,687 tests in 78 files and web 1,173 in 81: 2 more on the server (layering), 1 more for the cycle rule and 20 for the CSV on the web.
 - The old files are kept in `myown/refactor-backup-19oct/`; delete it when you are satisfied.
 
-## 19 October 2026, later: six rows applied (committed as `5cf5268`, not yet in the running portals)
+## 19 October 2026, later: six rows applied (committed as `5cf5268`, live since 22 October 2026)
 
 At your word ("tolong apply IN 28, FR-13, IN-11, BK-13, FR-16", then "sama UX 20 ya"), with three answers from you: the four `.env.example` templates may be opened, `openapi-typescript` may be added to `web/`, and the 12 old rollback tags and the volume `proto1_pgdata` may go. Nothing was rebuilt, so none of this is live; it is in `5cf5268`.
 
@@ -51,7 +61,7 @@ At your word ("tolong apply IN 28, FR-13, IN-11, BK-13, FR-16", then "sama UX 20
 - `docs/api/README.md` and `docs/architecture/README.md` said 41 endpoints; they say 45, as the OpenAPI check has said since 7 October.
 - Server 1,685 tests in 78 files and web 1,153 in 80, with the type comparison on top, which the typecheck runs; 17 deliberate breakages (12 of IN-11, BK-13, UX-20 and the explain guards, 5 of the type check) were each caught.
 
-## 19 October 2026: the list of what was not checked, read again, and four findings fixed (committed as `0044efe`, not yet in the running portals)
+## 19 October 2026: the list of what was not checked, read again, and four findings fixed (committed as `0044efe`, live since 22 October 2026)
 
 At your word ("please check this, and after check, please update md files accordingly"), the [Not checked](tracker.md#not-checked) list of `tracker.md` was checked line by line against the running portals, GitHub, the BFF logs and a throwaway portal. The check itself changed no code; its four findings were then fixed at your word ("tolong perbaiki"). You committed and pushed it all on 19 October (`0044efe`, 10:36 WIB, with the work of 15 and 16 October); nothing was rebuilt, and the running portals are still the builds of 14 October, so none of the fixes is live.
 
@@ -62,7 +72,7 @@ At your word ("please check this, and after check, please update md files accord
 - The first run of `ci.yml` on GitHub, for that push: the file is accepted (its five jobs are listed) and none of them started, because of the billing lock. Three Dependabot pull requests ran it with the same result.
 - Documents corrected to match: `tracker.md` (Not checked, SC-01, SC-06, IN-30, Numbers that changed, Needs your decision), both READMEs (Known gaps, Testing, Related docs, test counts), `docs/setup/13` and `27`, `docs/api/openapi.yaml`, ADR-0005 and ADR-0011, `tools/README.md` and the test counts of the guide.
 
-## 16 October 2026: folders, checks and the guide, rearranged (committed as `0044efe`, not yet in the running portals)
+## 16 October 2026: folders, checks and the guide, rearranged (committed as `0044efe`, live since 22 October 2026)
 
 Points 2 to 5 of a review of the folder structure of both portals, done in both copies, which stay separate (rows ST-01 to ST-04 of
 [`tracker.md`](tracker.md); the decision and its costs are [ADR-0013](docs/architecture/adr/0013-layers-features-and-tools.md)). Nothing
@@ -117,7 +127,7 @@ Where things went. The older entries below, `tracker.md` and `AUDIT_REPORT.md` n
 | `.github/workflows/docs.yml` | `.github/workflows/ci.yml` |
 | `setup.md`, section N | `docs/setup/NN-*.md`; `setup.md` lists them |
 
-## 15 October 2026: an audit, and the Hosts view (committed as `0044efe`, not yet in the running portals)
+## 15 October 2026: an audit, and the Hosts view (committed as `0044efe`, live since 22 October 2026)
 
 The re-audit and MT-08 of [`tracker.md`](tracker.md). The running portals have the build of 14 October, so
 none of this is live until they are rebuilt, and that needs your word.
@@ -139,7 +149,7 @@ none of this is live until they are rebuilt, and that needs your word.
   trap, the skip link and the "12 of N" line. The API surface test now mounts every route module.
 - Tests: 1,651 in 75 files on the server and 1,113 in 75 on the web.
 
-## 14 October 2026, later still: the follow-ups to the meters (committed as `4b773af`, not yet in the running portals)
+## 14 October 2026, later still: the follow-ups to the meters (committed as `4b773af`, live since 22 October 2026)
 
 MT-04 to MT-07 of [`tracker.md`](tracker.md). The running portals have the build below this entry, so none
 of this is live until they are rebuilt, and that needs your word.

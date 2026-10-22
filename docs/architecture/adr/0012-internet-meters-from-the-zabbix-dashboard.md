@@ -101,7 +101,7 @@ portal's route turns them into 27 meters, 21 of them old readings.
 The first build was out and its limits could be measured, on HCML's restored Zabbix with read calls only:
 the hourly trends of the 24 interfaces behind the meters, 2 August to 14 September. Three decisions came
 out of that, and one of them (the first) was the reason for the other two. They are built and tested, and
-not yet in the running portals.
+have been in the running portals since 22 October 2026.
 
 **A link that is down says so.** 8 of the 24 interfaces had at least one sample that was not up. Two were
 down for long: one for the whole of the data and one for the last 18 days of it. About one in six of the
@@ -125,7 +125,7 @@ scale and zones, and written under the dial only when it is High or Critical, co
 a click on the title opens the Graphs page with both directions chosen. The tile's edge turns red or
 amber too, as the line is too small to read from across a room. An old reading of it is never drawn.
 
-* **It assumes a link that is the same size both ways**, because the widget gives one maximum. A link that
+* **It assumes a link that is the same size both ways**, because the widget gives one maximum. *Confirmed on 22 October 2026: the owner says HCML's links are the same size in both directions. The stored hourly averages agree for every link but one, whose outbound side averaged 126 percent of the widget's capacity in three hours; for that link it is the capacity figure, or what the widget measures, that is wrong, not the assumption.* A link that
   is not (a broadband one, where the upload is a fraction of the download) would read too low in the
   direction the widget does not describe. The capacity is written beside the figure, so the assumption is
   in view.
