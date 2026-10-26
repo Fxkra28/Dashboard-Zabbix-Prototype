@@ -55,6 +55,13 @@ file, so that the next `docker compose up` keeps it. That next `up` recreates th
 because their configuration changed, and MySQL takes about a minute to stop (its grace period is 120
 seconds) and to start. The file as it was is beside it as `docker-compose.yml.before-in27`.
 
-Not tried: an actual restart of Docker or of the Mac. `docker inspect` shows the policy on both
-containers, and `docker compose config` shows that the two lines are the only change to the resolved
-configuration.
+Tried on 26 October 2026. The Mac had restarted at about 06:57, and Docker Desktop had not started by
+itself, so `docker ps` could not reach the daemon and ports 8080, 8081 and 8082 answered nothing. After
+Docker Desktop was opened at 07:16, `proto1-mysql-1`, `proto1-zabbix-web-1` and the four portal
+containers were running and healthy within 11 seconds of the engine coming up, and
+`proto1-zabbix-server-1` stayed exited. So the policies in the table above work.
+
+Not tried: whether Docker Desktop starts by itself at login. It had not started in the 18 minutes between
+the boot and this test, so its setting "Start Docker Desktop when you sign in" is probably off; this
+repository cannot read or set it. `docker inspect` shows the policy on both containers, and
+`docker compose config` shows that the two lines are the only change to the resolved configuration.

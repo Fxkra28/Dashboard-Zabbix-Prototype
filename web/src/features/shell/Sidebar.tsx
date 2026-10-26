@@ -160,14 +160,9 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        {/* The rail hides the wordmark beside it, so there the image carries the name. */}
-        <BrandMark variant={collapsed ? 'icon' : 'lockup'} alt={collapsed ? 'HCML' : ''} />
-        {!collapsed && (
-          <div>
-            <div className="title">HCML</div>
-            <div className="subtitle">Monitoring Portal</div>
-          </div>
-        )}
+        {/* The white logo says HCML itself, so the image carries the name in both states. */}
+        <BrandMark variant={collapsed ? 'icon' : 'lockup-white'} alt="HCML" />
+        {!collapsed && <div className="subtitle">Monitoring Portal</div>}
       </div>
 
       <div className="nav-scroll">

@@ -2,7 +2,7 @@
 
 [setup.md](../../setup.md) · previous: [§21](21-alert-noise-flapping.md) · next: [§23](23-hardening-timeouts-rate-limiting-headers.md)
 
-`cd server && npm test`, 1700 tests in 79 files, no live Zabbix required. `cd web && npm test`, 1173 tests in 81 files, in jsdom.
+`cd server && npm test`, 1697 tests in 79 files, no live Zabbix required. `cd web && npm test`, 1182 tests in 82 files, in jsdom.
 
 The mock point. Every Zabbix call in the server funnels through one `fetch` in
 [`zabbix.ts`](../../server/src/clients/zabbix.ts), exposed as `zbx()` and `zbxWrite()`. Mocking that single module

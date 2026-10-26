@@ -86,8 +86,9 @@ something else. Three consequences, all of which are now in the interface:
 
 - The sidebar starts collapsed on `/` only, because nav labels are not what anyone reads from across
   a room (`useUiPrefs.ts`).
-- Motion on that page is signal. A problem appearing or clearing must be visible peripherally, which
-  is the one place `MOTION 1/5` is relaxed.
+- Motion on that page is signal. A problem appearing or clearing must be visible peripherally. Since
+  26 October 2026 the rest of the portal moves a little (MOTION 2, DESIGN.md section 10), and wall mode
+  turns that off, so the highlight of a problem stays the only motion on the wall.
 - Severity is the only loud colour anywhere, which is what makes a red chip readable at distance
   when everything else is one blue.
 - A wall that is to turn to the internet meters has to be signed in as an operator or an admin: the

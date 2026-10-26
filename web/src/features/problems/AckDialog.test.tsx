@@ -103,3 +103,15 @@ describe('AckDialog and the name on the message', () => {
     expect(await screen.findByText(/with your name on the message/)).toBeInTheDocument();
   });
 });
+
+describe('AckDialog and a close, which the portal cannot take back', () => {
+  it('turns Confirm into the danger button while Close problem is ticked, and back when it is not', async () => {
+    open(fresh);
+    const confirm = screen.getByRole('button', { name: 'Confirm' });
+    expect(confirm).not.toHaveClass('danger');
+    await userEvent.click(screen.getByRole('checkbox', { name: /Close problem/ }));
+    expect(confirm).toHaveClass('btn', 'sm', 'danger');
+    await userEvent.click(screen.getByRole('checkbox', { name: /Close problem/ }));
+    expect(confirm).not.toHaveClass('danger');
+  });
+});

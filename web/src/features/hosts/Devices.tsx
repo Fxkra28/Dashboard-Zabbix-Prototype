@@ -88,13 +88,12 @@ export default function Devices() {
           />
         </Field>
         <FieldGroup label="Filter">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, cursor: 'pointer' }}>
+          <label className="filter-check">
             <input
               name="problems-only"
               type="checkbox"
               checked={problemsOnly}
               onChange={(e) => setProblemsOnly(e.target.checked)}
-              style={{ minWidth: 'auto', width: 16, height: 16 }}
             />
             With problems only
           </label>

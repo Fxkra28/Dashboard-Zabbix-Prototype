@@ -22,12 +22,12 @@ table.data a:not(.btn):hover {
 .stale {
   opacity: 0.5;
   pointer-events: none;
-  transition: opacity 0.2s 0.15s;
+  transition: opacity var(--dur-2) var(--ease-out) var(--dur-2);
 }
 .refresh-failed {
   display: inline-block;
-  margin-bottom: 10px;
-  padding: 3px 10px;
+  margin-bottom: var(--s-2-5);
+  padding: var(--s-0-5) var(--s-2-5);
   border: 1px solid var(--warn-line);
   border-radius: var(--r-md);
   background: var(--warn-bg);
@@ -40,7 +40,7 @@ table.data a:not(.btn):hover {
   color: var(--muted);
   background: var(--surface-2);
   border-color: var(--border-strong);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 /* Host state: answers ping, but SNMP or the agent is silent */
@@ -51,7 +51,7 @@ table.data a:not(.btn):hover {
 }
 .site-avail .degraded {
   color: var(--warn-text);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 /* Problems: "Show 100 more" under a long list */
@@ -59,8 +59,8 @@ table.data a:not(.btn):hover {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 12px;
-  margin-top: 12px;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
   font-size: var(--t-sm);
 }
 
@@ -72,9 +72,9 @@ table.data a:not(.btn):hover {
 }
 /* SLA and Links: every path with no data on any leg, on one line */
 .nodata-paths {
-  margin-top: 12px;
+  margin-top: var(--s-3);
   font-size: var(--t-sm);
-  line-height: 1.8;
+  line-height: var(--lh-loose);
   color: var(--muted);
 }
 .nodata-paths .link-state {
@@ -83,11 +83,11 @@ table.data a:not(.btn):hover {
 /* SLA: devices never measured, listed on demand */
 .sli-unmeasured summary {
   cursor: pointer;
-  min-height: 24px;
-  line-height: 24px;
+  min-height: var(--target-min);
+  line-height: var(--target-min);
 }
 .sli-unmeasured p {
-  margin: 8px 0;
+  margin: var(--s-2) 0;
 }
 .sli-unmeasured .table-wrap {
   max-height: 320px;
@@ -104,7 +104,7 @@ table.data a:not(.btn):hover {
 /* Alert noise: "top 100 of 342" beside the heading */
 .noise-top {
   font-size: var(--t-sm);
-  font-weight: 400;
+  font-weight: var(--w-regular);
 }
 
 /* A dialog is focused by script so tabbing starts inside it. A ring around

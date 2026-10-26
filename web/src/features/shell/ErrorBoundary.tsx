@@ -22,14 +22,10 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, { 
     return (
       <div className="panel">
         <div className="state error">
-          <div style={{ fontWeight: 600 }}>This page hit an error</div>
-          <div className="mono" style={{ marginTop: 8 }}>
-            {error.message || String(error)}
-          </div>
-          <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-            Other pages still work. Reloading fetches the latest version of the portal.
-          </div>
-          <button className="btn" style={{ marginTop: 16 }} onClick={() => window.location.reload()}>
+          <div className="state-title">This page hit an error</div>
+          <div className="mono state-detail">{error.message || String(error)}</div>
+          <div className="muted state-hint">Other pages still work. Reloading fetches the latest version of the portal.</div>
+          <button className="btn state-action" onClick={() => window.location.reload()}>
             Reload
           </button>
         </div>

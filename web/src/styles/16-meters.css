@@ -3,7 +3,8 @@
   margin-bottom: var(--s-4);
 }
 .dash-tabs button {
-  padding: 9px var(--s-4);
+  min-height: var(--control-md);
+  padding: var(--s-1) var(--s-4);
   font-size: var(--t-base);
 }
 
@@ -71,7 +72,7 @@
   overflow: hidden;
   overflow-wrap: anywhere;
   font-size: var(--t-sm);
-  font-weight: 700;
+  font-weight: var(--w-bold);
 }
 .meter-title a {
   color: inherit;
@@ -148,9 +149,9 @@
 }
 .meter-value {
   font-size: var(--t-xl);
-  font-weight: 700;
+  font-weight: var(--w-bold);
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  line-height: var(--lh-tight);
 }
 .meter-foot {
   margin: 0;
@@ -160,18 +161,18 @@
 }
 .meter.zone-warn .meter-foot {
   color: var(--warn-text);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .meter.zone-critical .meter-foot {
   color: var(--danger-text);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 /* The other direction, written only when it is High or Critical. */
 .meter-other {
   margin: 0;
   text-align: center;
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .meter-other.other-warn {
   color: var(--warn-text);
@@ -199,7 +200,7 @@
   color: var(--danger-text);
 }
 .meter-down .meter-foot {
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 /* A reading that is not current, or none: the dial is dimmed and the value is quiet, and the line under it says why. */
 .meter-stale .gauge-zone,

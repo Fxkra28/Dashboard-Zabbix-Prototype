@@ -155,7 +155,7 @@ export default function Links() {
             </div>
 
             {data.paths.length > 0 && (
-              <div className="panel" style={{ marginBottom: 18 }}>
+              <div className="panel" style={{ marginBottom: 16 }}>
                 <h2>Redundant paths</h2>
                 <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
                   A paired path is only truly down when <strong>every</strong> leg is. That
@@ -215,15 +215,12 @@ export default function Links() {
                 />
               </Field>
               <FieldGroup label="Filter">
-                <label
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, cursor: 'pointer' }}
-                >
+                <label className="filter-check">
                   <input
                     name="problems-only"
                     type="checkbox"
                     checked={problemsOnly}
                     onChange={(e) => setProblemsOnly(e.target.checked)}
-                    style={{ minWidth: 'auto', width: 16, height: 16 }}
                   />
                   Not healthy only
                 </label>

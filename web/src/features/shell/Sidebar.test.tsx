@@ -62,6 +62,14 @@ describe('the sidebar menu', () => {
     expect(await screen.findByRole('link', { name: 'Problems' })).toBeInTheDocument();
   });
 
+  it('shows the white logo on the chrome and names HCML once', async () => {
+    vi.spyOn(api, 'me').mockResolvedValue(answer('viewer', everyPage('viewer')));
+    show();
+    await screen.findByRole('link', { name: 'Problems' });
+    expect(screen.getByRole('img', { name: 'HCML' })).toHaveAttribute('src', '/logo-white.png');
+    expect(screen.queryByText('HCML')).toBeNull();
+  });
+
   it('hides a page the server table does not list, so a forgotten entry never opens a door', async () => {
     const pages = Object.fromEntries(Object.entries(everyPage('viewer')).filter(([page]) => page !== '/links'));
     vi.spyOn(api, 'me').mockResolvedValue(answer('admin', pages));

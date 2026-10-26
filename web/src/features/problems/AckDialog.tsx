@@ -121,7 +121,7 @@ export default function AckDialog({
               A change you send now may not be applied until it collects again.
             </div>
           )}
-          <div className="field" style={{ marginBottom: 14 }}>
+          <div className="field" style={{ marginBottom: 12 }}>
             <label htmlFor={messageId}>Message (optional)</label>
             <textarea
               id={messageId}
@@ -174,7 +174,8 @@ export default function AckDialog({
             <button type="button" className="btn ghost sm" onClick={onClose} disabled={busy}>
               Cancel
             </button>
-            <button className="btn sm" type="submit" disabled={busy || nothingToDo}>
+            {/* Closing a problem cannot be taken back from the portal, so the button says so in red. */}
+            <button className={`btn sm${close ? ' danger' : ''}`} type="submit" disabled={busy || nothingToDo}>
               {busy ? 'Sending…' : 'Confirm'}
             </button>
           </span>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PALETTE, TOKEN_OF, TONES, rgb } from '../export/theme.js';
+import { PALETTE, PAPER, TOKEN_OF, TONES, rgb } from '../export/theme.js';
 import { webStyles } from './helpers/webStyles.js';
 
 /**
@@ -28,6 +28,15 @@ describe('report palette', () => {
   it.each(Object.entries(TOKEN_OF))('%s equals %s in the stylesheet', (key, name) => {
     expect(token(name), `${name} not found in the light token block`).toBeDefined();
     expect(PALETTE[key as keyof typeof PALETTE]).toBe(token(name));
+  });
+
+  it('prints on white paper of its own, where every ink colour clears 4.5:1', () => {
+    expect(PALETTE.surface).toBe('#ffffff');
+    expect(PAPER.every((key) => !(key in TOKEN_OF))).toBe(true);
+    for (const ink of ['text', 'muted', 'primary', 'goodText', 'warnText', 'dangerText', 'neutralText'] as const) {
+      expect(contrast(PALETTE[ink], PALETTE.surface), ink).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(PALETTE[ink], PALETTE.tint), `${ink} on a light row`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it('draws every tone legibly: text on its own fill clears 4.5:1', () => {

@@ -17,9 +17,9 @@
 .rail-toggle {
   position: absolute;
   top: 74px;
-  right: -13px;
-  width: 26px;
-  height: 26px;
+  right: calc(var(--control-sm) / -2);
+  width: var(--control-sm);
+  height: var(--control-sm);
   display: grid;
   place-items: center;
   padding: 0;
@@ -30,7 +30,7 @@
   cursor: pointer;
   box-shadow: var(--e-1);
   transition: color var(--dur-1) ease;
-  z-index: 6;
+  z-index: var(--z-raise);
 }
 .rail-toggle:hover {
   color: var(--primary);
@@ -78,7 +78,8 @@
 
 .theme-pick select {
   min-width: 0;
-  padding: 5px var(--s-2);
+  min-height: var(--control-sm);
+  padding: var(--s-1) var(--s-2);
   font-size: var(--t-sm);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-strong);
@@ -160,7 +161,7 @@ table.data tr.sel td:first-child {
 .wall-title h1 {
   margin: 0;
   font-size: var(--t-2xl);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .wall-stamp {
   display: flex;
@@ -175,8 +176,8 @@ table.data tr.sel td:first-child {
 .wall-time {
   /* Shrinks on a narrow window before the bar has to wrap. */
   font-size: clamp(var(--t-2xl), 3.2vw, var(--t-4xl));
-  font-weight: 700;
-  line-height: 1;
+  font-weight: var(--w-bold);
+  line-height: var(--lh-solid);
   font-variant-numeric: tabular-nums;
 }
 .wall-stamp.late .wall-time,
@@ -204,25 +205,23 @@ table.data tr.sel td:first-child {
 }
 .app.wall table.data th,
 .app.wall table.data td {
-  padding-top: 6px;
-  padding-bottom: 6px;
+  padding-top: var(--s-1-5);
+  padding-bottom: var(--s-1-5);
 }
 /* Its count inherits the body's 16px, outside the scaled tokens. */
 .app.wall .sev-tile strong {
   font-size: var(--t-xl);
 }
 
-/* A problem that just appeared or cleared, on the wall. The pill says
-   which; the tint only draws the eye, and fades out over the highlight's 10 s
-   (useChangeHighlight HIGHLIGHT_MS). Under reduced motion the page marks
-   nothing at all. */
+/* A problem that just appeared or cleared, on the wall: the pill says which, and the tint fades
+   over --dur-highlight (HIGHLIGHT_MS in useChangeHighlight). Reduced motion marks nothing. */
 .pill.fresh {
   color: var(--primary);
   background: var(--tint);
   border-color: var(--tint-line);
 }
 table.data tr.row-new td {
-  animation: row-arrive 10s ease-out both;
+  animation: row-arrive var(--dur-highlight) ease-out both;
 }
 table.data tr.row-cleared td {
   color: var(--muted);

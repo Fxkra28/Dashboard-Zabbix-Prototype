@@ -63,6 +63,9 @@ number or identifier is meant to be scanned or compared row-to-row, not read as 
 
 ## 5. Mood dials
 
+> **Superseded in part, 26 October 2026.** MOTION is 2 since the owner chose soft depth with animations;
+> section 10 has the decision. ENERGY and RHYTHM are unchanged, and so is the reasoning about the wall below.
+
 **ENERGY 2/5 · RHYTHM 2/5 · MOTION 1/5**, with a concrete exception for the one page that differs.
 
 The Dashboard streams over SSE and doubles as a NOC-wall display: the rate limiter explicitly exempts
@@ -312,6 +315,10 @@ colours where there should be one. Flattening every pixel to `#2B5584` and letti
 carry the anti-aliasing would remove the ringing and take it under 10 KB, but it rewrites pixels in a
 trademark, so it is not done without a decision. A vector original would make the question moot.
 
+> **Since 26 October 2026** the expanded sidebar shows a white version of the logo with no plate, at the
+> owner's choice (section 10). The plate stays wherever the original file is shown: the sign-in card, the
+> rail and the favicon.
+
 
 ## 9. Batch 4 decisions, 25 September 2026
 
@@ -327,3 +334,115 @@ direction, recorded as given; how each is built is checked against sections 1 to
 | UX-24, the sidebar | Keep the current groups. Each menu label matches the title of the page it opens |
 | UX-22, the collapsed rail | The square HCML icon (`logo-icon.png`), not the wide mark. The wide logo stays in the expanded sidebar |
 | UX-23, dashes in UI text | Replace em dashes in sentences with a colon, period or comma, by what each does. Keep the "—" placeholder that means "no value", with hidden "No data" text for screen readers |
+
+
+## 10. Soft depth, motion and a white logo, 26 October 2026
+
+The owner's direction of 26 October 2026, given as answers to questions. The quotes are their words as typed.
+The dial line and the colour values are proposal and verification, written at the owner's word "please follow
+your propose for now", and are marked as such.
+
+### In the owner's words
+
+- The proposal: "i have proposal to adjust to neumorphism + darkmode + animations for modernize the website"
+- Why: "My Preferences, and hope from the mentor to modernize the ui ux"
+- The direction, chosen from three: "A, but keep the dark theme, and add annimations also." Then: "and also keep the color theme"
+- The logo: "could u fix the logo in the sidebar, its not blend with the layout websites and dont look aesthetic"
+- For the real portal: "A with edges for the real portal", "logo 1", "please follow your propose for now"
+
+### Decisions, and the rules they were checked against
+
+Each line is the owner's answer where the direction met a named rule (antislop R-37), recorded as given.
+
+| Item | Decision |
+|---|---|
+| A shadow on every surface (antislop R-12) | "Keep: full A". Every card, tile and button is raised: the owner's override |
+| Animation (antislop R-19, and MOTION 1/5 in section 5) | "Keep all of it". MOTION is 2 from here |
+| The edges of controls (WCAG 1.4.11, section 7) | "Add the 3:1 edges". Controls keep a 1px edge at 3:1; cards and panels have none |
+| The sidebar logo (antislop R-23) | "Option 1: white logo": the logo in white on the navy, with no plate. It recolours a trademark; HCML accepted it on 26 October ("they accept it") |
+| The colour theme | Kept: the navy chrome, the blue ramp, the six severity colours and the chart colours |
+| Dark mode | Kept, with the light, dark and system picker |
+
+Dial: ENERGY 2 / RHYTHM 1 / MOTION 2 (proposal, at the owner's word). On section 5's own scale, ENERGY and RHYTHM
+stay at 2/5 and MOTION moves from 1/5 to about 3/5.
+
+### What it is
+
+- **One plane.** The page and its cards share one soft surface, `#E3E9F1` in light and `#14263A` in dark, and depth
+  separates them. What stands above the page is raised, lit from the top left; a field, the track of a segmented
+  control and a chosen option are pressed in. The navy chrome keeps its colour and gets the same depth in its own
+  shades. The tokens are in `01-tokens.css`, the rules in `18-soft-depth.css`.
+- **Edges.** A control keeps a 1px edge in `--border-strong`, `#748496` (3.14:1) and `#517492` (3.12:1). Measured
+  from the rendered pixels, a shadow alone gave 1.20 to 1.59:1.
+- **Motion.** A page's content rises in once (340 ms, 50 ms between the first blocks); a Dashboard view fades in when
+  its tab is chosen (240 ms); a control lifts under the pointer and presses in when used; a theme switch fades the
+  colours. Only position, opacity, colour and shadow move, nothing loops, and reduced motion stops all of it. The
+  wall keeps only its highlight of a problem that appears or clears.
+- **Reports.** The PDF and Excel files of the SLA report keep white paper, light rows and solid lines: paper cannot
+  show depth, and an Excel cell cannot take a translucent line. Their ink follows the tokens, the two darker
+  status colours included (proposal, at the owner's word).
+- **Logo.** `logo-white.png` (504 x 289) is made from the transparency of `logo.png`, so the letterforms are the
+  supplied ones and only the colour changed: 15.54:1 on the light chrome and 18.68:1 on the dark one. The sign-in
+  card keeps `logo.png` on its plate, and the rail keeps the H icon.
+
+### Verification
+
+| Pair | Before, on the white card | Now, on the soft plane | Needs |
+|---|---|---|---|
+| Body text | 15.17 | 12.42 | 4.5 |
+| Muted text | 5.96 | 4.88 | 4.5 |
+| Muted text on a selected row | 5.14 | 4.55 | 4.5 |
+| Green status text | 5.38 | 4.64 | 4.5 |
+| Red status text | 5.43 | 4.68 | 4.5 |
+| The edge of a control | 3.31 | 3.14 (dark 3.12) | 3.0 |
+
+Three colours moved to keep 4.5:1 on the soft plane: `--tint` to `#D8E2EE` (the preview's `#D3DEEB` gave muted
+text 4.38), `--good-text` to `#217548` (4.41 before) and `--danger-text` to `#BA372E` (4.45 before).
+`tokens.check.mjs` derives every pair in both themes from the token values.
+
+### What it supersedes
+
+- Section 5: MOTION 1/5 becomes MOTION 2. The reasoning about the wall stands, and nothing rises or lifts there.
+- Section 7, R-1: the page and its cards are one plane separated by depth instead of a border; controls still carry
+  the 3:1 edge.
+- Section 8: the plate stays for the original file; the expanded sidebar shows the white version.
+
+## 11. The design system's gaps, fixed, 26 October 2026
+
+A design system audit of the same day (kept outside the repository, beside the reference palette) listed twelve
+gaps. The owner's answer: "Audit: which audit numbers to fix. all of it". Where a fix needed a choice the audit
+left open, the choice below is a proposal made at that word, and each is undone by changing one token or one rule.
+Both copies were backed up first, outside the repositories, in `myown/ui-backup-26oct-2/`.
+
+### What changed
+
+| Gap | The fix |
+|---|---|
+| 1. A blue stripe on every KPI card | The stripe shows only where a state sets it: on today's Dashboard 3 of the 9 cards (High / Disaster, Warnings, Unacknowledged) |
+| 2. No z-index scale | `--z-raise`, `--z-head`, `--z-corner` (inside their own box), `--z-topbar`, `--z-sidebar`, `--z-overlay`, `--z-skip`, with the old numbers, so nothing changes order |
+| 3. Spacing off the scale | The 4 px grid gains half steps of 2, 6 and 10 px (the commonest values between steps) and 48 px. Every other value moved to the nearest step, and a tie went to the smaller one, since the portal is dense: panels and KPI cards 2 px less padding top and bottom (18 to 16), table rows 2 px shorter, badges and pills 2 px shorter, menu items 2 px shorter |
+| 4. Targets under 44 px | Where the pointer is coarse (a tablet or a phone), every control is at least 44 px (`19-touch.css`). Desktops and the wall keep their density, so UX-14 stands |
+| 5. One size of control | Two heights: 28 px (`sm` buttons, the theme picker, segmented options, the rail toggle) and 36 px (buttons, fields, the Dashboard and SLA page tabs). Measured before: 26 to 29 and 32 to 39 px |
+| 6. Weights by number | `--w-regular` to `--w-bold` (400 to 700). The one 800, the Inventory score, became 700, which it already drew as: Inter is served from 400 to 700 |
+| 7. Line heights by number | `--lh-solid` (1), `--lh-tight` (1.2), `--lh-body` (1.5), `--lh-loose` (1.6): 1.55 became 1.5, 1.1 became 1, 1.8 became 1.6, and the 24 px ones are `--target-min` |
+| 8. Durations by number | The older transitions moved onto `--dur-1` to `--dur-4`; the spinner, the streaming cursor and the wall's highlight have their own (`--dur-spin`, `--dur-blink`, `--dur-highlight`), the last held by a test to the 10 s the code keeps a problem marked |
+| 9. Breakpoints by number | `--bp-sm` to `--bp-xl` (640, 720, 900, 1100 px). A media query writes max-width 0.02 px under one, which closed a gap at 1100 to 1101 px; `NARROW_QUERY` is held to `--bp-md` by a test |
+| 10. No disabled look for fields | One look for every control: dimmed to 0.5, the default pointer, no lift or press. A disabled checkbox keeps its words in `--muted` (4.88:1, dark 6.33:1), because one of them says why |
+| 11. Tracking by hand | `--track-caps` (0.05em) on every uppercase label: 0.55 to 0.6 px at their sizes, where they ranged from 0.3 to 0.6 px |
+| 12. No destructive button | `.btn.danger`, filled with the danger ink (`--on-primary` on it 5.72:1, dark 9.22:1). Confirm in the Acknowledge dialog takes it while Close problem is ticked, since a close cannot be taken back from the portal |
+
+`tokens.check.mjs` now fails a value between steps on every one of these scales, in the stylesheet and in inline
+styles, a raw z-index, and a media query off the breakpoints; `npm run tokens:export` writes the new families into
+the handoff files. Four filters that sat 38 px tall beside the fields (Devices, Hosts, Sites, Links) took a class
+and match the fields' 36 px.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Keyboard, on the Dashboard, Problems and Devices | 120 stops in each theme, none without a ring |
+| A touch tablet (1024 x 768, coarse pointer), six pages | no control under 44 px; the links inside text and tables, which WCAG 2.5.8 exempts, keep their size |
+| Reflow, 12 widths from 1440 to 390 px (720 px is 200% zoom), six pages | 72 of 72 with no sideways scroll |
+| The click-through of section 10, both themes | 24 of 24 |
+| Reduced motion | every animation and transition 0.01 ms |
+| The rendered views against the build before, both themes | 1.8 to 14.0% of pixels changed per view, from rows and paddings 2 to 4 px tighter; nothing overlaps or clips |

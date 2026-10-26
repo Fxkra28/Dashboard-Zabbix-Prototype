@@ -59,10 +59,8 @@ export function useTheme(): [Theme, (next: Theme) => void] {
 }
 
 /**
- * Below 720px the page is too narrow for the full sidebar. The .98
- * leaves no gap at a fractional width such as 719.5px under browser zoom.
- * The stylesheet (styles/05-layout-chips-tags.css) uses the same number for the topbar and the padding, and a test
- * checks the two agree.
+ * Below --bp-md (720px) the page is too narrow for the full sidebar; the .98 leaves no gap at a
+ * fractional width under zoom. A test holds this to the token and to the stylesheet's own query.
  */
 export const NARROW_QUERY = '(max-width: 719.98px)';
 

@@ -28,9 +28,9 @@
  *     (--good, --warn, --danger) fail 4.5:1 on a white panel, and so does --mid
  *     (DESIGN.md R-3). Checked in the stylesheet and in inline styles in the TSX.
  *   - The TSX files, which the stylesheet checks never saw: no raw colour, and no inline
- *     font size or radius off the scale. A value that is on the scale is let through, as in
- *     the stylesheet. SVG `fontSize={n}` attributes are map units, not CSS pixels, and are
- *     not looked at.
+ *     size, space, weight, line height or layer off its scale. A value that is on the scale is
+ *     let through, as in the stylesheet. SVG `fontSize={n}` attributes are map units, not CSS
+ *     pixels, and are not looked at.
  *   - The exceptions below, which are known and named, so a new one fails and a fixed one
  *     has to be taken off the list.
  *
@@ -39,7 +39,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 
@@ -149,6 +149,8 @@ const PAIRS = [
   ['--primary', '--bg', 4.5],
   ['--primary', '--tint', 4.5],
   ['--on-primary', '--primary', 4.5],
+  // The danger button: its fill is the danger ink.
+  ['--on-primary', '--danger-text', 4.5],
   ['--on-chrome', '--chrome', 4.5],
   ['--on-chrome-2', '--chrome', 4.5],
   ['--on-chrome-3', '--chrome', 3],
@@ -259,28 +261,102 @@ export function checkRawColors(css) {
   return problems;
 }
 
-/** Sizes that should come from a scale. Reports values not on one. */
-export function checkRawSizes(css, tokens) {
-  const scales = {
-    'border-radius': new Set(),
-    'font-size': new Set(),
+const msOf = (time) => parseFloat(time) * (/ms$/.test(time) ? 1 : 1000);
+
+/** The scales in a token block: the values a raw number may take, by family. */
+export function scalesOf(tokens) {
+  const values = (prefix) => [...tokens].filter(([name]) => prefix.test(name)).map(([, value]) => value.trim());
+  const px = (prefix) => new Set(values(prefix).filter((v) => /^\d+(\.\d+)?px$/.test(v)).map(parseFloat));
+  return {
+    radius: px(/^--r-/),
+    size: px(/^--t-/),
+    space: px(/^--s-/),
+    weight: new Set(values(/^--w-/).map(Number)),
+    leading: new Set(values(/^--lh-/).map(Number)),
+    tracking: new Set(values(/^--track-/)),
+    time: new Set(values(/^--(dur-|stagger$)/).map(msOf)),
+    breakpoint: px(/^--bp-/),
   };
-  for (const [name, value] of tokens) {
-    if (name.startsWith('--r-')) scales['border-radius'].add(value);
-    if (name.startsWith('--t-')) scales['font-size'].add(value);
+}
+
+/** A value's parts, split at the spaces outside parentheses; a part holding a function (var, calc) is skipped. */
+function partsOf(value) {
+  const parts = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i <= value.length; i++) {
+    const c = value[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if ((c === undefined || /\s/.test(c)) && depth === 0) {
+      if (i > from) parts.push(value.slice(from, i));
+      from = i + 1;
+    }
   }
+  return parts.filter((p) => !p.includes('(') && p !== '!important');
+}
+
+const SPACE = /^(padding|margin)(-(top|right|bottom|left|inline|block)(-(start|end))?)?$|^(row-|column-)?gap$/;
+const TIMED = /^(transition|animation)(-duration|-delay)?$/;
+
+/**
+ * Values off their scale. A raw value equal to a step passes, as for radii and font sizes, but a
+ * z-index must be a --z-* token whatever its number.
+ */
+export function checkRawSizes(css, tokens) {
+  const scale = scalesOf(tokens);
+  const problems = [];
+  // The matches come in order, so the line count only ever moves forward.
+  let line = 1;
+  let scanned = 0;
+  const lineAt = (index) => {
+    for (; scanned < index; scanned++) if (css[scanned] === '\n') line++;
+    return line;
+  };
+  for (const m of css.matchAll(/([a-z-]+)\s*:\s*([^;{}]+);/g)) {
+    const prop = m[1];
+    if (prop.startsWith('--')) continue;
+    const parts = partsOf(m[2].trim());
+    const off = (part, what = 'the scale') => problems.push(`line ${lineAt(m.index)}: ${prop}: ${part} is not on ${what}`);
+    const pxOff = (part, steps, what, hairline = false) => {
+      if (!/^-?\d+(\.\d+)?px$/.test(part)) return;
+      const n = Math.abs(parseFloat(part));
+      if (!steps.has(n) && !(hairline && n === 1)) off(part, what);
+    };
+    if (/^border(-(top|bottom)-(left|right))?-radius$/.test(prop)) parts.forEach((p) => pxOff(p, scale.radius));
+    else if (prop === 'font-size') parts.forEach((p) => pxOff(p, scale.size));
+    // 1 px is a hairline, as in the visually hidden pattern, not a space.
+    else if (SPACE.test(prop)) parts.forEach((p) => pxOff(p, scale.space, 'the spacing scale', true));
+    else if (prop === 'font-weight') {
+      for (const p of parts) if (/^\d+$/.test(p) && !scale.weight.has(Number(p))) off(p, 'the weights');
+    } else if (prop === 'line-height') {
+      for (const p of parts) {
+        if (/^\d+(\.\d+)?$/.test(p) ? !scale.leading.has(Number(p)) : /\d/.test(p)) off(p, 'the line heights');
+      }
+    } else if (prop === 'letter-spacing') {
+      for (const p of parts) if (/\d/.test(p) && p !== '0' && !scale.tracking.has(p)) off(p, 'the tracking token');
+    } else if (prop === 'z-index') {
+      for (const p of parts) if (/^-?\d+$/.test(p) && p !== '0') problems.push(`line ${lineAt(m.index)}: z-index: ${p} is a raw layer, use a --z-* token`);
+    } else if (TIMED.test(prop)) {
+      // 0.01ms is the reduced-motion near-zero: unlike 0, a transition still runs and fires its end event.
+      for (const p of parts) {
+        if (/^-?\d*\.?\d+m?s$/.test(p) && msOf(p) !== 0 && msOf(p) !== 0.01 && !scale.time.has(msOf(p))) off(p, 'the durations');
+      }
+    }
+  }
+  return problems;
+}
+
+/** A media query's width is a --bp-* token's: min-width at it, max-width 0.02 px under it. */
+export function checkBreakpoints(css, tokens) {
+  const { breakpoint } = scalesOf(tokens);
   const problems = [];
   css.split('\n').forEach((line, i) => {
-    if (/^\s*--/.test(line)) return;
-    for (const [prop, allowed] of Object.entries(scales)) {
-      const m = new RegExp(`\\b${prop}:\\s*([^;]+);`).exec(line);
-      if (!m) continue;
-      const value = m[1].trim();
-      if (value.includes('var(') || value === 'inherit' || value === '50%' || value === '100%') continue;
-      for (const part of value.split(/\s+/)) {
-        if (/^\d+(\.\d+)?px$/.test(part) && !allowed.has(part)) {
-          problems.push(`line ${i + 1}: ${prop}: ${part} is not on the scale`);
-        }
+    if (!line.includes('@media')) return;
+    for (const m of line.matchAll(/\((max|min)-width:\s*(\d+(?:\.\d+)?)px\)/g)) {
+      const at = m[1] === 'max' ? Number(m[2]) + 0.02 : Number(m[2]);
+      if (![...breakpoint].some((bp) => Math.abs(bp - at) < 0.001)) {
+        problems.push(`line ${i + 1}: @media (${m[1]}-width: ${m[2]}px) is not a breakpoint, use a --bp-* width (max-width 0.02px under it)`);
       }
     }
   });
@@ -327,11 +403,8 @@ const stripTsxComments = (text) =>
  * a size so TSX_EXCEPTIONS can allow it. Comments are ignored, and so is `&#8212;`, which is not a colour.
  */
 export function scanTsx(source, tokens) {
-  const scales = { fontSize: new Set(), borderRadius: new Set() };
-  for (const [name, value] of tokens) {
-    if (name.startsWith('--t-')) scales.fontSize.add(parseFloat(value));
-    if (name.startsWith('--r-')) scales.borderRadius.add(parseFloat(value));
-  }
+  const scale = scalesOf(tokens);
+  const scales = { fontSize: scale.size, borderRadius: scale.radius };
   const found = [];
   stripTsxComments(source)
     .split('\n')
@@ -350,6 +423,25 @@ export function scanTsx(source, tokens) {
         if (!scales.fontSize.has(parseFloat(m[1]))) {
           found.push({ line, what: `font-size: ${m[1]}px is not on the scale`, key: `fontSize: ${m[1]}` });
         }
+      }
+      // Spacing, weight, line height and layer, held to the stylesheet's scales. A computed value
+      // (`12 + depth * 22`) is not looked at, and 1 px is a hairline, not a space.
+      const spacing = /\b(margin|padding|gap|rowGap|columnGap)(Top|Right|Bottom|Left|Inline|Block)?\s*:\s*(['"`]?)(-?\d+(?:\.\d+)?)(?:px)?\3(?=\s*[,}])/g;
+      for (const m of text.matchAll(spacing)) {
+        const key = `${m[1]}${m[2] ?? ''}: ${m[4]}`;
+        if (Math.abs(parseFloat(m[4])) > 1 && !scale.space.has(Math.abs(parseFloat(m[4])))) {
+          found.push({ line, what: `${key} is not on the spacing scale`, key });
+        }
+      }
+      for (const m of text.matchAll(/\bfontWeight\s*:\s*(['"`]?)(\d+)\1(?=\s*[,}])/g)) {
+        if (!scale.weight.has(Number(m[2]))) found.push({ line, what: `fontWeight: ${m[2]} is not on the weights`, key: `fontWeight: ${m[2]}` });
+      }
+      for (const m of text.matchAll(/\blineHeight\s*:\s*(['"`]?)(\d+(?:\.\d+)?)(px)?\1(?=\s*[,}])/g)) {
+        const key = `lineHeight: ${m[2]}${m[3] ?? ''}`;
+        if (m[3] || !scale.leading.has(Number(m[2]))) found.push({ line, what: `${key} is not on the line heights`, key });
+      }
+      for (const m of text.matchAll(/\bzIndex\s*:\s*(['"`]?)(-?\d+)\1(?=\s*[,}])/g)) {
+        if (m[2] !== '0') found.push({ line, what: `zIndex: ${m[2]} is a raw layer, use a --z-* token`, key: `zIndex: ${m[2]}` });
       }
       // A status fill as text: the literal forms only, a constant holding one cannot be seen from here.
       const status = new RegExp(`(?:^|[\\s{,;'"\`])color\\s*:\\s*['"\`]?var\\(\\s*(--(?:${FORBIDDEN}))\\s*[,)]`).exec(text);
@@ -470,6 +562,38 @@ function selfTest() {
   eq('a second one is not', checkTsx(`${withTwelveFive}\n${withTwelveFive}`, 'x.tsx', scale, { 'x.tsx': { 'fontSize: 12.5': 1 } }).length, 1);
   eq('an exception that is gone is reported', checkTsx('const a = 1;', 'x.tsx', scale, { 'x.tsx': { 'fontSize: 12.5': 1 } }).length, 1);
 
+  // The other scales: spacing, weight, line height, tracking, layers, durations and breakpoints.
+  const steps = new Map([
+    ['--s-0-5', '2px'], ['--s-1', '4px'], ['--s-2', '8px'], ['--s-3', '12px'], ['--w-semibold', '600'],
+    ['--lh-body', '1.5'], ['--track-caps', '0.05em'], ['--dur-1', '120ms'], ['--bp-md', '720px'],
+  ]);
+  const sizes = (text) => checkRawSizes(text, steps).length;
+  eq('a padding between steps is caught', sizes('.a { padding: 9px 12px; }'), 1);
+  eq('a padding on the scale, raw or token, is let through', sizes('.a { padding: 8px var(--s-3); margin: 0 auto; }'), 0);
+  eq('a raw part beside a token is still checked', sizes('.a { padding: var(--s-2) 28px; }'), 1);
+  eq('a negative margin is held to the scale by its size', sizes('.a { margin: -4px 0; } .b { margin: -3px; }'), 1);
+  eq('a hairline is not a space', sizes('.a { margin: -1px; }'), 0);
+  eq('scroll padding is not spacing', sizes('.a { scroll-padding-top: 72px; }'), 0);
+  eq('a raw z-index is caught, even one a token holds', sizes('.a { z-index: 5; } .b { z-index: var(--z-topbar); } .c { z-index: 0; }'), 1);
+  eq('a weight off the scale is caught', sizes('.a { font-weight: 800; } .b { font-weight: 600; }'), 1);
+  eq('a line height off the scale or in px is caught', sizes('.a { line-height: 1.55; } .b { line-height: 24px; } .c { line-height: normal; }'), 2);
+  eq('tracking off the token is caught', sizes('.a { letter-spacing: 0.4px; } .b { letter-spacing: var(--track-caps); }'), 1);
+  eq('a raw duration is caught on a continuation line', sizes('.a {\n  transition:\n    color 0.15s ease,\n    opacity var(--dur-1);\n}'), 1);
+  eq('a duration on the scale and the reduced-motion near-zero pass', sizes('.a { transition: color 120ms; animation-duration: 0.01ms !important; }'), 0);
+  eq('the line of a problem is the line of its property', checkRawSizes('.a {\n  color: red;\n  gap: 5px;\n}', steps), ['line 3: gap: 5px is not on the spacing scale']);
+  const queries = (text) => checkBreakpoints(text, steps).length;
+  eq('a max-width 0.02 px under a breakpoint passes', queries('@media (max-width: 719.98px) {}'), 0);
+  eq('a max-width at the breakpoint leaves a gap and is caught', queries('@media (max-width: 720px) {}'), 1);
+  eq('a min-width off the breakpoints is caught', queries('@media (min-width: 721px) {}'), 1);
+  eq('a query with no width is not looked at', queries('@media (pointer: coarse) {}'), 0);
+  const inline = (code) => scanTsx(code, steps).length;
+  eq('an inline margin between steps is caught', inline(`style={{ marginBottom: 18 }}`), 1);
+  eq('an inline margin on the scale is let through', inline(`style={{ marginTop: 8, gap: 12 }}`), 0);
+  eq('a computed inline padding is not looked at', inline(`style={{ paddingLeft: 12 + depth * 22 }}`), 0);
+  eq('an inline weight off the scale is caught', inline(`style={{ fontWeight: 800 }}`) + inline(`style={{ fontWeight: 600 }}`), 1);
+  eq('an inline line height off the scale is caught', inline(`style={{ lineHeight: 1.55 }}`), 1);
+  eq('an inline z-index is caught', inline(`style={{ zIndex: 3 }}`), 1);
+
   // and it must fail when a token goes illegible
   const bad = parseTokens(css.replace('--text: #1b2733;', '--text: #eeeeee;'));
   const badProblems = checkContrast(bad).filter((p) => p.includes('--text on --bg'));
@@ -477,16 +601,6 @@ function selfTest() {
 
   return fail;
 }
-
-const failures = selfTest();
-if (failures.length) {
-  console.error(`tokens.check: the checker itself is broken, ${failures.length} self-test failure(s):`);
-  for (const f of failures) console.error(`  ${f}`);
-  process.exit(2);
-}
-
-const files = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-if (!files.length) files.push(fileURLToPath(new URL('../src/styles', import.meta.url)));
 
 /** A stylesheet as one text. A folder is its numbered parts joined in order, which is the cascade a build serves. */
 function readSheet(path) {
@@ -510,35 +624,68 @@ function readSheet(path) {
   };
 }
 
-let total = 0;
-for (const file of files) {
-  const { raw, where } = readSheet(file);
-  const css = raw.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
-  const blocks = parseTokens(css);
-  const problems = [
-    ...checkContrast(blocks),
-    ...checkRawColors(css),
-    ...checkRawSizes(css, blocks.get(':root') ?? new Map()),
-    ...checkStatusText(css),
-  ];
-  for (const p of problems) console.error(`${file}: ${p.replace(/^line (\d+)/, (_, n) => where(Number(n)))}`);
-  total += problems.length;
+/** The checks, when this file is run rather than imported (tokens.export.mjs imports its parser). */
+async function main() {
+  const failures = selfTest();
+  if (failures.length) {
+    console.error(`tokens.check: the checker itself is broken, ${failures.length} self-test failure(s):`);
+    for (const f of failures) console.error(`  ${f}`);
+    process.exit(2);
+  }
 
-  // The TSX beside this stylesheet, against its scales. `--no-tsx` leaves it out for a stylesheet checked alone.
-  if (!process.argv.includes('--no-tsx') && file.endsWith(join('src', 'styles'))) {
-    const src = join(file, '..');
-    for (const path of tsxFiles(src)) {
-      const rel = path.slice(src.length + 1).split('\\').join('/');
-      for (const p of checkTsx(readFileSync(path, 'utf8'), rel, blocks.get(':root') ?? new Map())) {
-        console.error(p);
-        total++;
+  const stylesFolder = fileURLToPath(new URL('../src/styles', import.meta.url));
+  const files = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+  if (!files.length) files.push(stylesFolder);
+
+  let total = 0;
+  for (const file of files) {
+    const { raw, where } = readSheet(file);
+    const css = raw.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+    const blocks = parseTokens(css);
+    const problems = [
+      ...checkContrast(blocks),
+      ...checkRawColors(css),
+      ...checkRawSizes(css, blocks.get(':root') ?? new Map()),
+      ...checkBreakpoints(css, blocks.get(':root') ?? new Map()),
+      ...checkStatusText(css),
+    ];
+    for (const p of problems) console.error(`${file}: ${p.replace(/^line (\d+)/, (_, n) => where(Number(n)))}`);
+    total += problems.length;
+
+    // The TSX beside this stylesheet, against its scales. `--no-tsx` leaves it out for a stylesheet checked alone.
+    if (!process.argv.includes('--no-tsx') && file.endsWith(join('src', 'styles'))) {
+      const src = join(file, '..');
+      for (const path of tsxFiles(src)) {
+        const rel = path.slice(src.length + 1).split('\\').join('/');
+        for (const p of checkTsx(readFileSync(path, 'utf8'), rel, blocks.get(':root') ?? new Map())) {
+          console.error(p);
+          total++;
+        }
       }
     }
   }
+
+  // The copies for the developer handoff (docs/design-system/) must say what the stylesheet says.
+  if (files.length === 1 && files[0] === stylesFolder) {
+    const { exportProblems } = await import('./tokens.export.mjs');
+    for (const p of exportProblems()) {
+      console.error(p);
+      total++;
+    }
+  }
+
+  if (total) {
+    console.error(`tokens.check: ${total} problem(s)`);
+    process.exit(1);
+  }
+  console.log(`tokens.check: ${files.length} file(s) OK`);
 }
 
-if (total) {
-  console.error(`tokens.check: ${total} problem(s)`);
-  process.exit(1);
+// Not awaited at the top level: main() imports tokens.export.mjs, which imports this file, and a top-level
+// await would leave this module unfinished while that import waits for it (Node exits 13).
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(2);
+  });
 }
-console.log(`tokens.check: ${files.length} file(s) OK`);

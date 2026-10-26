@@ -14,6 +14,7 @@
     "check:api": "./server/node_modules/.bin/tsx tools/check/openapi.check.ts",
     "check:erd": "./server/node_modules/.bin/tsx tools/check/erd.check.ts",
     "check:styles": "node web/scripts/css.check.mjs && node web/scripts/tokens.check.mjs",
+    "tokens:export": "node web/scripts/tokens.export.mjs",
     "check:web": "./server/node_modules/.bin/tsx web/scripts/markdown.check.ts && ./server/node_modules/.bin/tsx web/scripts/units.check.ts",
     "check:docs": "node tools/check/links.check.mjs && node tools/check/facts.check.mjs && node tools/check/diagrams.check.mjs",
     "check:parity": "node tools/check/parity.check.mjs",

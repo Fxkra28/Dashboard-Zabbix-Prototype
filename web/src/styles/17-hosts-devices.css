@@ -14,7 +14,7 @@
 }
 .kinds-panel,
 .web-panel {
-  margin-bottom: 18px;
+  margin-bottom: var(--s-4);
 }
 .kind-tiles > li {
   display: flex;
@@ -64,12 +64,12 @@ a.kind-tile:hover {
 }
 .kind-name {
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .kind-count {
   font-size: var(--t-2xl);
-  font-weight: 700;
-  line-height: 1.1;
+  font-weight: var(--w-bold);
+  line-height: var(--lh-solid);
   font-variant-numeric: tabular-nums;
 }
 .kind-sub {
@@ -103,7 +103,7 @@ a.kind-tile:hover {
 }
 .top-value {
   font-size: var(--t-base);
-  font-weight: 700;
+  font-weight: var(--w-bold);
   font-variant-numeric: tabular-nums;
 }
 .top-bar {
@@ -149,10 +149,6 @@ a.kind-tile:hover {
 .type-tile:hover:not(:disabled) {
   background: var(--surface-2);
 }
-.type-tile:disabled {
-  cursor: default;
-  color: var(--muted);
-}
 .type-tile[aria-pressed='true'] {
   background: var(--primary);
   border-color: var(--primary);
@@ -160,12 +156,12 @@ a.kind-tile:hover {
 }
 .type-name {
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .type-count {
   font-size: var(--t-3xl);
-  font-weight: 700;
-  line-height: 1.1;
+  font-weight: var(--w-bold);
+  line-height: var(--lh-solid);
   font-variant-numeric: tabular-nums;
 }
 .type-sub {

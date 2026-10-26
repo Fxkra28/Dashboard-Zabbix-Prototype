@@ -218,7 +218,7 @@ function MapCanvas({ map }: { map: MapDetail }) {
           );
         })}
       </svg>
-      <div className="muted" style={{ fontSize: 12, marginTop: 10, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+      <div className="muted" style={{ fontSize: 12, marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <span>
           {count(map.selements?.length ?? 0, 'element')} · {count(map.links?.length ?? 0, 'link')} ·{' '}
           {withProblems} of {hostEls.length} hosts with open problems · drawn from the Zabbix map

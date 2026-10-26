@@ -145,13 +145,13 @@ Or one at a time:
 
 ```bash
 cd server
-npm test                                  # 1700 tests, 79 files
+npm test                                  # 1697 tests, 79 files
 npm run lint                              # eslint
 npm run typecheck
 npx tsx scripts/validate-sli.ts           # the derived SLA against HCML's published reports
 
 cd ../web
-npm test                                  # 1173 tests, 81 files, in jsdom
+npm test                                  # 1182 tests, 82 files, in jsdom
 npm run lint                              # eslint
 npm run typecheck
 npm run gen:api                           # web/src/generated/openapi.ts, from docs/api/openapi.yaml

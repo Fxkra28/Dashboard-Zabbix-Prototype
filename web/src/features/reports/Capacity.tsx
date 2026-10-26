@@ -165,7 +165,7 @@ export default function Capacity() {
                   reporting. Zeros below mean “no data”, not “idle”.
                 </div>
               )}
-              <div className="grid sli-grid" style={{ gap: 18 }}>
+              <div className="grid sli-grid">
                 {data.metrics.map((m) => (
                   <MetricPanel key={m.key} metric={m.key} label={m.label} rows={m.rows} days={data.days} />
                 ))}

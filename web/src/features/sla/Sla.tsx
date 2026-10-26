@@ -728,7 +728,7 @@ function DerivedSla() {
           loadingLabel={`Calculating with the ${METHOD_LABEL[method]}…`}
         >
           {(r) => (
-            <div className="grid sli-grid" style={{ gap: 18 }}>
+            <div className="grid sli-grid">
               <div className="grid two-col sli-grid sli-grid-wide">
                 <GroupTable
                   title={`By category · ${METHOD_LABEL[method]}`}

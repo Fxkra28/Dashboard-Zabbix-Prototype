@@ -4,6 +4,7 @@ import { HIGHLIGHT_MS, useChangeHighlight } from './useChangeHighlight';
 import { topRows } from '../dashboard/liveList';
 import type { Problem } from '../../types';
 import { problem } from '../../__tests__/problems';
+import { stylesheet } from '../../__tests__/stylesheet';
 
 const none: ReadonlySet<string> = new Set();
 
@@ -19,6 +20,12 @@ afterEach(() => vi.useRealTimers());
 describe('useChangeHighlight', () => {
   const a = problem(1, 4, 600);
   const b = problem(2, 3, 300);
+
+  it('lasts as long as the tint the stylesheet fades out (--dur-highlight)', () => {
+    const [, value, unit] = /--dur-highlight:\s*(\d+(?:\.\d+)?)(ms|s);/.exec(stylesheet) ?? [];
+    expect(value, '--dur-highlight is a token').toBeDefined();
+    expect(Number(value) * (unit === 's' ? 1000 : 1)).toBe(HIGHLIGHT_MS);
+  });
 
   it('marks nothing on the first list', () => {
     const { result } = mount([a, b]);

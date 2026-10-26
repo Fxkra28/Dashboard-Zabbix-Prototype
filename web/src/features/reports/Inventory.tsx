@@ -162,7 +162,7 @@ export default function Inventory() {
             </div>
           </div>
 
-          <div className="panel" style={{ marginTop: 18 }}>
+          <div className="panel" style={{ marginTop: 16 }}>
             <div className="panel-head">
               <h2>Gap list: {count(gaps.length, 'host')}</h2>
               <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>

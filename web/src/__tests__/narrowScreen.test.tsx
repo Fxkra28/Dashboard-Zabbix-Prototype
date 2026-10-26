@@ -186,6 +186,12 @@ describe('the stylesheet agrees with the hook (UX-14)', () => {
     expect(narrow).toMatch(/\.content\s*\{[^}]*padding:\s*var\(--s-4\) var\(--s-3\) var\(--s-8\)/);
   });
 
+  it('takes its width from the --bp-md token, 0.02 px under it', () => {
+    const bp = /--bp-md:\s*(\d+)px/.exec(styles)?.[1];
+    expect(bp, '--bp-md is a token').toBeDefined();
+    expect(NARROW_QUERY).toBe(`(max-width: ${(Number(bp) - 0.02).toFixed(2)}px)`);
+  });
+
   it('still has the rail the hook relies on, 68 px wide', () => {
     expect(block('.app.rail {')).toMatch(/grid-template-columns:\s*68px 1fr/);
   });

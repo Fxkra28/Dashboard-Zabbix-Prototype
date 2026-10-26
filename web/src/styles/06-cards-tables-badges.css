@@ -4,21 +4,21 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 18px 20px;
+  padding: var(--s-4) var(--s-5);
 }
 .panel h2 {
-  margin: 0 0 14px;
+  margin: 0 0 var(--s-3);
   font-size: var(--t-lg);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 .grid {
   display: grid;
-  gap: 18px;
+  gap: var(--s-4);
 }
 .kpis {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  margin-bottom: 20px;
+  margin-bottom: var(--s-5);
 }
 
 /* KPI card */
@@ -27,13 +27,14 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 18px 20px;
+  padding: var(--s-4) var(--s-5);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--s-1-5);
   position: relative;
   overflow: hidden;
 }
+/* The stripe reports a state, so a card with no state has none. */
 .kpi::before {
   content: '';
   position: absolute;
@@ -41,17 +42,17 @@
   top: 0;
   bottom: 0;
   width: 4px;
-  background: var(--accent, var(--primary));
+  background: var(--accent, transparent);
 }
 .kpi .label {
   color: var(--muted);
   font-size: var(--t-base);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 .kpi .value {
   font-size: var(--t-3xl);
-  font-weight: 700;
-  line-height: 1;
+  font-weight: var(--w-bold);
+  line-height: var(--lh-solid);
 }
 .kpi .sub {
   color: var(--muted);
@@ -73,16 +74,16 @@ table.data {
 table.data th {
   text-align: left;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   font-size: var(--t-sm);
   text-transform: uppercase;
-  letter-spacing: 0.3px;
-  padding: 10px 12px;
+  letter-spacing: var(--track-caps);
+  padding: var(--s-2-5) var(--s-3);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 table.data td {
-  padding: 11px 12px;
+  padding: var(--s-2-5) var(--s-3);
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
@@ -106,11 +107,11 @@ table.data td.sticky-end {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
+  gap: var(--s-1-5);
+  padding: var(--s-0-5) var(--s-2-5);
   border-radius: var(--r-pill);
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   color: var(--on-severity);
   white-space: nowrap;
 }
@@ -123,11 +124,11 @@ table.data td.sticky-end {
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
+  gap: var(--s-1-5);
+  padding: var(--s-0-5) var(--s-2-5);
   border-radius: var(--r-pill);
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   border: 1px solid var(--border);
   color: var(--muted);
   background: var(--surface);

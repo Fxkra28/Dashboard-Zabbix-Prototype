@@ -3,7 +3,7 @@
 .two-col {
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
 }
-@media (max-width: 1100px) {
+@media (max-width: 1099.98px) {
   .two-col {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -17,37 +17,37 @@
   justify-content: center;
   min-width: 22px;
   height: 20px;
-  padding: 0 6px;
+  padding: 0 var(--s-1-5);
   border-radius: var(--r-sm);
   color: var(--on-severity);
   font-size: var(--t-sm);
-  font-weight: 700;
+  font-weight: var(--w-bold);
 }
 .sev-count-code {
-  margin-right: 3px;
-  font-weight: 700;
+  margin-right: var(--s-0-5);
+  font-weight: var(--w-bold);
 }
 .sev-tile {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
 .sev-tile strong {
-  margin-left: 2px;
+  margin-left: var(--s-0-5);
 }
 
 /* Problem tags */
 .tag {
   display: inline-block;
-  padding: 2px 8px;
+  padding: var(--s-0-5) var(--s-2);
   border-radius: var(--r-sm);
   background: var(--neutral-bg);
   color: var(--neutral-text);
   font-size: var(--t-xs);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   white-space: nowrap;
 }
 
@@ -67,31 +67,31 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--s-3);
-  padding: var(--s-2) 28px;
+  padding: var(--s-2) var(--s-7);
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: var(--z-topbar);
 }
 .topbar h1 {
   font-size: var(--t-xl);
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .topbar .right {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 14px;
+  gap: var(--s-3);
   color: var(--muted);
   font-size: var(--t-base);
 }
 
 .content {
-  padding: 24px 28px 48px;
+  padding: var(--s-6) var(--s-7) var(--s-12);
 }
-/* Narrow window or high zoom. Same width as NARROW_QUERY in features/shell/useUiPrefs.ts, which also
-   forces the sidebar to its rail; here the topbar wraps and the page gives up some padding. */
+/* Under --bp-md, where NARROW_QUERY (features/shell/useUiPrefs.ts) also forces the rail: the topbar
+   wraps and the page gives up some padding. */
 @media (max-width: 719.98px) {
   .topbar {
     flex-wrap: wrap;
@@ -107,13 +107,13 @@
   position: absolute;
   top: -48px;
   left: var(--s-2);
-  z-index: 1000;
+  z-index: var(--z-skip);
   padding: var(--s-2) var(--s-3);
   background: var(--surface);
   color: var(--primary);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .skip-link:focus {
   top: var(--s-2);

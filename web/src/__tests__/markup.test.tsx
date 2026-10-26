@@ -141,15 +141,28 @@ describe('placeholders and small targets in the stylesheet (UX-25, UX-27)', () =
     expect(text).toMatch(/opacity:\s*1/);
   });
 
+  it('sets --target-min at 24 px or more, the WCAG 2.2 minimum', () => {
+    expect(Number(/--target-min:\s*(\d+)px/.exec(styles)?.[1])).toBeGreaterThanOrEqual(24);
+  });
+
   it.each([
-    ['table.data.ports button.port-open', ['min-width: 24px', 'min-height: 24px']],
-    ['.th-sort', ['min-height: 24px']],
-    ['.svc-toggle:not(.placeholder)', ['width: 24px', 'height: 24px']],
-    ['.sli-unmeasured summary', ['min-height: 24px']],
-    ['.chip button', ['min-width: 24px', 'min-height: 24px']],
-  ])('keeps %s at 24 px or more, the WCAG 2.2 minimum', (selector, needs) => {
+    ['table.data.ports button.port-open', ['min-width', 'min-height']],
+    ['.th-sort', ['min-height']],
+    ['.svc-toggle:not(.placeholder)', ['width', 'height']],
+    ['.sli-unmeasured summary', ['min-height']],
+    ['.chip button', ['min-width', 'min-height']],
+  ])('keeps %s at --target-min or more', (selector, props) => {
     const body = rule(selector);
     expect(body, `a rule for ${selector}`).not.toBe('');
-    for (const need of needs) expect(body).toContain(need);
+    for (const prop of props) expect(body).toMatch(new RegExp(`(^|[\\s;{])${prop}:\\s*var\\(--target-min\\)`));
+  });
+
+  it('gives a finger 44 px or more on every control where the pointer is coarse', () => {
+    expect(Number(/--target-touch:\s*(\d+)px/.exec(styles)?.[1])).toBeGreaterThanOrEqual(44);
+    const coarse = styles.slice(styles.indexOf('@media (pointer: coarse)'));
+    for (const control of ['button.btn.sm', '.theme-pick select', '.seg button', '.nav-link', '.rail-toggle', '.check']) {
+      expect(coarse, control).toContain(control);
+    }
+    expect(coarse).toMatch(/min-height:\s*var\(--target-touch\)/);
   });
 });

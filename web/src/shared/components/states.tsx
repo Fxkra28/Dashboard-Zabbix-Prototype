@@ -6,7 +6,7 @@ export function Loading({ label = 'Loading…' }: { label?: string }) {
   return (
     <div className="state" role="status">
       <span className="spinner" />
-      <div style={{ marginTop: 10 }}>{label}</div>
+      <div className="state-label">{label}</div>
     </div>
   );
 }
@@ -43,15 +43,9 @@ export function ErrorState({ message }: { message: string }) {
   const hint = hintFor(message, roleAllows(role, 'admin'));
   return (
     <div className="state error" role="alert">
-      <div style={{ fontWeight: 600 }}>Couldn’t load data</div>
-      <div className="mono" style={{ marginTop: 8 }}>
-        {message}
-      </div>
-      {hint && (
-        <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-          {hint}
-        </div>
-      )}
+      <div className="state-title">Couldn’t load data</div>
+      <div className="mono state-detail">{message}</div>
+      {hint && <div className="muted state-hint">{hint}</div>}
     </div>
   );
 }

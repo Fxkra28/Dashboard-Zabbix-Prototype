@@ -122,7 +122,7 @@ export default function Network() {
 
   return (
     <>
-      <div className="panel" style={{ marginBottom: 18 }}>
+      <div className="panel" style={{ marginBottom: 16 }}>
         <div className="panel-head">
           <h2>Network devices</h2>
           {devices.length > 0 && (
@@ -206,7 +206,7 @@ export default function Network() {
       </div>
 
       {selectedDevice && (
-        <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)', gap: 18 }}>
+        <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
           <div className="panel" ref={portsPanel}>
             <h2>{selectedDevice.name}: interfaces</h2>
             <div className="controls" style={{ marginBottom: 12 }}>

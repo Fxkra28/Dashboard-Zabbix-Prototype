@@ -337,7 +337,7 @@ export default function Overview() {
                           </span>
                         </span>
                       </div>
-                      <div style={{ marginTop: 14 }}>
+                      <div style={{ marginTop: 12 }}>
                         <Async
                           loading={pollQ.loading && !live.data}
                           error={streaming ? null : pollQ.error}
@@ -403,7 +403,7 @@ export default function Overview() {
                         }
                       </Async>
 
-                      <h2 style={{ marginTop: 22 }}>Problems by severity</h2>
+                      <h2 style={{ marginTop: 20 }}>Problems by severity</h2>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                         {SEVERITIES.slice()
                           .reverse()

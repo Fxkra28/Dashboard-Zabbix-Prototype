@@ -79,7 +79,7 @@ checks.**
   (`Markdown.tsx` and `markdown.ts`, `HostsView.tsx` and `hostsView.ts`, `Gauge.tsx` and `gauge.ts`) could not
   share a folder on a case-insensitive disk, so the lower-case ones are now `parseMarkdown.ts`, `hostsFigures.ts`
   and `gaugeDial.ts`.
-* **Styles.** `styles.css` is 18 numbered parts in `web/src/styles/`, and `index.css` imports them in order. The
+* **Styles.** `styles.css` is 20 numbered parts in `web/src/styles/`, and `index.css` imports them in order. The
   order is the cascade, so a new rule goes into the part it belongs to, and the build serves the same one sheet:
   its SHA-256 is the same before and after.
 * **The setup guide.** `setup.md` is the index and `docs/setup/NN-title.md` are its 35 parts (38 since 20 October, three parts of changes more), each the text of

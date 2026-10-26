@@ -3,17 +3,17 @@
   display: flex;
   flex-direction: column;
   /* topbar + content padding + panel padding; the log scrolls, the page does not */
-  height: calc(100vh - 64px - 72px - 36px);
+  height: calc(100vh - 64px - var(--s-6) - var(--s-12) - 2 * var(--s-4));
   min-height: 480px;
 }
 .chat-context {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--s-2) var(--s-3);
   font-size: var(--t-sm);
   color: var(--muted);
-  padding-bottom: 12px;
+  padding-bottom: var(--s-3);
   border-bottom: 1px solid var(--border);
 }
 .chat-log {
@@ -21,15 +21,15 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 2px 12px;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-0-5) var(--s-3);
 }
 .chat-msg {
   max-width: 72ch;
-  padding: 11px 14px;
+  padding: var(--s-2-5) var(--s-3);
   border-radius: var(--r-lg);
   font-size: var(--t-md);
-  line-height: 1.6;
+  line-height: var(--lh-loose);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -37,13 +37,13 @@
   align-self: flex-end;
   background: var(--primary);
   color: var(--on-primary);
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: var(--r-xs);
 }
 .chat-msg.assistant {
   align-self: flex-start;
   background: var(--tint);
   border: 1px solid var(--tint-line);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: var(--r-xs);
 }
 /* Assistant answers are rendered markdown (features/assistant/Markdown.tsx), so the
    blocks carry the line structure, not pre-wrap. User messages stay pre-wrap. */
@@ -54,23 +54,23 @@
   margin: 0;
 }
 .chat-msg .md > * + * {
-  margin-top: 8px;
+  margin-top: var(--s-2);
 }
 .chat-msg .md ul,
 .chat-msg .md ol {
-  padding-left: 20px;
+  padding-left: var(--s-5);
 }
 .chat-msg .md li + li {
-  margin-top: 3px;
+  margin-top: var(--s-0-5);
 }
 .chat-msg .md strong {
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .chat-msg .md code {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--t-sm);
-  padding: 1px 5px;
+  padding: 0 var(--s-1);
   border-radius: var(--r-xs);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -81,8 +81,8 @@
 .chat-msg.assistant.streaming.placeholder::after {
   content: '▍';
   color: var(--primary);
-  margin-left: 2px;
-  animation: blink 1s steps(2) infinite;
+  margin-left: var(--s-0-5);
+  animation: blink var(--dur-blink) steps(2) infinite;
 }
 @keyframes blink {
   to {
@@ -92,10 +92,10 @@
 .chat-suggestions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--s-2);
 }
 .chat-suggest {
-  padding: 8px 12px;
+  padding: var(--s-2) var(--s-3);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
   background: var(--surface);
@@ -114,8 +114,8 @@
 .chat-compose {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
-  padding-top: 12px;
+  gap: var(--s-2-5);
+  padding-top: var(--s-3);
   border-top: 1px solid var(--border);
 }
 .chat-compose textarea {
@@ -123,27 +123,23 @@
   resize: none;
   min-height: 44px;
   max-height: 160px;
-  padding: 10px 12px;
+  padding: var(--s-2-5) var(--s-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   background: var(--surface);
   color: var(--text);
   font-family: inherit;
   font-size: var(--t-md);
-  line-height: 1.5;
+  line-height: var(--lh-body);
 }
 .chat-compose textarea:focus {
   border-color: var(--mid);
   box-shadow: var(--focus-ring);
 }
-.chat-compose button.btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 .chat-foot {
-  margin-top: 8px;
+  margin-top: var(--s-2);
   font-size: var(--t-xs);
-  line-height: 1.5;
+  line-height: var(--lh-body);
   color: var(--muted);
 }
 

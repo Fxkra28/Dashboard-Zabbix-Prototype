@@ -14,7 +14,7 @@ web/src/
 ├── guards/              # the checks that read a reply defensively, one file per feature behind index.ts, shape.ts holding the shared checks and misfit.ts what a page says when one fails
 ├── theme.ts             # HCML palette + Zabbix SEVERITIES
 ├── generated/           # openapi.ts, made from docs/api/openapi.yaml by `npm run gen:api` (openapi-typescript); never edited by hand
-├── styles/              # the whole theme (sidebar, cards, tables, chips, map svg): 18 numbered parts and index.css
+├── styles/              # the whole theme (sidebar, cards, tables, chips, map svg): 20 numbered parts and index.css
 ├── features/            # one folder per part of the portal: its pages, components, hooks, logic and their tests
 │   ├── dashboard/       # Overview.tsx (/), the Hosts view (HostsView.tsx, Tabs.tsx), the wall's rotation and fit
 │   ├── problems/        # Problems.tsx (/problems) + per-row "Explain", ProblemsTable.tsx, AckDialog.tsx (the only write), liveChange.ts (when a frame of the stream says to read the list again)

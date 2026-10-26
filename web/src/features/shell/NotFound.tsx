@@ -6,7 +6,7 @@ export default function NotFound() {
     <div className="panel">
       <div className="state">
         <div>This address does not match a page in the portal. Check the link, or start again from the Dashboard.</div>
-        <Link className="btn" style={{ marginTop: 16 }} to="/">
+        <Link className="btn state-action" to="/">
           Go to the Dashboard
         </Link>
       </div>

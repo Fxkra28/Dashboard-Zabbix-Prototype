@@ -35,6 +35,7 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 | See how it works | [`architecture/`](architecture/): diagrams and the subsystem index |
 | See what it looks like | [`screenshots/README.md`](screenshots/README.md): the main pages as images, with every name replaced |
 | See who uses it | [`ux/README.md`](ux/README.md): the three roles and the acknowledge journey, derived from the code |
+| Change how it looks, or hand it to a designer | [`design-system/README.md`](design-system/README.md): the rules, the tokens, every component with its states, and the token files for Figma and Sass |
 | Change something | [`../setup.md`](../setup.md), 39 parts, one per subsystem |
 | Change it safely | [`contributing.md`](contributing.md): the house rules, and why each one exists |
 | Know what is wrong with it | [`../AUDIT_REPORT.md`](../AUDIT_REPORT.md) and `setup.md` §27 |
@@ -43,8 +44,8 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 
 | | |
 |---|---|
-| Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1173 tests, linted with eslint |
-| Back end | Fastify 5 + TypeScript on Node 24. 22 route modules, 45 endpoints, 1700 tests, linted with eslint |
+| Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1182 tests, linted with eslint |
+| Back end | Fastify 5 + TypeScript on Node 24. 22 route modules, 45 endpoints, 1697 tests, linted with eslint |
 | Data source | The Zabbix JSON-RPC API. Nothing else: no database, no volumes, no data files |
 | Writes | Exactly one: acknowledge/close, behind a separate token and the operator role |
 | Downloads | The monthly SLA report as a PDF or an Excel file, built when asked from the cached figures and never stored |
