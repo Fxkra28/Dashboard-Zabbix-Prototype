@@ -110,7 +110,9 @@ The workbook writer is `xlsx.ts`, with `zip.ts`. It writes SpreadsheetML by hand
 small zip writer. The header row is blue and frozen, rows are banded, each table sheet has a filter
 over its rows, and Met and Missed show in words and colour. Percentages are stored as numbers in
 percent points (98.9812, not 0.989812) and shown with four decimals and a % sign. Durations are
-stored as times formatted `[h]:mm:ss`, and counts as numbers, so all of them sort and total. A
+stored as times formatted `[h]\:mm\:ss`, the colons escaped so that an Excel whose time separator is
+a dot (Indonesian) still shows 4:19:35, and counts as numbers, so all of them sort and total. The
+Summary prints on one page; each table sheet prints one page wide and as many long as it needs. A
 missing figure is the text *No data*, never an empty cell. Every text is stored as text and is never
 evaluated as a formula, so a device named `=HYPERLINK(...)` stays a name. The elements in each part
 follow the schema's order, because Excel offers to repair a file that breaks it.

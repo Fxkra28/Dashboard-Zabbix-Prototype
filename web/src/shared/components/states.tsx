@@ -38,8 +38,24 @@ function hintFor(message: string, admin: boolean): string | null {
   return null;
 }
 
+/** The BFF's refusal of a page above the signed-in role (security/auth.ts, security/viewerPolicy.ts). */
+const ROLE_REFUSAL = /needs the "(\w+)" role; you are signed in as "(\w+)"/;
+const FOR_ROLE: Record<string, string> = { viewer: 'viewers', operator: 'operators', admin: 'admins' };
+const withArticle = (word: string) => (/^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`);
+
 export function ErrorState({ message }: { message: string }) {
   const { role } = useAuth();
+  // A page above the signed-in role has not failed to load, so it is said calmly, as a status.
+  const refusal = ROLE_REFUSAL.exec(message);
+  if (refusal) {
+    const [, needs, has] = refusal;
+    return (
+      <div className="state" role="status">
+        <div className="state-title">This page is for {FOR_ROLE[needs] ?? `the ${needs} role`}</div>
+        <div className="state-hint">You are signed in as {withArticle(has)}. Ask the portal admin if you need access.</div>
+      </div>
+    );
+  }
   const hint = hintFor(message, roleAllows(role, 'admin'));
   return (
     <div className="state error" role="alert">

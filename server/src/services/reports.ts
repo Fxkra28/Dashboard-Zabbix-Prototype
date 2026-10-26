@@ -61,10 +61,10 @@ export function getTopTriggers(days: number) {
 export function getStats() {
   return cached('stats', 30_000, async () => {
     const [hosts, items, triggers, groups, problems] = await Promise.all([
-      // Enabled hosts only: the Dashboard card is labelled "monitored" so disabled ones are not counted.
+      // Monitored only, on all three cards: disabled hosts are left out, and so are templates' triggers, which watch no host.
       zbx<string>('host.get', { countOutput: true, monitored_hosts: true }),
       zbx<string>('item.get', { countOutput: true, monitored: true }),
-      zbx<string>('trigger.get', { countOutput: true }),
+      zbx<string>('trigger.get', { countOutput: true, monitored: true }),
       // `with_hosts`: its older name was deprecated in Zabbix 6.2.
       zbx<string>('hostgroup.get', { countOutput: true, with_hosts: true }),
       // The entry /api/problems and the stream already share, not another read.

@@ -247,6 +247,21 @@ describe('buildSnapshot', () => {
     expect(text).not.toContain('- FPSO KAS3 & BD-WHP (1):');
   });
 
+  it('names the sites with the most open problems and unreachable hosts first, since the list runs in severity order', async () => {
+    vi.mocked(getSites).mockResolvedValue({
+      sites: [
+        site({ name: 'MOPU / MAC', problems: 7, worst: 4, hosts: [host()] }),
+        site({ name: 'Jakarta', problems: 428, worst: 4, hosts: [host(), host({ hostid: '10711', state: 'down' }), host({ hostid: '10712', state: 'down' })] }),
+        site({ name: 'Porong', problems: 2, worst: 2, hosts: [host()] }),
+      ],
+      coverage: { hosts: 5, tag: 0, inventory: 0, group: 0 },
+    } as never);
+    const { text } = await buildSnapshot();
+    expect(text).toContain('- Most open problems: Jakarta 428, MOPU / MAC 7, Porong 2');
+    expect(text).toContain('- Most unreachable hosts: Jakarta 2');
+    expect(text.indexOf('- Most open problems')).toBeLessThan(text.indexOf('- MOPU / MAC:'));
+  });
+
   it('counts hosts by state, not by the interface flags: an unavailable interface that pings is up', async () => {
     vi.mocked(getSites).mockResolvedValue({
       sites: [

@@ -102,6 +102,8 @@ export default function Problems() {
       return true;
     });
   }, [q.data, minSev, search, ackFilter]);
+  // Zabbix keeps a resolved problem in the list for five minutes, so the count says how many are still open.
+  const justResolved = filtered.filter(isResolved).length;
 
   const resolved = isResolved;
   const waiting = (p: Problem) => {
@@ -215,7 +217,13 @@ export default function Problems() {
           </select>
         </Field>
         <FieldSpacer>
-          <span className="pill">{filtered.length} matching</span>
+          {/* Before the list is in, "0 matching" would say there are no problems. */}
+          {q.data && (
+            <span className="pill">
+              {filtered.length} matching
+              {justResolved > 0 && `: ${filtered.length - justResolved} open, ${justResolved} just resolved`}
+            </span>
+          )}
         </FieldSpacer>
         {ackIsOff && (
           <FieldSpacer>

@@ -370,6 +370,21 @@ describe('report routes', () => {
     expect((await app.inject({ url: '/api/reports/problems-by-group' })).statusCode).toBe(200);
     await app.close();
   });
+
+  it('counts monitored hosts, items and triggers alike on the Dashboard, so the triggers of templates are left out', async () => {
+    const { invalidate } = await import('../core/cache.js');
+    invalidate(''); // a clean cache: earlier tests in this file share it
+    const counts: Record<string, string> = { 'host.get': '3', 'item.get': '40', 'trigger.get': '12', 'hostgroup.get': '2' };
+    zbxMock.mockImplementation(async (method: string, params?: { countOutput?: boolean }) => (params?.countOutput ? counts[method] : []));
+    const { reportRoutes } = await import('../routes/reports.js');
+    const app = await buildTestApp(reportRoutes);
+
+    expect((await app.inject({ url: '/api/stats' })).json()).toMatchObject({ hosts: 3, items: 40, triggers: 12, groups: 2 });
+    expect(zbxMock).toHaveBeenCalledWith('host.get', { countOutput: true, monitored_hosts: true });
+    expect(zbxMock).toHaveBeenCalledWith('item.get', { countOutput: true, monitored: true });
+    expect(zbxMock).toHaveBeenCalledWith('trigger.get', { countOutput: true, monitored: true });
+    await app.close();
+  });
 });
 
 

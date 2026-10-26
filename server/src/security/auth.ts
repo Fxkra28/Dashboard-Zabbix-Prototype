@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import jwt from '@fastify/jwt';
@@ -291,6 +291,15 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
   const users = loadUsers((m) => app.log.warn(m));
   const hashed = users.some((u) => u.check.kind === 'scrypt');
 
+  // Tokens signed out before they expire, by hash, with their expiry. In memory, so a restart of the
+  // BFF forgets them; SESSION_EPOCH still ends every session at once.
+  const signedOut = new Map<string, number>();
+  const tokenOf = (req: FastifyRequest): string | undefined => {
+    const header = req.headers.authorization;
+    return header?.startsWith('Bearer ') ? header.slice(7).trim() : req.cookies?.[cookieName];
+  };
+  const keyOf = (token: string) => createHash('sha256').update(token).digest('base64url');
+
   /**
    * The configured user a token belongs to, or undefined when that user is gone. A name
    * listed twice cannot say which entry signed in, so the token's role must still be one of theirs.
@@ -314,6 +323,8 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
     }
     // A token from before the epoch was raised. One with no epoch is epoch 1, so the default changes nothing for it.
     if (String(claims.ep ?? SESSION_EPOCH_DEFAULT) !== config.auth.sessionEpoch) return null;
+    const token = tokenOf(req);
+    if (token && signedOut.has(keyOf(token))) return null;
     const user = currentUser(claims.sub, claims.role);
     if (!user) return null;
     req.user = { ...claims, role: user.role };
@@ -345,7 +356,8 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
 
   /** Sign a token for `u` into the session cookie. The body carries its lifetime, never the token. */
   const issue = (u: PortalUser, req: FastifyRequest, reply: FastifyReply) => {
-    const token = app.jwt.sign({ sub: u.name, role: u.role, ep: config.auth.sessionEpoch }, { expiresIn: tokenLifetime(), ...claimsOfThisPortal });
+    // The jti keeps two sign-ins in the same second apart, so signing one out leaves the other.
+    const token = app.jwt.sign({ sub: u.name, role: u.role, ep: config.auth.sessionEpoch, jti: randomUUID() }, { expiresIn: tokenLifetime(), ...claimsOfThisPortal });
     const { iat, exp } = app.jwt.decode(token) as { iat: number; exp: number };
     reply.setCookie(cookieName, token, { ...cookieOptions(req), maxAge: exp - iat });
     return { user: { name: u.name, role: u.role }, expiresIn: exp - iat };
@@ -459,11 +471,17 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
     };
   });
 
-  // Public, so an expired or missing cookie can still be cleared. It clears only this browser's
-  // cookie: the BFF keeps no list of tokens to cancel, so a copied one works until it expires.
-  // Removing a user from PORTAL_USERS and restarting ends their tokens at once, and a new
-  // JWT_SECRET ends everyone's.
+  // Public, so an expired or missing cookie can still be cleared. The token it carried is refused from then
+  // on, so a copy of it ends too; only a token this BFF signed is remembered, so made-up ones cannot fill the list.
   app.post('/api/auth/logout', { schema: { body: noBody } }, async (req, reply) => {
+    const token = tokenOf(req);
+    const claims = token ? ((await req.jwtVerify().catch(() => null)) as { exp?: number } | null) : null;
+    if (token && claims?.exp) {
+      const now = Math.floor(Date.now() / 1000);
+      for (const [key, exp] of signedOut) if (exp <= now) signedOut.delete(key);
+      signedOut.set(keyOf(token), claims.exp);
+      if (signedOut.size > LOGIN_FAIL_KEYS) signedOut.delete(signedOut.keys().next().value as string);
+    }
     reply.clearCookie(cookieName, cookieOptions(req));
     return { ok: true };
   });

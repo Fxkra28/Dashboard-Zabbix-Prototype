@@ -38,7 +38,8 @@ const GUTTER = PAD + 2; // the same with an indent of one, about three spaces
 
 // A backslash literal rather than "%" in quotes: Quick Look and Numbers scale a quoted percent sign by 100, Excel treats the two alike.
 const percentFormat = (decimals: number) => `0.${'0'.repeat(decimals)}\\%`;
-const DURATION_FORMAT = '[h]:mm:ss';
+// Literal colons: Excel shows a bare one as the reader's time separator, a dot in Indonesian ("4.19.35").
+const DURATION_FORMAT = '[h]\\:mm\\:ss';
 const COUNT_FORMAT_ID = 3; // built in as #,##0
 const MIN_DECIMALS = 4;
 const MAX_DECIMALS = 15; // what a double holds, and it keeps the number of formats small
@@ -386,6 +387,7 @@ class Sheet {
     freezeRow?: number;
     filter?: string;
     footer: string;
+    onePage?: boolean;
   }): string {
     const lastCol = colLetters(this.cols.length);
     const pane = o.freezeRow
@@ -407,7 +409,7 @@ class Sheet {
         ? `<mergeCells count="${this.merges.length}">${this.merges.map((m) => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
         : '') +
       '<pageMargins left="0.5" right="0.5" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>' +
-      '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>' +
+      `<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="${o.onePage ? 1 : 0}"/>` +
       `<headerFooter><oddFooter>${esc(o.footer)}</oddFooter></headerFooter>` +
       '</worksheet>'
     );
@@ -719,7 +721,8 @@ export function buildXlsx(doc: ReportDoc, now: Date = new Date()): Buffer {
   const summaryName = names.add('Summary');
   sheets.push({
     name: summaryName,
-    xml: summarySheet(book, doc).xml({ tab: PALETTE.primary, selected: true, footer }),
+    // Fitted to one printed page: fitted to the width alone, it left its last sentence by itself on a second.
+    xml: summarySheet(book, doc).xml({ tab: PALETTE.primary, selected: true, footer, onePage: true }),
     titled: false,
   });
   for (const t of doc.tables) {

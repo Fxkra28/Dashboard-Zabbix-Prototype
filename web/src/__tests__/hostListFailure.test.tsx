@@ -119,4 +119,24 @@ describe('the hint under an error', () => {
     expect(screen.queryByText(/ZBX_URL/)).toBeNull();
     expect(screen.queryByText(/Tell the portal admin/)).toBeNull();
   });
+
+  it('says calmly that a page above the signed-in role is for that role, not that it failed to load', async () => {
+    asRole('viewer');
+    const { unmount } = render(<ErrorState message={'This view needs the "operator" role; you are signed in as "viewer".'} />);
+    expect(await screen.findByRole('status')).toHaveTextContent('This page is for operators');
+    expect(screen.getByText(/signed in as a viewer\. Ask the portal admin/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/Couldn.t load data/)).toBeNull();
+    unmount();
+
+    render(<ErrorState message={'This view needs the "admin" role; you are signed in as "operator".'} />);
+    expect(await screen.findByRole('status')).toHaveTextContent('This page is for admins');
+    expect(screen.getByText(/signed in as an operator/)).toBeInTheDocument();
+  });
+
+  it('reads the wording for network interface data the same way', async () => {
+    asRole('viewer');
+    render(<ErrorState message={'Network interface data needs the "operator" role; you are signed in as "viewer".'} />);
+    expect(await screen.findByRole('status')).toHaveTextContent('This page is for operators');
+  });
 });

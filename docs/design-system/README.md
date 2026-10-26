@@ -81,7 +81,7 @@ The values are in [`tokens.json`](tokens.json) and [`_tokens.scss`](_tokens.scss
 | Segmented control and tabs | `.seg`; `features/dashboard/Tabs.tsx` | a pressed-in track; options 28 px, the page tabs (`.dash-tabs`, `.sli-tabs`) 36 px; the chosen option (`.on`) is raised | as tabs: `role="tablist"` and `tab`, `aria-selected`, `aria-controls`; the arrow keys move between them |
 | Device-kind tile | `.type-tile` (Devices) | raised; the chosen one is pressed in; a kind with no devices is disabled | a `button` with `aria-pressed` |
 | Checkbox | `.check` (a `label` around its `input`) | a disabled one keeps its words readable in `--muted`, since one of them says why | the label is the target, so the whole line toggles it |
-| Theme picker | `.theme-pick select` (top bar) | light, dark, system; 28 px | a labelled `select` |
+| Theme picker | `.theme-pick select` (top bar) | light, dark, system; 28 px; the choice is on `<html>` before the first paint (`web/public/theme.js`), so a page opens in it and only a switch fades | a labelled `select` |
 | Pager | `shared/components/Pager.tsx` | Previous and Next as `btn ghost sm`, disabled at either end | the line between them says where the list stands |
 
 ### Indicators

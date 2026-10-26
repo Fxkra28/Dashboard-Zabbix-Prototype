@@ -265,9 +265,24 @@ export async function buildSnapshot(): Promise<Snapshot> {
 
 
   /* 2. sites, worst first (getSites' order) */
+  // A small model reads "worst first" as "most problems", so the two rankings people ask for come
+  // first, stated outright, where trimming cannot reach them.
+  const top = (count: (s: Site) => number) =>
+    sitesRes.sites
+      .filter((s) => count(s) > 0)
+      .sort((a, b) => count(b) - count(a))
+      .slice(0, 3)
+      .map((s) => `${promptText(s.name, HOST_NAME_MAX)} ${count(s)}`)
+      .join(', ');
+  const byProblems = top((s) => s.problems);
+  const byDown = top((s) => stateCounts(s.hosts).down);
   sections.sites = section(
     `SITES (${sitesRes.sites.length}, worst first: highest open severity, then most hosts down):`,
-    sitesRes.sites.length ? sitesRes.sites.map(siteLine) : ['- none'],
+    [
+      ...(byProblems ? [`- Most open problems: ${byProblems}`] : []),
+      ...(byDown ? [`- Most unreachable hosts: ${byDown}`] : []),
+      ...(sitesRes.sites.length ? sitesRes.sites.map(siteLine) : ['- none']),
+    ],
     BUDGET.sites + siteExtra,
     (left) => `- …and ${left} more sites`,
   );

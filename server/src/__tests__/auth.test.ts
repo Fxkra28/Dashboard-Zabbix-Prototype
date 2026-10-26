@@ -465,7 +465,9 @@ describe('POST /api/auth/logout', () => {
 
   it('clears the cookie with the same attributes, with or without a cookie, even an expired one', async () => {
     const expired = app.jwt.sign({ sub: 'ana', role: 'viewer', ...CLAIMS, exp: Math.floor(Date.now() / 1000) - 60 });
-    for (const token of [tokenFor('ana', 'viewer'), expired, undefined]) {
+    // A token of its own: signing out ends it, and tokenFor would hand later tests the same one.
+    const own = app.jwt.sign({ sub: 'ana', role: 'viewer', ...CLAIMS, jti: 'clears-the-cookie' }, { expiresIn: '1h' });
+    for (const token of [own, expired, undefined]) {
       const res = await logout(page(token));
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ ok: true });
@@ -480,6 +482,31 @@ describe('POST /api/auth/logout', () => {
     const res = await logout(noHeader);
     expect(res.statusCode).toBe(403);
     expect(sessionCookie(res)).toBeUndefined();
+  });
+
+  it('ends the token it signs out, so a copy of it is refused by cookie and by Bearer header', async () => {
+    const token = app.jwt.sign({ sub: 'ana', role: 'viewer', ...CLAIMS }, { expiresIn: '3h' });
+    expect((await app.inject({ url: '/api/hosts', headers: cookieOnly(token) })).statusCode).toBe(200);
+    expect((await logout(page(token))).statusCode).toBe(200);
+    expect((await app.inject({ url: '/api/hosts', headers: cookieOnly(token) })).statusCode).toBe(401);
+    expect((await app.inject({ url: '/api/hosts', headers: { host: HOST, ...bearer(token) } })).statusCode).toBe(401);
+    expect((await app.inject({ url: '/api/auth/me', headers: cookieOnly(token) })).statusCode).toBe(401);
+  });
+
+  it('gives two sign-ins of one user in the same second tokens of their own, so signing one out leaves the other', async () => {
+    const signIn = () => app.inject({ method: 'POST', url: '/api/auth/login', headers: page(), payload: { username: 'ana', password: 'viewer-pass' } });
+    const [a, b] = [sessionCookie(await signIn())!.value, sessionCookie(await signIn())!.value];
+    expect(a).not.toBe(b);
+    await logout(page(a));
+    expect((await app.inject({ url: '/api/hosts', headers: cookieOnly(a) })).statusCode).toBe(401);
+    expect((await app.inject({ url: '/api/hosts', headers: cookieOnly(b) })).statusCode).toBe(200);
+  });
+
+  it('ends only that token: another session of the same user keeps working', async () => {
+    const one = app.jwt.sign({ sub: 'ana', role: 'viewer', ...CLAIMS }, { expiresIn: '4h' });
+    const other = app.jwt.sign({ sub: 'ana', role: 'viewer', ...CLAIMS }, { expiresIn: '5h' });
+    await logout(page(one));
+    expect((await app.inject({ url: '/api/hosts', headers: cookieOnly(other) })).statusCode).toBe(200);
   });
 });
 

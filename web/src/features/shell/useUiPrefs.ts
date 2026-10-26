@@ -31,7 +31,8 @@ const write = (key: string, value: string | null) => {
 
 export type Theme = 'system' | 'light' | 'dark';
 
-const THEME_KEY = 'hcml.theme';
+// public/theme.js reads the same key before the first paint; a test holds the two together.
+export const THEME_KEY = 'hcml.theme';
 
 /**
  * `system` leaves the attribute off, so the stylesheet's

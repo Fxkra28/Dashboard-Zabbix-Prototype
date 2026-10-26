@@ -407,12 +407,18 @@ describe('workbook sheets', () => {
     const dur = cell(s, 'G7')!;
     expect(dur.attrs.t).toBeUndefined();
     expect(Number(kid(dur, 'v')!.text)).toBeCloseTo(t.rows[2]![6]!.n! / 86400, 12);
-    expect(styleOf(book, s, 'G7').formatCode).toBe('[h]:mm:ss');
+    expect(styleOf(book, s, 'G7').formatCode).toBe('[h]\\:mm\\:ss');
 
     const count = cell(s, 'B5')!;
     expect(count.attrs.t).toBeUndefined();
     expect(Number(kid(count, 'v')!.text)).toBe(t.rows[0]![1]!.n);
     expect(styleOf(book, s, 'B5').numFmtId).toBe(3);
+  });
+
+  it('writes the colons of a duration as literals, so a reader whose time separator is a dot still sees 4:19:35', () => {
+    const code = styleOf(book, book.sheet('By site'), 'G7').formatCode ?? '';
+    expect(code).toContain('[h]');
+    expect(code.replace(/\\:/g, '')).not.toContain(':');
   });
 
   it('takes the tone colour on a figure as text only, and fills a status cell', () => {
@@ -482,6 +488,11 @@ describe('workbook sheets', () => {
     expect(kid(kid(s, 'sheetPr')!, 'pageSetUpPr')!.attrs.fitToPage).toBe('1');
     expect(kid(s, 'pageMargins')!.attrs).toMatchObject({ left: '0.5', right: '0.5', top: '0.5', bottom: '0.5' });
     expect(kid(kid(s, 'headerFooter')!, 'oddFooter')!.text).toBe(`&L${doc.footer}&RPage &P of &N`);
+  });
+
+  it('fits the summary on one printed page, and leaves each table one page wide and as long as it runs', () => {
+    expect(kid(book.sheet('Summary'), 'pageSetup')!.attrs).toMatchObject({ fitToWidth: '1', fitToHeight: '1' });
+    for (const name of ['By site', 'By device']) expect(kid(book.sheet(name), 'pageSetup')!.attrs.fitToHeight).toBe('0');
   });
 
   it('escapes an ampersand in the footer text', () => {

@@ -77,7 +77,7 @@ It imports nothing from the other folders.
 | [`sli/`](../../server/src/sli/) | The derived monthly SLA (§25): `engine.ts` computes it, `events.ts` reads event history without silent truncation, `intervals.ts` and `time.ts` do the arithmetic, `maintenance.ts` turns Zabbix maintenance into windows, `tree.ts` and `summary.ts` build the service tree and the summary on top. |
 | [`export/`](../../server/src/export/) | The report files (§18): `types.ts` is the document model, `slaReport.ts` builds it from the two derived reports, and `pdf.ts` and `xlsx.ts` write it, with `pdfFonts.ts`, `logo.ts`, `zip.ts` and `theme.ts` beneath them. No library. |
 | [`index.ts`](../../server/src/index.ts) | Builds the Fastify app and registers, in this order: helmet → CORS → rate limit → compression → no-store → stale headers → health → auth → the 22 route plugins (they hold 39 of the 45 endpoints; sign-in is in `security/auth.ts`, the health check and `/api/ready` in `http/health.ts`). Validates config before listening and exits rather than booting unsafely, and installs the `SIGTERM` handler once it listens. |
-| [`server/src/__tests__/`](../../server/src/__tests__/) | 1697 vitest tests. Zabbix is mocked at `clients/zabbix.ts`, the one point all API traffic funnels through. See [§22](22-testing.md#22-testing). |
+| [`server/src/__tests__/`](../../server/src/__tests__/) | 1704 vitest tests. Zabbix is mocked at `clients/zabbix.ts`, the one point all API traffic funnels through. See [§22](22-testing.md#22-testing). |
 
 ## The routes and their services
 

@@ -9,7 +9,49 @@ A build is named by the commit it was made from. The sidebar footer shows it onc
 and so does a signed-in `/api/health`. A `-dirty` suffix means the build was made from a working tree
 with changes that were not committed. The commit is the version; since 22 October the commit that went live is also tagged `live-<date>`.
 
-## 26 October 2026, at the end: both portals rebuilt with the day's changes (live as `7bc48db-dirty`, not committed)
+## 26 October 2026, later in the evening: the Dashboard counts the triggers of monitored hosts (not committed, not live)
+
+At your word, "please choose A", for row BK-19 of [`tracker.md`](tracker.md). The two files were backed up first in `myown/backup-26oct-bk19/`.
+
+- The Triggers card counts the triggers of monitored hosts, as the Hosts and Items cards count monitored ones (`services/reports.ts`, `trigger.get` with `monitored: true`). On the local copy it reads 15,111 instead of 18,104: the 2,709 triggers of templates watch no host, and the other 284 are disabled or sit on a host or item that is not monitored. A read-only Zabbix account now gives the same figure.
+- A test in `routes.test.ts` asks for all three counts to be of monitored ones. Counts: server 1,704 tests in 79 files, web 1,196 in 83.
+- Not live, for the reason in the entries below.
+
+## 26 October 2026, evening: the SLA workbook's two issues fixed, and the not-checked list checked (not committed, not live)
+
+At your word: the items of the not-checked list, and "fix: SLA workbook". Rows BK-18 and BK-19 of [`tracker.md`](tracker.md), and its Not checked section. The two source files were backed up first in `myown/backup-26oct-sla-workbook/`.
+
+- The workbook formats durations `[h]\:mm\:ss`, so an Excel whose time separator is a dot (Indonesian) shows 3737:32:19, not 3737.32.19, and its Summary prints on one page (`export/xlsx.ts`). Checked in Excel: 211 durations with colons; 11 pages instead of 12 for August, September and October; on screen it opens on the Summary, with the headers frozen and no cell showing `###`.
+- The page audit ran as the viewer, the operator and the admin, in both themes: nothing but the expected refusals above each role, and two flags that are not faults (the coloured dots of the Maps legend; 16 px checkboxes inside 36 px labels).
+- A read-only Zabbix role was tried on the local copy and deleted after: none of the 14 read methods is refused, and writes are. `apiinfo.version` cannot be in its allow list.
+- HCML's Zabbix runs in English for all its users, and Zabbix 7.0 hides its Indonesian translation. The meters cannot be checked on live data while the site firewalls do not answer SNMP from this Mac.
+- New open row: BK-19, the Dashboard's Triggers card counts the 2,709 triggers that belong to templates.
+- Not done: the live portals signed in, which needs your password.
+- Counts: server 1,703 tests in 79 files, web 1,196 in 83.
+- Not live, for the reason in the entries below.
+
+## 26 October 2026, late afternoon: the count waits for the list, and the chosen theme is there from the first paint (not committed, not live)
+
+At your word, "please fix the first point and the third point": the first and third of the three rows found while testing, UX-34 and UX-35 of [`tracker.md`](tracker.md). IN-38 stays open. Both copies were backed up first in `myown/backup-26oct-ux34-ux35/`.
+
+- The Problems count is drawn once the list is in, so it no longer reads "0 matching" while the list loads, or beside the error when it cannot load (`features/problems/Problems.tsx`).
+- `web/public/theme.js`, a plain script in the `<head>` of `index.html`, puts the theme picked in the portal on `<html>` before the first paint, so a page opens in it instead of fading over from the computer's colours. A file rather than inline code, so the CSP stays `script-src 'self'`. A switch in the picker still fades.
+- Counts: web 1,196 tests in 83 files (a test file for the script, two tests for the count); server 1,701 in 79.
+- Not live, for the reason in the entry below: the rebuild waits on line 9 of `hcml-portal/.env`.
+
+## 26 October 2026, afternoon: the feature audit's nine findings, fixed (not committed, not live)
+
+At your word, "please all ofthem getting fixed", for the nine findings of that day's feature audit. Rows IN-33 to IN-37, BK-17, UX-32, UX-33 and SC-31 of [`tracker.md`](tracker.md), and three new open rows, UX-34, IN-38 and UX-35. Both copies were backed up first in `myown/backup-26oct-audit-fixes/`.
+
+- The Assistant's site data starts with the two rankings people ask for, "Most open problems" and "Most unreachable hosts", so a small model no longer takes the severity order for a ranking (`services/assistantSnapshot.ts`).
+- The Problems count says how many are still open, for example "666 matching: 663 open, 3 just resolved" (`features/problems/Problems.tsx`).
+- A page above the signed-in role says whom it is for, as a status, instead of "Couldn't load data" (`shared/components/states.tsx`).
+- Sign-out ends the session it carried: the BFF refuses a signed-out token until it expires, as a cookie or a header, and each sign-in has its own `jti` (`security/auth.ts`). The list is kept in memory, so a restart of the BFF forgets it.
+- The local Zabbix copy that option C polls from this Mac was adjusted where polling from here raised false problems: the ping threshold, the SNMP timeout, more unreachable pollers and pingers, the Zabbix machine's own agent, the Intranet check, and a restart policy. HCML's Zabbix was not touched; each value the copy had before is in `myown/documents/notes/zabbix-local-copy-changes-2026-10-26.json`. The 13 site firewalls still do not answer SNMP from here, so their interface data and the Internet traffic meters stay empty under option C (IN-34).
+- Counts: server 1,701 tests in 79 files, web 1,186 in 82. `npm run verify` passes in both copies.
+- Not live: `deploy/rebuild.sh --allow-dirty` started at 15:06 WIB, passed its gates, tagged the hosted copy's images `rollback-26oct-2` and stopped at `docker compose up`, which cannot read line 9 of `hcml-portal/.env` (IN-38). The live portals still run the build of 11:59, and nothing on them changed.
+
+## 26 October 2026, at noon: both portals rebuilt with the day's changes (live as `7bc48db-dirty`, committed afterwards as `dd58bf5`)
 
 At your word, "please applied the changes", with HCML's answer on the two open points: the IT team sees the new look at once, and the white sidebar logo, "they accept it".
 
@@ -18,7 +60,7 @@ At your word, "please applied the changes", with HCML's answer on the two open p
 - Both copies came up healthy, and an anonymous caller sees on each: health 200, the meters 401, `/.env` and `/.git/config` 404, a Content-Security-Policy, the bundle `index-CrZqQU6d.js` and the stylesheet `index-Bf1gdQ8y.css` (the new tokens, the touch part and the danger button are in it). The sign-in page shows the new look, with fields and button 36 px.
 - Not checked yet: the pages behind the sign-in, which need your password (`tools/live/signedin_check.py`). On a visit before signing in, the browser logs 401s for the question of who is signed in and, at times, for the Dashboard's first requests, which leave before that answer; that code is older than this change.
 
-## 26 October 2026, later still: the design system's twelve gaps, fixed (not committed; live since 26 October as `7bc48db-dirty`)
+## 26 October 2026, later still: the design system's twelve gaps, fixed (committed as `dd58bf5`; live since 26 October as `7bc48db-dirty`)
 
 At your word, "Audit: which audit numbers to fix. all of it". Row UX-31 of [`tracker.md`](tracker.md), and [DESIGN.md section 11](DESIGN.md) for each fix and the measurements. Both copies were backed up first in `myown/ui-backup-26oct-2/`.
 
@@ -27,7 +69,7 @@ At your word, "Audit: which audit numbers to fix. all of it". Row UX-31 of [`tra
 - `tokens.check.mjs` fails a value between steps on each new scale, in the stylesheet and in inline styles, a raw z-index and a media query off the breakpoints, with fixtures that prove each rule fails; `tokens:export` writes the new families. Comments new in this change were held to one or two lines (antislop-code).
 - Counts: web 1,182 tests in 82 files (the danger button, the breakpoint token, the highlight's duration and the touch targets); server 1,697 in 79. The stylesheet has 20 numbered parts.
 
-## 26 October 2026, later: soft depth, motion and a white sidebar logo (not committed; live since 26 October as `7bc48db-dirty`)
+## 26 October 2026, later: soft depth, motion and a white sidebar logo (committed as `dd58bf5`; live since 26 October as `7bc48db-dirty`)
 
 At your word, "A with edges for the real portal" and "logo 1", with your answers to the four questions recorded in [DESIGN.md section 10](DESIGN.md). Row UX-30 of [`tracker.md`](tracker.md). Both copies were backed up first, outside the repositories, in `myown/ui-backup-26oct/`.
 
@@ -38,7 +80,7 @@ At your word, "A with edges for the real portal" and "logo 1", with your answers
 - The SLA report files keep white paper, light rows and solid lines, since paper cannot show depth and an Excel cell cannot take a translucent line; their ink follows the two darker status colours (`server/src/export/theme.ts`, whose test now says which colours are the paper and which are copies of a token).
 - Counts: server 1,697 tests in 79 files (the report-palette test compares four colours fewer and checks the paper); web 1,177 in 82 (a test file for the logo component and a sidebar test). The images in `docs/screenshots` and `pic/10` still show the look before this change.
 
-## 26 October 2026: the Mac restarted and the Zabbix containers came back with Docker, and what was never checked was checked as far as it can be (not committed)
+## 26 October 2026: the Mac restarted and the Zabbix containers came back with Docker, and what was never checked was checked as far as it can be (committed as `dd58bf5`)
 
 At your word ("please inspect and check" the list of what was never checked, and "please do the housekeeping left", with one item kept: the two `refactor-backup-*` folders stay). No code changed. Rows IN-27, SC-23, SC-06 and IN-30 of [`tracker.md`](tracker.md) and its list of what was not checked carry the details.
 

@@ -132,6 +132,35 @@ describe('the live stream tells the page when to read the list again (IN-11)', (
   });
 });
 
+describe('the count above the list', () => {
+  it('says how many of the matching problems are open and how many have just resolved', async () => {
+    vi.mocked(api.problems).mockResolvedValue([three[0], { ...three[1], r_eventid: '77', r_clock: '1800000100' }, three[2]]);
+    open('/problems');
+    expect(await screen.findByText('3 matching: 2 open, 1 just resolved')).toBeInTheDocument();
+  });
+
+  it('says only how many match when none has just resolved', async () => {
+    open('/problems');
+    expect(await screen.findByText('3 matching')).toBeInTheDocument();
+  });
+
+  it('says nothing while the list is on its way, rather than that nothing matches', async () => {
+    let answer!: (list: typeof three) => void;
+    vi.mocked(api.problems).mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    open('/problems');
+    expect(screen.queryByText(/matching/)).toBeNull();
+    await act(async () => answer(three));
+    expect(await screen.findByText('3 matching')).toBeInTheDocument();
+  });
+
+  it('says nothing beside the error when the list could not load', async () => {
+    vi.mocked(api.problems).mockRejectedValue(new Error('The data source is not answering.'));
+    open('/problems');
+    expect(await screen.findByText('Couldn’t load data')).toBeInTheDocument();
+    expect(screen.queryByText(/matching/)).toBeNull();
+  });
+});
+
 describe('a link to one problem (UX-11)', () => {
   it('marks the row the eventid names, in words as well as by the bar', async () => {
     open('/problems?eventid=2');
