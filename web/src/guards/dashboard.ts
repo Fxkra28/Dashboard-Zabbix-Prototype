@@ -18,6 +18,9 @@ const freshness = shape<Freshness>({
   ageSeconds: orNull(num),
   stale: flag,
   staleAfterSeconds: num,
+  pinged: num,
+  answering: num,
+  reachLost: flag,
 });
 
 const groupProblems = shape<GroupProblems>({ groupid: text, name: text, total: num, bySeverity: counts });

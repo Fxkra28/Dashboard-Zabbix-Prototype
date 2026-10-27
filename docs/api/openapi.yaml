@@ -911,6 +911,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TopHostsResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
@@ -940,6 +941,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WebMonitoringResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
@@ -978,6 +980,7 @@ paths:
                         count: { type: integer }
                   truncated: { type: boolean }
                   days: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
@@ -1033,7 +1036,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [lastCollectedAt, ageSeconds, stale, staleAfterSeconds]
+                required: [lastCollectedAt, ageSeconds, stale, staleAfterSeconds, pinged, answering, reachLost]
                 properties:
                   lastCollectedAt:
                     type: [integer, 'null']
@@ -1041,6 +1044,13 @@ paths:
                   ageSeconds: { type: [integer, 'null'], minimum: 0 }
                   stale: { type: boolean }
                   staleAfterSeconds: { type: integer, const: 600 }
+                  pinged: { type: integer, minimum: 0, description: Hosts whose latest ping is fresh. }
+                  answering: { type: integer, minimum: 0, description: How many of those answered it. }
+                  reachLost:
+                    type: boolean
+                    description: |
+                      At least 10 hosts were pinged and at most a fifth of them answered, so Zabbix has more
+                      likely lost its way into the network than every device its power.
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
@@ -2518,7 +2528,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServicesResponse'
         - type: object
-          required: [tree, source, label, month, profile, target, closed, gaps]
+          required: [tree, source, label, month, profile, target, closed, gaps, noDataWindows]
           properties:
             source: { type: string, const: derived }
             label: { type: string }
@@ -2527,6 +2537,10 @@ components:
             target: { type: number }
             closed: { type: boolean }
             gaps: { type: array, items: { $ref: '#/components/schemas/Interval' } }
+            noDataWindows:
+              type: array
+              description: Spans declared not measured (SLA_NO_DATA_WINDOWS), treated as hours with no data.
+              items: { $ref: '#/components/schemas/Interval' }
             tree: { type: array, items: { $ref: '#/components/schemas/DerivedServiceNode' } }
 
     DerivedServiceNode:
@@ -2581,7 +2595,7 @@ components:
       type: object
       required:
         [source, label, profile, month, from, to, end, closed, timezone, target, basis,
-         overall, categories, sites, classes, hosts, wanPaths, web, gaps, stats, generatedAt]
+         overall, categories, sites, classes, hosts, wanPaths, web, gaps, noDataWindows, stats, generatedAt]
       properties:
         source: { type: string, const: derived }
         label: { type: string }
@@ -2617,6 +2631,12 @@ components:
         gaps:
           type: array
           description: Estate-wide spans in which almost nothing was collected.
+          items: { $ref: '#/components/schemas/Interval' }
+        noDataWindows:
+          type: array
+          description: |
+            Spans the setting SLA_NO_DATA_WINDOWS declares not measured, such as a collector that ran outside
+            HCML's network. Both methods treat them as hours with no data.
           items: { $ref: '#/components/schemas/Interval' }
         stats:
           type: object
@@ -2762,6 +2782,10 @@ components:
         categories: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
         sites: { type: array, items: { $ref: '#/components/schemas/SliGroup' } }
         gaps: { type: array, items: { $ref: '#/components/schemas/Interval' } }
+        noDataWindows:
+          type: array
+          description: Spans declared not measured (SLA_NO_DATA_WINDOWS), in which no downtime is counted.
+          items: { $ref: '#/components/schemas/Interval' }
 
     NoiseReport:
       type: object

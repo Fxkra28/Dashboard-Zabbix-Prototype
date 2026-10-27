@@ -11,6 +11,10 @@ import {
   getLatestPage,
 } from '../services/hosts.js';
 import { cached } from '../core/cache.js';
+import { singleValues } from '../core/schemas.js';
+
+const ITEMS_QUERY = singleValues('hostid', 'search', 'graphable', 'itemids');
+const LATEST_QUERY = singleValues('hostid', 'groupid', 'search', 'page', 'pageSize');
 
 export async function hostRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/hosts', () => getHosts());
@@ -28,7 +32,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
   //   ?itemids=a,b       specific items (any host), resolves a deep link
   // hostid is required unless itemids is given: without it Zabbix would get `hostids: [undefined]`
   // and answer with an opaque 500.
-  app.get('/api/items', async (req) => {
+  app.get('/api/items', { schema: { querystring: ITEMS_QUERY } }, async (req) => {
     const q = req.query as { hostid?: string; search?: string; graphable?: string; itemids?: string };
     const graphable = q.graphable === '1' || q.graphable === 'true';
     const itemids =
@@ -49,7 +53,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
   //
   // With `page`, the list is paged server-side (getLatestPage). Without `page` the
   // original first-500 read is kept for older callers.
-  app.get('/api/latest', (req) => {
+  app.get('/api/latest', { schema: { querystring: LATEST_QUERY } }, (req) => {
     const q = req.query as {
       hostid?: string;
       groupid?: string;

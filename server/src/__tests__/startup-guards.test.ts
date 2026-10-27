@@ -51,6 +51,34 @@ describe('a malformed PORTAL_USERS', () => {
   });
 });
 
+describe('SLA_NO_DATA_WINDOWS', () => {
+  const at = (iso: string) => Date.parse(iso) / 1000;
+
+  it('is read as spans of Unix seconds, in any zone, sorted', async () => {
+    const { assertConfig, config } = await load({
+      ...AUTH_ON,
+      SLA_NO_DATA_WINDOWS: '2026-10-27T01:00Z/2026-10-27T02:00Z, 2026-10-26T16:10+07:00/2026-10-26T21:03+07:00',
+    });
+    expect(assertConfig).not.toThrow();
+    expect(config.sla.noDataWindows).toEqual([
+      [at('2026-10-26T09:10:00Z'), at('2026-10-26T14:03:00Z')],
+      [at('2026-10-27T01:00:00Z'), at('2026-10-27T02:00:00Z')],
+    ]);
+  });
+
+  it('stops the BFF when a span cannot be read, rather than count the downtime it was meant to leave out', async () => {
+    for (const bad of ['2026-10-26T16:10/2026-10-26T21:03', '2026-10-26T21:03Z/2026-10-26T16:10Z', '2026-10-26T16:10Z', 'yesterday']) {
+      const { assertConfig } = await load({ ...AUTH_ON, SLA_NO_DATA_WINDOWS: bad });
+      expect(assertConfig, bad).toThrow(/SLA_NO_DATA_WINDOWS/);
+    }
+  });
+
+  it('declares nothing when unset', async () => {
+    const { config } = await load(AUTH_ON);
+    expect(config.sla.noDataWindows).toEqual([]);
+  });
+});
+
 describe('the BFF starts', () => {
   it('with a strong secret and real passwords', async () => {
     const { assertConfig, assertUsers } = await load(AUTH_ON);

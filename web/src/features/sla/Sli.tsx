@@ -167,22 +167,37 @@ function spanText(g: SliGap): string {
   return mA === mB ? `${dA}–${dB} ${mA}` : `${da} – ${db}`;
 }
 
-/** "Excluded 6.9 days with no collected data: 1–2 Aug, 8–11 Aug …" */
-export function gapsSummary(gaps: SliGap[]): string | null {
-  if (!gaps.length) return null;
-  const seconds = gaps.reduce((s, g) => s + (g.to - g.from), 0);
+function spansSummary(spans: SliGap[], what: string): string | null {
+  if (!spans.length) return null;
+  const seconds = spans.reduce((s, g) => s + (g.to - g.from), 0);
   const amount =
     seconds >= 172800 ? `${(seconds / 86400).toFixed(1)} days` : `${Math.round(seconds / 3600)} hours`;
-  return `${amount} with no collected data: ${gaps.map(spanText).join(', ')}`;
+  return `${amount} ${what}: ${spans.map(spanText).join(', ')}`;
 }
 
-export function GapsNote({ gaps, profile }: { gaps: SliGap[] | undefined; profile: SliProfile }) {
-  const text = gapsSummary(gaps ?? []);
-  if (!text) return null;
-  return (
-    <div className="notice sli-gaps">
-      {profile === 'availability' ? 'Excluded ' : 'Counted as up by the HCML method: '}
-      {text}.
-    </div>
-  );
+/** "Excluded 6.9 days with no collected data: 1–2 Aug, 8–11 Aug …" */
+export const gapsSummary = (gaps: SliGap[]) => spansSummary(gaps, 'with no collected data');
+
+/** The spans the setting SLA_NO_DATA_WINDOWS declares not measured, such as a collector that ran off HCML's network. */
+export const declaredSummary = (windows: SliGap[]) => spansSummary(windows, 'the portal is set to treat as not measured');
+
+const LEAD: Record<SliProfile | 'all-problems', string> = {
+  availability: 'Excluded ',
+  'hcml-report': 'Counted as up by the HCML method: ',
+  'all-problems': 'No downtime counted in ',
+};
+
+export function GapsNote({
+  gaps,
+  windows,
+  profile,
+}: {
+  gaps: SliGap[] | undefined;
+  windows: SliGap[] | undefined;
+  /** `all-problems` is the legacy basis, which has no gaps and only leaves declared spans out of the downtime. */
+  profile: SliProfile | 'all-problems';
+}) {
+  const lines = [gapsSummary(gaps ?? []), declaredSummary(windows ?? [])].filter((t): t is string => t !== null);
+  if (!lines.length) return null;
+  return <div className="notice sli-gaps">{lines.map((t) => `${LEAD[profile]}${t}.`).join(' ')}</div>;
 }

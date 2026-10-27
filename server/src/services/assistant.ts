@@ -21,6 +21,6 @@ export { CHAT_SYSTEM, detectLanguage, languageReminder, systemText } from './ass
 export { age, promptText, section } from './assistantLines.js';
 export { buildSnapshot, getSnapshot, SNAPSHOT_CHAR_CAP, SNAPSHOT_KEY, snapshotClock, snapshotFingerprint } from './assistantSnapshot.js';
 export type { Snapshot, SnapshotMeta } from './assistantSnapshot.js';
-export { buildFocus, focusBlock, sitesNamed } from './assistantFocus.js';
+export { buildFocus, focusBlock, hostFocusBlock, hostsNamed, sitesNamed } from './assistantFocus.js';
 export { cleanAnswer, readOpenAiStream, streamAnswer } from './assistantAnswer.js';
 export type { AnswerOptions, ChatTurn } from './assistantAnswer.js';

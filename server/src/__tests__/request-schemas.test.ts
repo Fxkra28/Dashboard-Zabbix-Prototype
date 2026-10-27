@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import Fastify, { type FastifyInstance } from 'fastify';
 
 /**
- * Body schemas on the POST routes. The real sign-in, sign-out, renewal, acknowledge and assistant
+ * Body schemas on the POST routes, and the query schema of the GET routes. The real sign-in, sign-out, renewal, acknowledge and assistant
  * routes are mounted behind the real guard and the real error handler, with Zabbix mocked, so the
  * status codes and bodies are the ones a client gets. A malformed body is a plain 400
  * `bad_request`; a good one behaves as it did before the schemas.
@@ -27,7 +27,7 @@ const { registerErrorHandler } = await import('../http/errors.js');
 const { actionRoutes } = await import('../routes/actions.js');
 const { chatRoutes } = await import('../routes/chat.js');
 const { config } = await import('../core/config.js');
-const { AJV_OPTIONS, validationProblem } = await import('../core/schemas.js');
+const { AJV_OPTIONS, QUERY_VALUE_MAX, singleValues, validationProblem } = await import('../core/schemas.js');
 
 let app: FastifyInstance;
 let savedToken: string;
@@ -288,6 +288,8 @@ describe('validationProblem', () => {
     ['text or a list expected', failure('type', '/a', { type: 'string,array' }), 'a must be text or a list.'],
     ['an object expected at the top', failure('type', '', { type: 'object' }), OBJECT],
     ['an object expected in the query string', failure('type', '', { type: 'object' }, 'querystring'), 'The query string must be a JSON object.'],
+    ['a query name sent twice', failure('type', '/month', { type: 'string' }, 'querystring'), 'month must be given once.'],
+    ['a query value too long', failure('maxLength', '/search', { limit: 2000 }, 'querystring'), 'search must have at most 2000 characters.'],
     ['a value outside a list', failure('enum', '/r', { allowedValues: ['x', 'y'] }), 'r must be one of: x, y.'],
     ['an empty list', failure('minItems', '/m', { limit: 1 }), 'm must not be empty.'],
     ['a short list', failure('minItems', '/m', { limit: 3 }), 'm must have at least 3 items.'],
@@ -323,6 +325,22 @@ describe('the schemas stay on every POST route', () => {
     }
     expect(found).toBeGreaterThanOrEqual(5);
     expect(missing).toEqual([]);
+  });
+
+  it('holds a query to one value per name, of at most QUERY_VALUE_MAX characters, and lets other names through', async () => {
+    const probe = Fastify({ logger: false, ajv: AJV_OPTIONS });
+    registerErrorHandler(probe);
+    probe.get('/q', { schema: { querystring: singleValues('search', 'page') } }, async (req) => req.query);
+    await probe.ready();
+    const get = (query: string) => probe.inject({ url: `/q?${query}` });
+    expect((await get('search=a&page=2&other=1&other=2')).json()).toEqual({ search: 'a', page: '2', other: ['1', '2'] });
+    expect((await get('page=1&page=2')).json()).toEqual({ error: 'bad_request', message: 'page must be given once.' });
+    expect((await get(`search=${'x'.repeat(QUERY_VALUE_MAX)}`)).statusCode).toBe(200);
+    expect((await get(`search=${'x'.repeat(QUERY_VALUE_MAX + 1)}`)).json()).toEqual({
+      error: 'bad_request',
+      message: `search must have at most ${QUERY_VALUE_MAX} characters.`,
+    });
+    await probe.close();
   });
 
   it('builds the server without coercion, so the schemas see types as sent', () => {

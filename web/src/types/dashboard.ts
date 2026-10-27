@@ -68,6 +68,11 @@ export interface Freshness {
   /** Nothing collected for longer than `staleAfterSeconds`. */
   stale: boolean;
   staleAfterSeconds: number;
+  /** Hosts whose latest ping is fresh, and how many of them answered it. */
+  pinged: number;
+  answering: number;
+  /** At least ten pinged and at most a fifth answering: Zabbix is cut off from the network. */
+  reachLost: boolean;
 }
 
 export interface GroupProblems {

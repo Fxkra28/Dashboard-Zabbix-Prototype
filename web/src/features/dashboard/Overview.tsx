@@ -21,6 +21,7 @@ import InternetMeters from '../meters/InternetMeters';
 import HostsView from './HostsView';
 import { Tabs, tabButtonId, tabsPanelId } from './Tabs';
 import { Async, RefreshFailed } from '../../shared/components/states';
+import { CollectorNotice, reachLost } from '../../shared/components/CollectorNotice';
 import type { LayoutContext } from '../shell/Layout';
 import { LIVE_ROWS, liveRows, topRows } from './liveList';
 import { internetCard, rotateSeconds, slidesOf, wallPages, type Slide } from '../../shared/lib/wall';
@@ -62,6 +63,7 @@ function WallBar({
   shownAt,
   lateMinutes,
   idleFor,
+  cutOff,
   onExit,
   rotation,
 }: {
@@ -69,6 +71,8 @@ function WallBar({
   lateMinutes: number | null;
   /** How long Zabbix has collected nothing, in words, or null while it is collecting. */
   idleFor: string | null;
+  /** Zabbix collects, but almost no device answers its ping. */
+  cutOff: boolean;
   onExit: () => void;
   /** The control for the turning slides, or null where nothing turns. */
   rotation: { running: boolean; onToggle: () => void } | null;
@@ -80,11 +84,12 @@ function WallBar({
         <h1>Dashboard</h1>
       </div>
       <WallClock />
-      <div className={`wall-stamp${lateMinutes !== null || idleFor !== null ? ' late' : ''}`}>
+      <div className={`wall-stamp${lateMinutes !== null || idleFor !== null || cutOff ? ' late' : ''}`}>
         <span className="wall-label">Data as of</span>
         <span className="wall-time">{shownAt !== null ? clockTime(shownAt) : '…'}</span>
         {lateMinutes !== null && <span className="wall-label">No new data for {lateMinutes} min</span>}
         {idleFor !== null && <span className="wall-label">Zabbix collected nothing for {idleFor}</span>}
+        {cutOff && <span className="wall-label">Zabbix cannot reach the network</span>}
       </div>
       {rotation && (
         <button type="button" className="btn ghost sm" onClick={rotation.onToggle}>
@@ -201,6 +206,7 @@ export default function Overview() {
   // The age counts on from the last poll's value, so the words stay right between polls.
   const collectedAt = freshQ.data?.stale ? freshQ.data.lastCollectedAt : null;
   const idleFor = collectedAt !== null ? ageWords(now / 1000 - collectedAt) : null;
+  const cutOff = reachLost(freshQ.data);
 
   // The wall's highlight, off for anyone who has asked for less motion.
   const { marks, cleared } = useChangeHighlight(open, held, wall && !reduceMotion, topRows);
@@ -231,7 +237,9 @@ export default function Overview() {
     <>
       <div ref={fitWrap}>
         <div ref={fitInner}>
-          {wall && <WallBar shownAt={shownAt} lateMinutes={lateMinutes} idleFor={idleFor} onExit={exitWall} rotation={turningControl} />}
+          {wall && (
+            <WallBar shownAt={shownAt} lateMinutes={lateMinutes} idleFor={idleFor} cutOff={cutOff} onExit={exitWall} rotation={turningControl} />
+          )}
           <Tabs
             id={viewsId}
             label="Dashboard view"
@@ -256,13 +264,7 @@ export default function Overview() {
                         Couldn’t load the counts: {statsQ.error}
                       </div>
                     ))}
-                  {/* Stable wording: it is announced on a change, and a running count would be read out every minute. */}
-                  {collectedAt !== null && (
-                    <div className="refresh-failed" role="status">
-                      Zabbix has collected nothing since {momentWords(collectedAt * 1000, now)}. What you see on this page
-                      is from then, not from now.
-                    </div>
-                  )}
+                  <CollectorNotice freshness={freshQ.data} now={now} />
                   <div className="grid kpis">
                     <KpiCard label="Hosts" value={stats?.hosts ?? '…'} sub="monitored" />
                     <KpiCard label="Items" value={stats?.items ?? '…'} sub="collecting" />
@@ -313,14 +315,16 @@ export default function Overview() {
                               ? `No new data since ${clockTime(shownAt)}`
                               : collectedAt !== null
                                 ? `Zabbix has collected nothing since ${momentWords(collectedAt * 1000, now)}`
-                                : streaming
+                                : cutOff
+                                  ? 'Zabbix cannot reach the network'
+                                  : streaming
                                   ? 'Live'
                                   : live.error
                                     ? 'Polling: live stream error'
                                     : 'Polling'}
                           </span>
                           <span
-                            className={`live${late || idleFor !== null ? ' late' : streaming ? '' : ' off'}`}
+                            className={`live${late || idleFor !== null || cutOff ? ' late' : streaming ? '' : ' off'}`}
                             title={live.error ?? pollQ.error ?? undefined}
                             aria-hidden="true"
                           >
@@ -329,7 +333,9 @@ export default function Overview() {
                               ? `No new data for ${lateMinutes} min`
                               : idleFor !== null
                                 ? `Zabbix has collected nothing for ${idleFor}`
-                                : streaming
+                                : cutOff
+                                  ? 'Zabbix cannot reach the network'
+                                  : streaming
                                   ? 'Live'
                                   : live.error
                                     ? 'Polling: live stream error'

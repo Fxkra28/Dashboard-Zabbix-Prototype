@@ -150,9 +150,9 @@ const cases: Case[] = [
     sample: {
       from: 1, to: 2, windowSeconds: 1, minSeverity: 2, truncated: false, basis: 'availability', profile: 'availability', month: '2026-09', target: 99,
       hosts: [{ hostid: '1', host: 'h', availability: 99.9, downtime: 1, incidents: 1, longest: 1, coverage: 1, dataStatus: 'ok', category: 'c', site: siteRef }],
-      overall: sliGroup, categories: [sliGroup], sites: [sliGroup], gaps: [gap],
+      overall: sliGroup, categories: [sliGroup], sites: [sliGroup], gaps: [gap], noDataWindows: [gap],
     },
-    optional: ['basis', 'profile', 'month', 'target', 'overall', 'categories', 'sites', 'gaps', 'hosts[0].coverage', 'hosts[0].dataStatus', 'hosts[0].category', 'hosts[0].site'],
+    optional: ['basis', 'profile', 'month', 'target', 'overall', 'categories', 'sites', 'gaps', 'noDataWindows', 'hosts[0].coverage', 'hosts[0].dataStatus', 'hosts[0].category', 'hosts[0].site'],
   },
   {
     name: 'problem ageing',
@@ -186,7 +186,7 @@ const cases: Case[] = [
     guard: g.derivedServicesGuard,
     sample: {
       tree: [{ ...dLeaf, serviceid: '1', name: 'root', kind: 'root', children: [dLeaf], descendants: 1 }], total: 2, degraded: 0, worst: -1,
-      source: 'derived', label: 'l', month: '2026-09', profile: 'availability', target: 99, closed: true, gaps: [gap],
+      source: 'derived', label: 'l', month: '2026-09', profile: 'availability', target: 99, closed: true, gaps: [gap], noDataWindows: [gap],
     },
     optional: ['description', 'sla', 'hostid', 'children[0].description', 'children[0].sla', 'children[0].hostid'].map((p) => `tree[0].${p}`),
   },
@@ -196,7 +196,7 @@ const cases: Case[] = [
     sample: {
       source: 'derived', label: 'l', profile: 'availability', month: '2026-09', from: 1, to: 2, end: 2, closed: true, timezone: 'Asia/Jakarta', target: 99, generatedAt: 3,
       basis: { triggers: ['High ICMP ping loss'], gapPolicy: 'excluded', noDataPolicy: 'excluded', maintenancePolicy: 'excluded' },
-      overall: sliGroup, categories: [sliGroup], sites: [sliGroup], classes: [sliGroup], gaps: [gap],
+      overall: sliGroup, categories: [sliGroup], sites: [sliGroup], classes: [sliGroup], gaps: [gap], noDataWindows: [gap],
       hosts: [{ hostid: '1', name: 'x', hostStatus: '0', site: siteRef, category: 'c', deviceClass: 'switch', triggerids: ['1'], sli: 99, downtime: 1, window: 2, covered: 2, maintenance: 0, coverage: 1, incidents: 1, longest: 1, dataStatus: 'ok', measured: true, meeting: true, errorBudget: 5 }],
       wanPaths: [{ key: 'k', name: 'p', site: siteRef, legs: [{ hostid: '1', name: 'x', leg: 'WAN 1', sli: 99, dataStatus: 'ok' }], sli: 99, downtime: 1, coverage: 1, dataStatus: 'ok' }],
       web: [{ itemid: '1', name: 'w', sli: 99, downtime: 1, coverage: 1, dataStatus: 'ok' }],

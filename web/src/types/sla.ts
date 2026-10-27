@@ -33,6 +33,8 @@ export interface AvailabilityReport {
   categories?: SliGroup[];
   sites?: SliGroup[];
   gaps?: SliGap[];
+  /** Spans the portal's setting SLA_NO_DATA_WINDOWS declares not measured; no downtime is counted in them. */
+  noDataWindows?: SliGap[];
 }
 
 // Derived monthly SLA (/api/sli, server sli/engine.ts)
@@ -127,6 +129,8 @@ export interface SliReport {
   wanPaths: SliPath[];
   web: SliWeb[];
   gaps: SliGap[];
+  /** Spans declared not measured (SLA_NO_DATA_WINDOWS), treated as hours with no data by both methods. */
+  noDataWindows: SliGap[];
   stats: { zabbixCalls: number; triggers: number; events: number; trendRows: number; ms: number };
   generatedAt: number;
 }
@@ -185,6 +189,7 @@ export interface DerivedServicesResponse extends ServicesResponse {
   target: number;
   closed: boolean;
   gaps: SliGap[];
+  noDataWindows: SliGap[];
 }
 
 /** Whether Zabbix's own SLAs have anything to show (/api/sla/source). */

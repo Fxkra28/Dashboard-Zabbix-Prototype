@@ -7,13 +7,16 @@ import { getAgingReport } from '../services/aging.js';
 import { getAllProblemsAvailabilityReport, getDerivedAvailabilityReport } from '../services/availability.js';
 import { getCapacityReport } from '../services/capacity.js';
 import { getNoiseReport } from '../services/noise.js';
+import { singleValues } from '../core/schemas.js';
+
+const AVAILABILITY_QUERY = singleValues('days', 'severity', 'month', 'profile', 'basis');
 
 export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
   // intParam, not Math.min/Math.max around Number(): `days=abc` is NaN, NaN
   // survives both clamps, and a NaN `time_from` removes the time bound entirely.
   //   ?basis=availability (default) &profile=&month=YYYY-MM | &days=
   //   ?basis=all-problems &severity= &month=YYYY-MM | &days=   the original any-problem report
-  app.get('/api/reports/availability', (req) => {
+  app.get('/api/reports/availability', { schema: { querystring: AVAILABILITY_QUERY } }, (req) => {
     const q = req.query as { days?: string; severity?: string; month?: string; profile?: string; basis?: string };
     const days = intParam(q.days, 7, 1, 365);
     const minSeverity = intParam(q.severity, config.reports.availabilityMinSeverity, 0, 5);
@@ -28,14 +31,14 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   //   ?days=&severity=&top=   top: triggers sent, loudest first (default 100, 1 to 1000)
-  app.get('/api/reports/noise', (req) => {
+  app.get('/api/reports/noise', { schema: { querystring: singleValues('days', 'severity', 'top') } }, (req) => {
     const q = req.query as { days?: string; severity?: string; top?: string };
     return getNoiseReport(intParam(q.days, 7, 1, 365), intParam(q.severity, 0, 0, 5), intParam(q.top, 100, 1, 1000));
   });
 
   app.get('/api/reports/aging', () => getAgingReport());
 
-  app.get('/api/reports/capacity', (req) => {
+  app.get('/api/reports/capacity', { schema: { querystring: singleValues('days', 'top') } }, (req) => {
     const q = req.query as { days?: string; top?: string };
     return getCapacityReport(intParam(q.days, 7, 1, 365), intParam(q.top, 10, 1, 50));
   });

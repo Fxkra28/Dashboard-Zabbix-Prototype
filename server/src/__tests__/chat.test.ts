@@ -9,6 +9,8 @@ import {
   detectLanguage,
   focusBlock,
   getSnapshot,
+  hostFocusBlock,
+  hostsNamed,
   languageReminder,
   promptText,
   readOpenAiStream,
@@ -140,7 +142,7 @@ beforeEach(() => {
   vi.mocked(derivedServiceLines).mockResolvedValue([]);
 });
 
-const HEADERS = ['SNAPSHOT taken', 'ESTATE:', 'SITES (', 'NEW IN LAST 24 H:', 'UNREACHABLE HOSTS (', 'SLA:', 'DEGRADED SERVICES:', 'OPEN PROBLEMS ('];
+const HEADERS = ['SNAPSHOT taken', 'ESTATE:', 'OPEN PROBLEMS, COUNTED:', 'SITES (', 'NEW IN LAST 24 H:', 'UNREACHABLE HOSTS (', 'SLA:', 'DEGRADED SERVICES:', 'OPEN PROBLEMS ('];
 
 describe('buildSnapshot', () => {
   it('describes the estate in compact sections with the facts a NOC would ask about', async () => {
@@ -323,13 +325,70 @@ describe('buildSnapshot', () => {
     for (const h of HEADERS) expect(text).toContain(h);
     expect(text).not.toMatch(/tags:/);
     expect(text).toMatch(/- …and \d+ more sites/);
-    expect(text).toMatch(/OPEN PROBLEMS \(200, worst first\)/);
-    expect(text).toMatch(/- …and \d+ more \((Disaster|High|Average|Warning|Information|Not classified) \d+/);
-    const problemLines = text.split('OPEN PROBLEMS')[1].split('\n').filter((l) => l.startsWith('- ['));
+    const title = /OPEN PROBLEMS \(200, worst first; only the worst (\d+) are listed\):/.exec(text);
+    expect(title, 'the title says the list is partial').not.toBeNull();
+    expect(text).toMatch(/- …and \d+ more not listed \(of those: (Disaster|High|Average|Warning|Information|Not classified) \d+/);
+    const problemLines = text.split('\nOPEN PROBLEMS (')[1].split('\n').filter((l) => l.startsWith('- ['));
     expect(problemLines.length).toBeGreaterThan(0);
     expect(problemLines.length).toBeLessThanOrEqual(20);
+    expect(problemLines.length, 'the number in the title').toBe(Number(title?.[1]));
     expect(problemLines[0]).toContain('[Disaster]');
     expect(meta.truncated).toBe(true);
+  });
+});
+
+describe('facts only the whole problem list can give (BK-20)', () => {
+  // 30 High problems on one host fill the list; the oldest is a Warning on another host, since June 2024.
+  const busy = Array.from({ length: 30 }, (_, i) =>
+    problem({ eventid: String(500 + i), severity: '4', clock: String(NOW - i * 600), host: '1.2.1 IDX02CORESWITCH', hostid: '1', name: `Interface ${i}: Link down` }),
+  );
+  const old = problem({ eventid: '9', severity: '2', clock: String(Date.parse('2024-06-14T03:00:00Z') / 1000), host: '5.1 FGT60F-01-GMS', hostid: '2', name: 'Unavailable by ICMP ping' });
+  const hosts = [
+    host({ hostid: '1', name: '1.2.1 IDX02CORESWITCH' }),
+    host({ hostid: '2', name: '5.1 FGT60F-01-GMS' }),
+    host({ hostid: '3', name: '5.2.1 PAS_CS9200_AS01' }),
+    host({ hostid: '4', name: '5.2.2 PAS_CS9200_AS02' }),
+    host({ hostid: '5', name: '5.2.3 OLD-SWITCH', status: '1', state: 'disabled' }),
+  ];
+
+  beforeEach(() => {
+    vi.mocked(getProblems).mockResolvedValue([...busy, old] as never);
+    vi.mocked(getSites).mockResolvedValue({ sites: [site({ total: 5, hosts })], coverage: { hosts: 5, tag: 5, inventory: 0, group: 0 } } as never);
+  });
+
+  const day = (clock: number) =>
+    new Intl.DateTimeFormat('en-GB', { timeZone: config.sla.timezone, day: 'numeric', month: 'short', year: 'numeric' }).format(clock * 1000);
+
+  it('states the busiest hosts, the oldest problems and how many hosts have none, over every open problem', async () => {
+    const { text } = await buildSnapshot();
+    const counted = text.split('ALL 31 OPEN PROBLEMS, COUNTED:\n')[1].split('\n\n')[0].split('\n');
+    expect(counted).toEqual([
+      '- Hosts with no open problem: 2 of 4 monitored',
+      '- Hosts with the most open problems: 1.2.1 IDX02CORESWITCH 30, 5.1 FGT60F-01-GMS 1',
+      '- Oldest open: [Warning] 5.1 FGT60F-01-GMS: Unavailable by ICMP ping; open since 14 Jun 2024',
+      `- 2nd oldest open: [High] 1.2.1 IDX02CORESWITCH: Interface 29: Link down; open since ${day(NOW - 29 * 600)}`,
+      `- 3rd oldest open: [High] 1.2.1 IDX02CORESWITCH: Interface 28: Link down; open since ${day(NOW - 28 * 600)}`,
+    ]);
+  });
+
+  it('says in the list title how many of the problems it holds, where the old Warning is not among them', async () => {
+    const { text } = await buildSnapshot();
+    const list = text.split('\nOPEN PROBLEMS (')[1];
+    const shown = list.split('\n').filter((l) => l.startsWith('- [')).length;
+    expect(list.startsWith(`31, worst first; only the worst ${shown} are listed):`)).toBe(true);
+    expect(list).not.toContain('5.1 FGT60F-01-GMS');
+  });
+
+  it('tells the model to answer whole-list questions from the counted lines, or to say its list is partial', () => {
+    expect(CHAT_SYSTEM).toMatch(/use ALL OPEN PROBLEMS, COUNTED\./);
+    expect(CHAT_SYSTEM).toMatch(/say that your list is partial and give the total/);
+  });
+
+  it('with no open problem, says that every monitored host is clear', async () => {
+    vi.mocked(getProblems).mockResolvedValue([] as never);
+    const { text } = await buildSnapshot();
+    expect(text).toContain('ALL 0 OPEN PROBLEMS, COUNTED:\n- Hosts with no open problem: 4 of 4 monitored\n');
+    expect(text).toContain('OPEN PROBLEMS (0, worst first):\n- none');
   });
 });
 
@@ -491,11 +550,9 @@ describe('site focus', () => {
     expect(text).toContain('Open problems here: 11, worst first:');
   });
 
-  it('adds no focus when the question names no site', async () => {
-    vi.mocked(getSites).mockClear();
+  it('adds no focus when the question names no site and no host', async () => {
     await expect(buildFocus('Which sites missed SLA last month?')).resolves.toBeNull();
     await expect(buildFocus('Kenapa?')).resolves.toBeNull();
-    expect(getSites).not.toHaveBeenCalled();
   });
 
   it('builds the focus from the same cached data as the snapshot', async () => {
@@ -503,6 +560,46 @@ describe('site focus', () => {
     expect(focus?.sites).toEqual(['FPSO KAS3 & BD-WHP']);
     expect(focus?.text).toContain('FOCUS: FPSO KAS3 & BD-WHP (2 hosts)');
     expect(focus?.text).toContain('Down (1): 4.3.4 FPSO ARUBA 4');
+  });
+});
+
+describe('host focus (BK-20)', () => {
+  const hosts = [
+    host({ hostid: '20', name: 'Zabbix server' }),
+    host({ hostid: '30', name: '1.2.2. IDXSVFSW01', availability: 'unavailable', state: 'down' }),
+    host({ hostid: '40', name: '9.9 HUB' }),
+  ];
+  const names = (text: string) => hostsNamed(text, hosts as never).map((h) => h.name);
+
+  it('finds a host by its full name, or by its name without the numbering, as a whole term', () => {
+    expect(names('How many open problems does the host "Zabbix server" have?')).toEqual(['Zabbix server']);
+    expect(names('Any problems on IDXSVFSW01?')).toEqual(['1.2.2. IDXSVFSW01']);
+    expect(names('status of 1.2.2. idxsvfsw01')).toEqual(['1.2.2. IDXSVFSW01']);
+    expect(names('Is IDXSVFSW012 up?')).toEqual([]);
+    // Shorter than five letters and digits: a word, not a host named on purpose.
+    expect(names('anything wrong on the HUB?')).toEqual([]);
+  });
+
+  it('gives the host its count by severity and its worst problems, which the snapshot does not hold', () => {
+    const mine = (eventid: string, severity: string, name: string) => problem({ eventid, hostid: '20', host: 'Zabbix server', severity, name });
+    const text = hostFocusBlock(hosts[0] as never, [mine('1', '3', 'A'), mine('2', '2', 'B'), mine('3', '4', 'C'), mine('4', '1', 'D'), problem()] as never, NOW);
+    expect(text.split('\n')).toEqual([
+      'FOCUS: host Zabbix server (reachable)',
+      'Open problems on this host: 4 (High 1, Average 1, Warning 1, Information 1), worst first:',
+      '- [High] C; open 3h, acked',
+      '- [Average] A; open 3h, acked',
+      '- [Warning] B; open 3h, acked',
+    ]);
+  });
+
+  it('says so when the host has none open', () => {
+    expect(hostFocusBlock(hosts[1] as never, [problem()] as never, NOW)).toBe('FOCUS: host 1.2.2. IDXSVFSW01 (unreachable)\nOpen problems on this host: 0, none');
+  });
+
+  it('builds the focus for a named host from the same cached data as the snapshot', async () => {
+    const focus = await buildFocus('How many problems does 4.3.3 FPSO ARUBA 3 have?');
+    expect(focus?.hosts).toEqual(['4.3.3 FPSO ARUBA 3']);
+    expect(focus?.text).toContain('FOCUS: host 4.3.3 FPSO ARUBA 3 (reachable)\nOpen problems on this host: 1 (Warning 1), worst first:');
   });
 });
 
@@ -744,7 +841,7 @@ describe('SC-13: text from Zabbix is data in the prompt, not instructions', () =
       expect(prompt.lastIndexOf(phrase)).toBeLessThan(end);
     }
     // Every line of the block is one the snapshot wrote: blank, a "- " item or a known header.
-    const known = /^(|- .*|SNAPSHOT taken |ESTATE:|Open problems:|SITES \(|NEW IN LAST 24 H:|UNREACHABLE HOSTS \(|SLA:|DEGRADED SERVICES:|OPEN PROBLEMS \()/;
+    const known = /^(?:$|- .*|SNAPSHOT taken |ESTATE:|Open problems:|ALL \d+ OPEN PROBLEMS, COUNTED:$|SITES \(|NEW IN LAST 24 H:|UNREACHABLE HOSTS \(|SLA:|DEGRADED SERVICES:|OPEN PROBLEMS \()/;
     for (const line of prompt.slice(begin, end).split('\n').slice(1)) expect(line).toMatch(known);
   });
 

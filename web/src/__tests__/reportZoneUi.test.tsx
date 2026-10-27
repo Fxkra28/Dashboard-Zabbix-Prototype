@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { api } from '../api';
 import { setReportTimeZone } from '../shared/lib/time';
-import { MonthSelect, gapsSummary } from '../features/sla/Sli';
+import { GapsNote, MonthSelect, gapsSummary } from '../features/sla/Sli';
 import RangePicker from '../features/graphs/RangePicker';
 import Availability from '../features/sla/Availability';
 import Sla from '../features/sla/Sla';
@@ -57,6 +57,33 @@ describe('gapsSummary', () => {
     expect(gapsSummary([gap])).toBe('2 hours with no collected data: 31 Jul 23:30 \u2013 1 Aug 01:30');
     setReportTimeZone('Asia/Makassar');
     expect(gapsSummary([gap])).toBe('2 hours with no collected data: 1 Aug 00:30\u201302:30');
+  });
+});
+
+describe('GapsNote with spans declared not measured (IN-39)', () => {
+  const gap = { from: utc('2026-07-31T16:30:00Z'), to: utc('2026-07-31T18:30:00Z') };
+  // 16:10 to 21:03 in Jakarta, when the collector ran outside HCML's network.
+  const declared = { from: utc('2026-10-26T09:10:00Z'), to: utc('2026-10-26T14:03:00Z') };
+  const note = () => document.querySelector('.sli-gaps');
+
+  it('names them in the words of the method in use', () => {
+    const { rerender } = render(<GapsNote gaps={[]} windows={[declared]} profile="availability" />);
+    expect(note()).toHaveTextContent('Excluded 5 hours the portal is set to treat as not measured: 26 Oct 16:10\u201321:03.');
+    rerender(<GapsNote gaps={[]} windows={[declared]} profile="hcml-report" />);
+    expect(note()).toHaveTextContent(
+      'Counted as up by the HCML method: 5 hours the portal is set to treat as not measured: 26 Oct 16:10\u201321:03.',
+    );
+    rerender(<GapsNote gaps={undefined} windows={[declared]} profile="all-problems" />);
+    expect(note()).toHaveTextContent('No downtime counted in 5 hours the portal is set to treat as not measured: 26 Oct 16:10\u201321:03.');
+  });
+
+  it('puts the gaps first, and shows nothing when there are neither', () => {
+    const { rerender } = render(<GapsNote gaps={[gap]} windows={[declared]} profile="availability" />);
+    expect(note()).toHaveTextContent(
+      'Excluded 2 hours with no collected data: 31 Jul 23:30 \u2013 1 Aug 01:30. Excluded 5 hours the portal is set to treat as not measured: 26 Oct 16:10\u201321:03.',
+    );
+    rerender(<GapsNote gaps={[]} windows={[]} profile="availability" />);
+    expect(note()).toBeNull();
   });
 });
 

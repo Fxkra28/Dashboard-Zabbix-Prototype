@@ -9,8 +9,8 @@ import type { FastifyServerOptions } from 'fastify';
  * The schemas fix the shape of a body; the finer rules stay in the handlers: digits only in an
  * event id, the message cut at 2,048 characters, a chat that must end on a user turn.
  *
- * GET routes have no schemas on purpose: a query schema would change how every query string is
- * read, and every client sends one.
+ * GET routes declare their query names with `singleValues` (below): one value each, as text, and
+ * nothing more, so every query string a client sends today is read as before.
  */
 
 /**
@@ -23,6 +23,20 @@ export const AJV_OPTIONS: NonNullable<FastifyServerOptions['ajv']> = {
   // Union types such as ['string', 'array'] are plain JSON Schema; Ajv logs a warning at startup without this.
   customOptions: { coerceTypes: false, allowUnionTypes: true },
 };
+
+/** The longest query value a route reads is a list of 50 item ids. */
+export const QUERY_VALUE_MAX = 2_000;
+
+/**
+ * A query string of single values. Fastify hands a handler a name sent twice as a list, which no
+ * handler reads: `search.trim()` on one was a 500. Names not listed pass as before.
+ */
+export function singleValues(...names: string[]) {
+  return {
+    type: 'object',
+    properties: Object.fromEntries(names.map((name) => [name, { type: 'string', maxLength: QUERY_VALUE_MAX }])),
+  } as const;
+}
 
 /** Sign-in. An empty string is a valid body: it fails as a wrong password, with a 401, as before. */
 export const loginBody = {
@@ -120,6 +134,8 @@ export function validationProblem(err: unknown): string | null {
     case 'required':
       return `${[name, String(params.missingProperty)].filter(Boolean).join('.')} is required.`;
     case 'type': {
+      // A query value is text or, for a name sent twice, a list of texts.
+      if (e.validationContext === 'querystring' && params.type === 'string') return `${name} must be given once.`;
       // Ajv joins a list of types with commas. null means "may be left out", so it is not worth naming.
       const types = String(params.type).split(',');
       const named = types.length > 1 ? types.filter((t) => t !== 'null') : types;

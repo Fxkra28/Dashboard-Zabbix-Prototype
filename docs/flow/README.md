@@ -172,7 +172,7 @@ The two AI paths send different amounts, and Explain is the smaller one. Explain
 host, trigger name, opdata, severity, start time, the acknowledged/resolved flags and that problem's
 tags. The Assistant sends the *entire estate snapshot*: up to 5,500 characters covering all 139 hosts
 rolled up by site, up to 20 open problems with host and trigger text, unreachable-host lists and
-derived SLA figures, plus an optional 800-character site focus block and up to 3,000 characters of
+derived SLA figures, plus optional 800-character focus blocks for a site or a host and up to 3,000 characters of
 prior conversation. The `LEAVES` box's own wording ("host names, trigger names and problem text")
 summarises both.
 

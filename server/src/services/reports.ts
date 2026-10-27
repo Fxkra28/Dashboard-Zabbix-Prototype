@@ -1,7 +1,7 @@
 import { zbx } from '../clients/zabbix.js';
 import { cached } from '../core/cache.js';
 import { getProblems, openProblems } from '../domain/queries.js';
-import { collectingStatus, getLastCollected } from '../domain/reachability.js';
+import { collectingStatus, getCollecting } from '../domain/reachability.js';
 
 /** One page of event history. Bounds the read and flags when it was hit. */
 const EVENT_LIMIT = 10_000;
@@ -88,7 +88,8 @@ export function getStats() {
 
 /** When Zabbix last collected a value, so the Dashboard can say it has stopped (reachability.ts). */
 export async function getFreshness() {
-  return collectingStatus(await getLastCollected(), Math.floor(Date.now() / 1000));
+  const { lastCollectedAt, readings } = await getCollecting();
+  return collectingStatus(lastCollectedAt, Math.floor(Date.now() / 1000), readings);
 }
 
 /** Dashboard widget: problem severity breakdown per host group. */

@@ -114,7 +114,6 @@ describe('GET /api/sla/sli ids', () => {
   it.each([
     ['a word', '/api/sla/sli?slaid=abc'],
     ['a negative number', '/api/sla/sli?slaid=-1'],
-    ['a list', '/api/sla/sli?slaid=1&slaid=2'],
     ['an id with a suffix', '/api/sla/sli?slaid=1x'],
     ['a bad service id', '/api/sla/sli?slaid=1&serviceid=abc'],
     ['a bad service id with no slaid', '/api/sla/sli?serviceid=abc'],
@@ -124,6 +123,16 @@ describe('GET /api/sla/sli ids', () => {
     const res = await app.inject({ url });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ error: 'bad_request', message: expect.stringMatching(/numeric Zabbix id/) });
+    expect(zbxMock).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('answers 400 for an id sent twice, saying so, and never reaches Zabbix (BK-14)', async () => {
+    const { slaRoutes } = await import('../routes/sla.js');
+    const app = await buildTestApp(slaRoutes);
+    const res = await app.inject({ url: '/api/sla/sli?slaid=1&slaid=2' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'bad_request', message: 'slaid must be given once.' });
     expect(zbxMock).not.toHaveBeenCalled();
     await app.close();
   });

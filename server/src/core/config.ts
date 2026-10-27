@@ -109,6 +109,25 @@ function csv(raw: string): string[] {
  *   hcml-report: reproduces HCML's published Availability Reports: only
  *                  "High ICMP ping loss", gaps and silent hosts count as up.
  */
+/**
+ * SLA_NO_DATA_WINDOWS: spans known not to have been measured truly, such as a collector that ran outside HCML's network,
+ * as `start/end` ISO times with their zone, comma-separated. Undefined when any span cannot be read. Pure.
+ */
+export function parseNoDataWindows(raw: string | undefined): [number, number][] | undefined {
+  const text = (raw ?? '').trim();
+  if (!text) return [];
+  const zoned = /(Z|[+-]\d{2}:\d{2})$/;
+  const out: [number, number][] = [];
+  for (const part of text.split(',')) {
+    const ends = part.trim().split('/').map((s) => s.trim());
+    if (ends.length !== 2 || !ends.every((s) => zoned.test(s))) return undefined;
+    const [from, to] = ends.map((s) => Date.parse(s) / 1000);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) return undefined;
+    out.push([Math.floor(from), Math.ceil(to)]);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+
 const SLI_PROFILES = ['availability', 'hcml-report'] as const;
 export type SliProfile = (typeof SLI_PROFILES)[number];
 export function toSliProfile(raw: string | undefined): SliProfile | undefined {
@@ -289,6 +308,8 @@ export const config = {
     minCoverage: envNum('SLI_MIN_COVERAGE', 0.5),
     /** Concurrent Zabbix calls while computing one report. */
     maxParallel: envNum('SLI_ZBX_PARALLEL', 4),
+    /** Spans treated as hours with no data, Unix seconds; assertConfig refuses a value it cannot read. */
+    noDataWindows: parseNoDataWindows(process.env.SLA_NO_DATA_WINDOWS) ?? [],
   },
   auth: {
     // Secure by default: every HCML source slide is stamped Private and
@@ -471,6 +492,13 @@ export function assertConfig(warn: (msg: string) => void): void {
     throw new Error(
       `SESSION_EPOCH "${config.auth.sessionEpoch}" is not a label the portal can put in a token. ` +
         'Use up to 32 letters, digits, "." "_" or "-", for example 2.',
+    );
+  }
+  // A span that cannot be read would otherwise count real downtime that was meant to be left out, with no word of it.
+  if (parseNoDataWindows(process.env.SLA_NO_DATA_WINDOWS) === undefined) {
+    throw new Error(
+      `SLA_NO_DATA_WINDOWS="${process.env.SLA_NO_DATA_WINDOWS}" cannot be read. Write each span as start/end in ISO time ` +
+        'with its zone, comma-separated, for example 2026-10-26T16:10+07:00/2026-10-26T21:03+07:00.',
     );
   }
   try {

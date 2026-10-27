@@ -42,6 +42,7 @@ export interface DerivedServicesResponse extends ServicesResponse {
   target: number;
   closed: boolean;
   gaps: SliReport['gaps'];
+  noDataWindows: SliReport['noDataWindows'];
 }
 
 const SEVERITY_ORDER = (p: ZbxProblem) => Number(p.severity);
@@ -260,6 +261,7 @@ export function buildDerivedTree(
     target,
     closed: report.closed,
     gaps: report.gaps,
+    noDataWindows: report.noDataWindows,
   };
 }
 

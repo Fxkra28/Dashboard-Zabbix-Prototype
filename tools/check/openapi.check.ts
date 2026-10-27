@@ -20,11 +20,13 @@
  *     and a route that can answer 403 (an unsafe method, which needs the CSRF header, or a role above
  *     viewer) must document 403. The public paths and the role rules are read from `PUBLIC_ROUTES`
  *     and `ROUTE_RULES` in the source, so there is no third list to drift;
- *   - the body: an unsafe method takes a body schema (schemas.ts), so it must document 400.
+ *   - the body: an unsafe method takes a body schema (schemas.ts), so it must document 400;
+ *   - the query: a route that declares its query names (`singleValues` in schemas.ts) must document 400, and
+ *     the spec must declare exactly those names `in: query`.
  *   - the text: no one-line flow mapping has an entry without a key, which is what a description with a comma in it
  *     turns into when it is not quoted (YAML cuts it there, silently).
- * Not compared: query parameters and response bodies. No GET route declares a schema for them. The web app's types
- * are held to the response bodies by web/src/__tests__/openapiTypes.test.ts.
+ * Not compared here: response bodies. server/src/__tests__/openapi-contract.test.ts holds every answer to the spec,
+ * and web/src/__tests__/openapiTypes.test.ts holds the web app's types to it.
  *
  * Read-only. No npm dependency: the YAML is scanned rather than parsed, the same trade
  * validate-sli.ts made when it hand-wrote a zip reader instead of adding a parser. That is safe here
@@ -44,6 +46,8 @@ export interface Route {
   method: 'get' | 'post' | 'put' | 'patch' | 'delete';
   path: string;
   where: string;
+  /** The query names the route declares with `singleValues`, sorted; absent when it declares none. */
+  query?: string[];
 }
 
 
@@ -56,6 +60,9 @@ export interface Route {
  */
 export function routesIn(source: string, where = '<memory>'): Route[] {
   const out: Route[] = [];
+  const names = (args: string) => [...args.matchAll(/(['"])([^'"]+)\1/g)].map((m) => m[2]).sort();
+  // `const X_QUERY = singleValues('a', 'b');` named once and used on a registration line.
+  const constants = new Map([...source.matchAll(/\bconst\s+([A-Z][A-Z0-9_]*_QUERY)\s*=\s*singleValues\(([^)]*)\)/g)].map((m) => [m[1], names(m[2])]));
   const re = /\b[A-Za-z_$][\w$]*\.(get|post|put|patch|delete)\s*\(\s*(['"`])([^'"`]*)\2/g;
   const lines = source.split('\n');
 
@@ -69,7 +76,11 @@ export function routesIn(source: string, where = '<memory>'): Route[] {
     while ((m = re.exec(lines[i])) !== null) {
       const path = m[3];
       if (!path.startsWith('/')) continue; // cache.get('key'), map.get(…), and friends
-      out.push({ method: m[1] as Route['method'], path, where: `${where}:${i + 1}` });
+      const rest = lines[i].slice(m.index);
+      const inline = /\bsingleValues\(([^)]*)\)/.exec(rest);
+      const named = /\b([A-Z][A-Z0-9_]*_QUERY)\b/.exec(rest);
+      const query = inline ? names(inline[1]) : named ? constants.get(named[1]) : undefined;
+      out.push({ method: m[1] as Route['method'], path, where: `${where}:${i + 1}`, ...(query ? { query } : {}) });
     }
   }
   return out;
@@ -113,6 +124,8 @@ export interface SpecOp {
   responses: string[];
   /** Names declared `in: path`, on the operation or on its path item. */
   pathParams: string[];
+  /** Names declared `in: query`, sorted. */
+  queryParams: string[];
 }
 
 const SPEC_METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
@@ -213,6 +226,7 @@ export function specOperations(yaml: string): SpecOp[] {
         security: !security ? 'inherit' : /^\[\s*\]$/.test(security.inline) ? 'none' : 'set',
         responses: blocks(under(operation.lines, 6, 'responses')?.body ?? [], 8).map((b) => b.key),
         pathParams: [...new Set(params.filter((p) => p.in === 'path').map((p) => p.name))],
+        queryParams: [...new Set(params.filter((p) => p.in === 'query').map((p) => p.name))].sort(),
       });
     }
   }
@@ -327,6 +341,7 @@ export function compare(routes: Route[], ops: SpecOp[], guard: Guard) {
   let guarded = 0;
   let forbidding = 0;
   let refusing = 0;
+  let querying = 0;
 
   for (const r of routes) {
     const o = opFor.get(key(r.method, r.path));
@@ -371,6 +386,15 @@ export function compare(routes: Route[], ops: SpecOp[], guard: Guard) {
       refusing++;
       if (!o.responses.includes('400')) problems.push(`${label} takes a body, so it can answer 400, but documents none`);
     }
+    // A declared query name sent twice, or too long, is a 400 before the handler runs.
+    if (r.query) {
+      querying++;
+      if (!o.responses.includes('400')) problems.push(`${label} declares its query, so it can answer 400, but documents none`);
+      for (const n of r.query.filter((q) => !o.queryParams.includes(q))) problems.push(`${label} does not declare the query parameter ${n}, which ${r.where} reads`);
+      for (const n of o.queryParams.filter((q) => !r.query?.includes(q))) problems.push(`${label} declares the query parameter ${n}, which ${r.where} does not`);
+    } else if (o.queryParams.length) {
+      problems.push(`${label} declares query parameters, but ${r.where} declares no query schema (singleValues)`);
+    }
   }
 
   for (const o of ops) {
@@ -392,7 +416,7 @@ export function compare(routes: Route[], ops: SpecOp[], guard: Guard) {
     }
   }
 
-  return { problems, guarded, forbidding, refusing };
+  return { problems, guarded, forbidding, refusing, querying };
 }
 
 function tsFilesUnder(dir: string, acc: string[] = []): string[] {
@@ -546,6 +570,7 @@ function selfTest(): string[] {
     security: 'inherit',
     responses: ['200', '401'],
     pathParams: [],
+    queryParams: [],
     ...over,
   });
   const found = (routes: Route[], ops: SpecOp[]) => compare(routes, ops, guard).problems;
@@ -584,6 +609,24 @@ function selfTest(): string[] {
   eq('a POST with no 403', has(found([route('post', '/api/a')], [op('post', '/api/a')]), 'POST /api/a can answer 403 (an unsafe method'), 1);
   eq('a POST with no 400', has(found([route('post', '/api/a')], [op('post', '/api/a', { responses: ['200', '401', '403'] })]), 'POST /api/a takes a body, so it can answer 400'), 1);
   eq('a GET needs no 400', has(found([route('get', '/api/a')], [op('get', '/api/a')]), 'can answer 400'), 0);
+
+  // Query names: read off the registration line, inline or through a *_QUERY constant
+  const queried = (q: string[]): Route => ({ ...route('get', '/api/q'), query: q });
+  eq(
+    'reads the declared query names',
+    routesIn("const LIST_QUERY = singleValues('page', 'hostid');\napp.get('/api/a', { schema: { querystring: singleValues('b', 'a') } }, h);\napp.get('/api/b', explain(LIST_QUERY), h);\napp.get('/api/c', h);").map((r) => r.query ?? null),
+    [['a', 'b'], ['hostid', 'page'], null],
+  );
+  eq('a query with its 400 and its names', found([queried(['a', 'b'])], [op('get', '/api/q', { responses: ['200', '400', '401'], queryParams: ['a', 'b'] })]), []);
+  eq('a query with no 400', has(found([queried(['a'])], [op('get', '/api/q', { queryParams: ['a'] })]), 'declares its query, so it can answer 400'), 1);
+  eq('a name the spec lacks', has(found([queried(['a', 'b'])], [op('get', '/api/q', { responses: ['200', '400', '401'], queryParams: ['a'] })]), 'does not declare the query parameter b'), 1);
+  eq('a name the route lacks', has(found([queried(['a'])], [op('get', '/api/q', { responses: ['200', '400', '401'], queryParams: ['a', 'z'] })]), 'declares the query parameter z'), 1);
+  eq('documented names, no schema', has(found([route('get', '/api/q')], [op('get', '/api/q', { queryParams: ['a'] })]), 'declares no query schema'), 1);
+  eq(
+    'reads in: query from the spec',
+    specOperations(['paths:', '  /api/q:', '    get:', '      parameters:', '        - { name: b, in: query }', '        - name: a', '          in: query', '      responses:', "        '200': { description: ok }"].join('\n')).map((o) => o.queryParams),
+    [['a', 'b']],
+  );
   eq('a role-gated GET with no 403', has(found([route('get', '/api/ops/x')], [op('get', '/api/ops/x')]), 'can answer 403 (it needs the operator role)'), 1);
   eq('an open route needs no 401', found([route('get', '/api/open')], [op('get', '/api/open', { responses: ['200'] })]), []);
   eq('a route outside /api is not the guard\'s', found([route('get', '/metrics')], [op('get', '/metrics', { responses: ['200'] })]), []);
@@ -620,7 +663,7 @@ if (!guard) {
 if (!operations.length) {
   problems.push('docs/api/openapi.yaml  no operations found under paths:. Method keys must sit at four spaces.');
 }
-const compared = guard ? compare(registered, operations, guard) : { problems: [], guarded: 0, forbidding: 0, refusing: 0 };
+const compared = guard ? compare(registered, operations, guard) : { problems: [], guarded: 0, forbidding: 0, refusing: 0, querying: 0 };
 problems.push(...compared.problems);
 
 for (const c of cutDescriptions(yaml)) {
@@ -655,5 +698,6 @@ const shape = Object.entries(byMethod)
 console.log(
   `openapi.check: ${registered.length} endpoints (${shape}), all documented, none extra. ` +
     `Methods and path parameters agree; 401 documented on ${compared.guarded} guarded operations, ` +
-    `403 on ${compared.forbidding} that can answer it, 400 on ${compared.refusing} that take a body. No description is cut at a comma.`,
+    `403 on ${compared.forbidding} that can answer it, 400 on ${compared.refusing} that take a body and on ${compared.querying} ` +
+    `that declare their query, whose names agree. No description is cut at a comma.`,
 );

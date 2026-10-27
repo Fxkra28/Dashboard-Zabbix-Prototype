@@ -42,7 +42,7 @@ beforeEach(() => {
   stream.current = { data: null, updatedAt: null, connected: false, error: null };
   vi.spyOn(api, 'stats').mockResolvedValue({ hosts: 24, items: 1000, triggers: 300, groups: 8, problems: 0, unacknowledged: 0, bySeverity: {} });
   vi.spyOn(api, 'problemsByGroup').mockResolvedValue([]);
-  vi.spyOn(api, 'freshness').mockResolvedValue({ lastCollectedAt: Math.floor(Date.now() / 1000) - 30, ageSeconds: 30, stale: false, staleAfterSeconds: 600 });
+  vi.spyOn(api, 'freshness').mockResolvedValue({ lastCollectedAt: Math.floor(Date.now() / 1000) - 30, ageSeconds: 30, stale: false, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false });
   vi.spyOn(api, 'problems').mockImplementation(never);
   vi.spyOn(api, 'netMeters').mockResolvedValue(response([meter(), meter({ id: 'item-2', title: 'SITE TWO INTERNET 1' })]));
   vi.spyOn(api, 'devices').mockResolvedValue(devicesResponse());

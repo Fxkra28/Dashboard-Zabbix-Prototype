@@ -6,9 +6,14 @@ import { optionalId, requireId } from '../core/validate.js';
 import { currentMonth, parseMonth } from '../sli/time.js';
 import { aiGuard, chargeTo } from '../clients/limits.js';
 import { explainDerivedSla, explainProblem, explainZabbixSla, type SlaAnswer } from '../services/explain.js';
+import { singleValues } from '../core/schemas.js';
+
+const PROBLEM_QUERY = singleValues('eventid');
+const SLA_QUERY = singleValues('slaid', 'serviceid', 'source', 'month', 'profile', 'scope');
 
 export async function explainRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/explain/problem', { preHandler: aiGuard('explain') }, async (req, reply) => {
+  const explain = (querystring: ReturnType<typeof singleValues>) => ({ schema: { querystring }, preHandler: aiGuard('explain') });
+  app.get('/api/explain/problem', explain(PROBLEM_QUERY), async (req, reply) => {
     // Thrown rather than answered inline so the message names the setting to fix.
     if (!config.ai.enabled) throw new AiDisabledError();
 
@@ -25,7 +30,7 @@ export async function explainRoutes(app: FastifyInstance): Promise<void> {
    *   ?source=derived&month=&profile=&scope=      the derived monthly SLA
    *                                               (scope: overall | site:N | category:NAME)
    */
-  app.get('/api/explain/sla', { preHandler: aiGuard('explain') }, async (req, reply): Promise<SlaAnswer | void> => {
+  app.get('/api/explain/sla', explain(SLA_QUERY), async (req, reply): Promise<SlaAnswer | void> => {
     if (!config.ai.enabled) throw new AiDisabledError();
 
     const q = req.query as {

@@ -1,6 +1,6 @@
 /**
  * The FOCUS block: for a site the question names, every host of it by state and its worst problems, so that a small model does not call down
- * a host that only has its SNMP silent.
+ * a host that only has its SNMP silent; for a host it names, that host's open problems and their count.
  */
 
 import { cached } from '../core/cache.js';
@@ -9,7 +9,7 @@ import { getSites, type Site, type SiteHost } from './sites.js';
 import { siteFromHostName, naturalCompare, SITES, type SiteRef } from '../domain/naming.js';
 import type { HostState } from '../domain/reachability.js';
 import { availabilitySince, stateSince } from './assistantFacts.js';
-import { downFor, HOST_NAME_MAX, PROBLEM_NAME_MAX, promptText, sevName, worstFirst } from './assistantLines.js';
+import { downFor, HOST_NAME_MAX, PROBLEM_NAME_MAX, promptText, severityCounts, severityList, sevName, worstFirst } from './assistantLines.js';
 import { dataBlock } from './assistantPrompt.js';
 
 const FOCUS_BUDGET = 800;
@@ -18,6 +18,12 @@ const FOCUS_BUDGET = 800;
 const FOCUS_SITES = 2;
 
 const FOCUS_PROBLEMS = 3;
+
+/** Hosts a question can name and still get a block each. */
+const FOCUS_HOSTS = 2;
+
+/** A host name shorter than this is a common word ("HUB", "ha"), not a host named on purpose. */
+const HOST_TERM_MIN = 5;
 
 /**
  * A site name as a whole word. Names of three letters or fewer count only in
@@ -135,20 +141,65 @@ export function focusBlock(site: SiteRef, sites: Site[], problems: ZbxProblem[],
   return text;
 }
 
+/** A host's name as a whole term: its full name, and the name without its numbering ("IDXSVFSW01" for "1.2.2. IDXSVFSW01"). */
+function hostTerms(name: string): RegExp[] {
+  const bare = name.replace(/^[\d.\s]+/, '').trim();
+  return [...new Set([name.trim(), bare])]
+    .filter((term) => term.replace(/[^A-Za-z0-9]/g, '').length >= HOST_TERM_MIN)
+    .map((term) => new RegExp(`(^|[^A-Za-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9])`, 'i'));
+}
+
+/** The hosts a message names, in the order it names them; of two that start at one place, the longer name. */
+export function hostsNamed(text: string, hosts: SiteHost[]): SiteHost[] {
+  return hosts
+    .map((host) => ({ host, at: Math.min(...hostTerms(host.name).map((re) => text.search(re)).map((i) => (i < 0 ? Infinity : i))) }))
+    .filter((m) => m.at < Infinity)
+    .sort((a, b) => a.at - b.at || b.host.name.length - a.host.name.length)
+    .map((m) => m.host);
+}
+
+const STATE_WORDS: Record<HostState, string> = {
+  up: 'reachable',
+  down: 'unreachable',
+  degraded: 'answers ping, but its monitoring is partly silent',
+  nodata: 'no availability data',
+  disabled: 'disabled in Zabbix',
+};
+
+/** FOCUS for one host: its state, how many problems it has open by severity, and the worst of them. */
+export function hostFocusBlock(host: SiteHost, problems: ZbxProblem[], now: number): string {
+  const open = problems.filter((p) => p.hostid === host.hostid).sort(worstFirst);
+  const clock = stateSince(host, availabilitySince(problems));
+  const state = `${STATE_WORDS[host.state]}${clock === undefined ? '' : ` for ${downFor(clock, now)}`}`;
+  const lines = [
+    `Open problems on this host: ${open.length}${open.length ? ` (${severityList(severityCounts(open), true)}), worst first:` : ', none'}`,
+    ...open.slice(0, FOCUS_PROBLEMS).map(
+      (p) => `- [${sevName(p.severity)}] ${promptText(p.name, PROBLEM_NAME_MAX)}; open ${downFor(Number(p.clock), now)}, ${p.acknowledged === '1' ? 'acked' : 'not acked'}`,
+    ),
+  ];
+  let text = `FOCUS: host ${promptText(host.name, HOST_NAME_MAX)} (${state})`;
+  for (const line of lines) {
+    if (text.length + 1 + line.length <= FOCUS_BUDGET) text += `\n${line}`;
+  }
+  return text;
+}
+
 /**
- * FOCUS blocks for the sites a question names, from the snapshot's own cached
+ * FOCUS blocks for the sites and hosts a question names, from the snapshot's own cached
  * data; `null` when it names none.
  */
-export async function buildFocus(question: string): Promise<{ sites: string[]; text: string } | null> {
+export async function buildFocus(question: string): Promise<{ sites: string[]; hosts: string[]; text: string } | null> {
   const named = sitesNamed(question).slice(0, FOCUS_SITES);
-  if (!named.length) return null;
   const [problems, sitesRes] = await Promise.all([
     cached('problems', 5_000, getProblems).then(openProblems),
     cached('sites', 15_000, getSites),
   ]);
+  const hosts = hostsNamed(question, sitesRes.sites.flatMap((s) => s.hosts)).slice(0, FOCUS_HOSTS);
+  if (!named.length && !hosts.length) return null;
   const now = Math.floor(Date.now() / 1000);
-  return {
-    sites: named.map((s) => s.name),
-    text: dataBlock('FOCUS', named.map((s) => focusBlock(s, sitesRes.sites, problems, now)).join('\n\n')),
-  };
+  const blocks = [
+    ...named.map((s) => focusBlock(s, sitesRes.sites, problems, now)),
+    ...hosts.map((h) => hostFocusBlock(h, problems, now)),
+  ];
+  return { sites: named.map((s) => s.name), hosts: hosts.map((h) => h.name), text: dataBlock('FOCUS', blocks.join('\n\n')) };
 }

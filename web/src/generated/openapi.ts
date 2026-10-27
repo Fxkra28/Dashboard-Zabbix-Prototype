@@ -1791,6 +1791,8 @@ export interface components {
             target: number;
             closed: boolean;
             gaps: components["schemas"]["Interval"][];
+            /** @description Spans declared not measured (SLA_NO_DATA_WINDOWS), treated as hours with no data. */
+            noDataWindows: components["schemas"]["Interval"][];
             tree: components["schemas"]["DerivedServiceNode"][];
         };
         /** @description A `ServiceNode` of the tree derived from the estate, whose children are of the same kind. */
@@ -1872,6 +1874,11 @@ export interface components {
             web: components["schemas"]["SliWeb"][];
             /** @description Estate-wide spans in which almost nothing was collected. */
             gaps: components["schemas"]["Interval"][];
+            /**
+             * @description Spans the setting SLA_NO_DATA_WINDOWS declares not measured, such as a collector that ran outside
+             *     HCML's network. Both methods treat them as hours with no data.
+             */
+            noDataWindows: components["schemas"]["Interval"][];
             /**
              * @description `zabbixCalls` under-counts: sliced `event.get` recursion is counted once, so the true
              *     figure is higher whenever a window exceeds 5,000 events.
@@ -2023,6 +2030,8 @@ export interface components {
             categories?: components["schemas"]["SliGroup"][];
             sites?: components["schemas"]["SliGroup"][];
             gaps?: components["schemas"]["Interval"][];
+            /** @description Spans declared not measured (SLA_NO_DATA_WINDOWS), in which no downtime is counted. */
+            noDataWindows?: components["schemas"]["Interval"][];
         };
         NoiseReport: {
             from: number;
@@ -3032,6 +3041,7 @@ export interface operations {
                     "application/json": components["schemas"]["TopHostsResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             502: components["responses"]["ZabbixError"];
             503: components["responses"]["ZabbixUnavailable"];
@@ -3058,6 +3068,7 @@ export interface operations {
                     "application/json": components["schemas"]["WebMonitoringResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             502: components["responses"]["ZabbixError"];
             503: components["responses"]["ZabbixUnavailable"];
@@ -3093,6 +3104,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             502: components["responses"]["ZabbixError"];
             503: components["responses"]["ZabbixUnavailable"];
@@ -3153,6 +3165,15 @@ export interface operations {
                         stale: boolean;
                         /** @constant */
                         staleAfterSeconds: 600;
+                        /** @description Hosts whose latest ping is fresh. */
+                        pinged: number;
+                        /** @description How many of those answered it. */
+                        answering: number;
+                        /**
+                         * @description At least 10 hosts were pinged and at most a fifth of them answered, so Zabbix has more
+                         *     likely lost its way into the network than every device its power.
+                         */
+                        reachLost: boolean;
                     };
                 };
             };

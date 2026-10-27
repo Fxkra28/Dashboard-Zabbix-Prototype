@@ -21,7 +21,7 @@ const json = (body: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' }, ...init });
 
 const stats: Stats = { hosts: 24, items: 1000, triggers: 300, groups: 8, problems: 2, unacknowledged: 1, bySeverity: { '4': 2 } };
-const fresh: Freshness = { lastCollectedAt: 1_800_000_000, ageSeconds: 30, stale: false, staleAfterSeconds: 600 };
+const fresh: Freshness = { lastCollectedAt: 1_800_000_000, ageSeconds: 30, stale: false, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false };
 const me: Me = { authEnabled: true, user: { name: 'ana', role: 'operator' }, expiresIn: 3600 };
 const host: HostOverview = { hostid: '1', name: 'core-1', status: '0', problems: { total: 0, bySeverity: {} } };
 const problems: Problem[] = [problem(1, 4, 600), problem(2, 3, 300)];

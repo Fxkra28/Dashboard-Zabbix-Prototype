@@ -1,11 +1,11 @@
 /** The availability report: how much of a window each host spent in a problem state, and the cached form of it that the route serves. */
 
 import { cached } from '../core/cache.js';
-import type { SliProfile } from '../core/config.js';
+import { config, type SliProfile } from '../core/config.js';
 import { computeSli, type DataStatus, type SliGroup, type SliReport } from '../sli/engine.js';
 import type { SiteRef } from '../domain/naming.js';
 import { getMonthlySli } from './sli.js';
-import { mergedSeconds } from '../sli/intervals.js';
+import { clipIntervals, complementIntervals, intersectIntervals, mergeIntervals, mergedSeconds, type Interval } from '../sli/intervals.js';
 import { fetchIncidents, lastDays, monthWindow } from './incidents.js';
 import { heavy, REPORT_TTL, staleReport } from './reportPolicy.js';
 
@@ -49,6 +49,8 @@ export interface AvailabilityReport {
   categories?: SliGroup[];
   sites?: SliGroup[];
   gaps?: SliReport['gaps'];
+  /** Spans declared not measured (SLA_NO_DATA_WINDOWS): no downtime is counted in them. */
+  noDataWindows?: SliReport['noDataWindows'];
 }
 
 /**
@@ -93,6 +95,7 @@ export async function getDerivedAvailability(opts: {
     categories: report.categories,
     sites: report.sites,
     gaps: report.gaps,
+    noDataWindows: report.noDataWindows,
   };
 }
 
@@ -108,10 +111,16 @@ export async function getAvailability(
   const window = month ? monthWindow(month) : lastDays(days);
   const { incidents, from, to, truncated } = await fetchIncidents(window, minSeverity);
 
-  const byHost = new Map<string, { host: string; intervals: [number, number][] }>();
+  // A span declared not measured (SLA_NO_DATA_WINDOWS) holds no downtime: an incident inside one does not count.
+  const declared = mergeIntervals(clipIntervals(config.sla.noDataWindows, from, to));
+  const outside = complementIntervals(declared, from, to);
+  const byHost = new Map<string, { host: string; intervals: Interval[]; incidents: number }>();
   for (const i of incidents) {
-    const row = byHost.get(i.hostid) ?? { host: i.host, intervals: [] };
-    row.intervals.push([i.start, i.end]);
+    const kept = intersectIntervals([[i.start, i.end]], outside);
+    if (!kept.length) continue;
+    const row = byHost.get(i.hostid) ?? { host: i.host, intervals: [], incidents: 0 };
+    row.intervals.push(...kept);
+    row.incidents++;
     byHost.set(i.hostid, row);
   }
 
@@ -124,13 +133,14 @@ export async function getAvailability(
         host: row.host,
         availability: Math.max(0, 100 * (1 - total / windowSeconds)),
         downtime: total,
-        incidents: row.intervals.length,
+        incidents: row.incidents,
         longest,
       };
     })
     .sort((a, b) => a.availability - b.availability || b.downtime - a.downtime);
 
-  return { from, to, windowSeconds, minSeverity, hosts, truncated, basis: 'all-problems', month: month ?? null };
+  const noDataWindows = declared.map(([s, e]) => ({ from: s, to: e }));
+  return { from, to, windowSeconds, minSeverity, hosts, truncated, basis: 'all-problems', month: month ?? null, noDataWindows };
 }
 
 /** The original any-problem availability report, for the last `days` or for one `month`. */

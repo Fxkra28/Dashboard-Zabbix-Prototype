@@ -94,7 +94,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
           snapshotMs,
           snapshotSizes: sizes,
           frozen,
-          focus: focus?.sites,
+          focus: focus && [...focus.sites, ...focus.hosts],
           firstTokenMs,
           ms,
           turns: turns.length,

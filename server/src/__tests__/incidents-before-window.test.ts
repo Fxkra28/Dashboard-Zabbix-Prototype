@@ -138,6 +138,23 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('any-problem availability and a span declared not measured (SLA_NO_DATA_WINDOWS)', () => {
+  const declare = async (spans: [number, number][]) => {
+    const { config } = await import('../core/config.js');
+    config.sla.noDataWindows = spans;
+  };
+  afterEach(() => declare([]));
+
+  it('counts no downtime inside the span: a problem across it keeps its outside part, one inside it is not counted', async () => {
+    problem({ host: 'ECHO', start: FROM + 3600, end: FROM + 3 * 3600 });
+    problem({ host: 'FOXTROT', start: FROM + 2.5 * 3600, end: FROM + 3.5 * 3600 });
+    await declare([[FROM + 2 * 3600, FROM + 4 * 3600]]);
+    const report = await getAvailability(7, 2);
+    expect(report.hosts).toEqual([expect.objectContaining({ host: 'ECHO', downtime: 3600, incidents: 1 })]);
+    expect(report.noDataWindows).toEqual([{ from: FROM + 2 * 3600, to: FROM + 4 * 3600 }]);
+  });
+});
+
 describe('any-problem availability and problems that began before the window', () => {
   it('counts a problem already open when the window began, from the window start', async () => {
     problem({ host: 'ALPHA', start: FROM - 3 * DAY });

@@ -35,8 +35,8 @@ beforeEach(() => {
   caps.writeBack = true;
   caps.known = true;
   vi.spyOn(api, 'problems').mockResolvedValue(three);
-  // The Ack dialog asks whether Zabbix is still collecting; here it is.
-  vi.spyOn(api, 'freshness').mockResolvedValue({ lastCollectedAt: 1_799_999_960, ageSeconds: 40, stale: false, staleAfterSeconds: 600 });
+  // The page and the Ack dialog ask whether Zabbix is still collecting; here it is.
+  vi.spyOn(api, 'freshness').mockResolvedValue({ lastCollectedAt: 1_799_999_960, ageSeconds: 40, stale: false, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -158,6 +158,27 @@ describe('the count above the list', () => {
     open('/problems');
     expect(await screen.findByText('Couldn’t load data')).toBeInTheDocument();
     expect(screen.queryByText(/matching/)).toBeNull();
+  });
+});
+
+describe('a Zabbix that cannot be trusted right now (IN-39)', () => {
+  it('says so above the list when Zabbix is cut off from the network, as its new problems are most likely not real', async () => {
+    vi.mocked(api.freshness).mockResolvedValue({ lastCollectedAt: 1_799_999_960, ageSeconds: 40, stale: false, staleAfterSeconds: 600, pinged: 93, answering: 0, reachLost: true });
+    open('/problems');
+    expect(await screen.findByText(/^Zabbix cannot reach the network/)).toHaveAttribute('role', 'status');
+    expect(screen.getByText('0 of 93 answered.')).toBeInTheDocument();
+  });
+
+  it('says so when Zabbix has collected nothing for a while', async () => {
+    vi.mocked(api.freshness).mockResolvedValue({ lastCollectedAt: 1_799_995_680, ageSeconds: 4_320, stale: true, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false });
+    open('/problems');
+    expect(await screen.findByText(/^Zabbix has collected nothing since .+ What you see on this page is from then/)).toBeInTheDocument();
+  });
+
+  it('says nothing while Zabbix collects and reaches the devices', async () => {
+    open('/problems');
+    expect(await screen.findByText('3 matching')).toBeInTheDocument();
+    expect(screen.queryByText(/cannot reach the network|collected nothing/)).toBeNull();
   });
 });
 

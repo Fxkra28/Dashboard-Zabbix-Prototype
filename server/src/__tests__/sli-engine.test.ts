@@ -374,6 +374,54 @@ describe('computeSli: strict availability profile', () => {
   });
 });
 
+describe('computeSli: a span declared not measured (SLA_NO_DATA_WINDOWS)', () => {
+  const declared: [number, number] = [AUG.from + 3000, AUG.from + 6000];
+  // Down from 3600 to 9000 s into the month, half of it inside the declared span.
+  const events = [
+    { eventid: 'a', objectid: '1', clock: AUG.from + 3600, value: 1 },
+    { eventid: 'b', objectid: '1', clock: AUG.from + 9000, value: 0 },
+  ];
+  const declare = async (spans: [number, number][]) => {
+    const { config } = await import('../core/config.js');
+    config.sla.noDataWindows = spans;
+  };
+  afterEach(() => declare([]));
+
+  it('is left out of the strict figure, downtime and measured time alike, and is listed apart from the collection gaps', async () => {
+    const trends = [];
+    for (let h = AUG.from; h < AUG.to; h += 3600) trends.push({ itemid: 'i101', clock: h, num: 60 });
+    serve({
+      triggers: [trig('1', '101', '1.2.1 IDX02CORESWITCH', 'Unavailable by ICMP ping')],
+      parents: { '101': ['Cisco IOS by SNMP'] },
+      events,
+      items: [{ itemid: 'i101', hostid: '101', key_: 'icmpping', delay: '1m', value_type: '3' }],
+      trends,
+    });
+    await declare([declared]);
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-08', profile: 'availability' });
+
+    const sw = r.hosts[0]!;
+    expect(sw.downtime).toBe(9000 - 6000);
+    expect(sw.covered).toBe(MONTH - 3000);
+    expect(sw.sli).toBeCloseTo(100 * (1 - 3000 / (MONTH - 3000)), 10);
+    expect(sw.dataStatus).toBe('ok');
+    expect(r.noDataWindows).toEqual([{ from: declared[0], to: declared[1] }]);
+    expect(r.gaps).toEqual([]);
+  });
+
+  it('counts as up in HCML’s method: no downtime inside it, and the month keeps its length', async () => {
+    serve({ triggers: [trig('1', '101', '1.2.1 IDX02CORESWITCH', 'High ICMP ping loss')], parents: { '101': ['Cisco IOS by SNMP'] }, events });
+    await declare([declared]);
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-08', profile: 'hcml-report' });
+
+    expect(r.hosts[0]!.downtime).toBe(9000 - 6000);
+    expect(r.hosts[0]!.sli).toBeCloseTo(100 * (1 - 3000 / MONTH), 10);
+    expect(r.noDataWindows).toEqual([{ from: declared[0], to: declared[1] }]);
+  });
+});
+
 describe('fetchEventsSliced', () => {
   it('splits a full page instead of accepting it, and returns every event exactly once', async () => {
     const events = Array.from({ length: 12 }, (_, i) => ({ eventid: String(i), objectid: '1', clock: 1_000 + i * 100, value: 1 }));

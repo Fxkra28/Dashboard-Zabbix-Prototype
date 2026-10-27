@@ -298,6 +298,7 @@ function report(profile: SliProfile, hosts: SliHost[]): SliReport {
     wanPaths: wanPaths(sorted, strict),
     web: strict ? web() : [],
     gaps: strict ? GAPS.map((g) => ({ ...g })) : [],
+    noDataWindows: [],
     stats: strict
       ? { zabbixCalls: 24, triggers: 276, events: 3412, trendRows: 98_765, ms: 4210 }
       : { zabbixCalls: 7, triggers: 138, events: 1210, trendRows: 0, ms: 880 },

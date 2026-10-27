@@ -55,6 +55,9 @@ const collecting = (over: Partial<Freshness> = {}): Freshness => ({
   ageSeconds: 30,
   stale: false,
   staleAfterSeconds: 600,
+  pinged: 0,
+  answering: 0,
+  reachLost: false,
   ...over,
 });
 const frame = (list: Problem[]) => {
@@ -243,6 +246,48 @@ describe('Zabbix has stopped collecting (IN-12)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('Zabbix is cut off from the network (IN-39)', () => {
+  const cut = () => collecting({ pinged: 93, answering: 2, reachLost: true });
+
+  it('says the down hosts and new problems are most likely not real, with the count outside the announced words', async () => {
+    frame([problem(1, 4)]);
+    vi.spyOn(api, 'freshness').mockResolvedValue(cut());
+    openDashboard();
+    const said = await screen.findByText(/^Zabbix cannot reach the network: almost no device answers its ping/);
+    expect(said).toHaveAttribute('role', 'status');
+    expect(said.textContent).not.toMatch(/\d/);
+    expect(said.closest('.refresh-failed')).toHaveTextContent(/2 of 93 answered\.$/);
+    const badge = document.querySelector('.live') as HTMLElement;
+    expect(badge).toHaveTextContent('Zabbix cannot reach the network');
+    expect(badge).toHaveClass('late');
+  });
+
+  it('is on the wall screen’s data stamp too', async () => {
+    frame([problem(1, 4)]);
+    vi.spyOn(api, 'freshness').mockResolvedValue(cut());
+    openDashboard(true);
+    const label = await screen.findByText('Zabbix cannot reach the network', { selector: '.wall-label' });
+    expect(label.closest('.wall-stamp')).toHaveClass('late');
+  });
+
+  it('gives way to the stopped notice when Zabbix collects nothing at all', async () => {
+    frame([problem(1, 4)]);
+    vi.spyOn(api, 'freshness').mockResolvedValue({ ...cut(), stale: true, lastCollectedAt: Math.floor(Date.now() / 1000) - DAY, ageSeconds: DAY });
+    openDashboard();
+    await screen.findByText(/What you see on this page is from then/);
+    expect(screen.queryByText(/cannot reach the network/)).toBeNull();
+  });
+
+  it('says nothing while most devices answer', async () => {
+    frame([problem(1, 4)]);
+    vi.spyOn(api, 'freshness').mockResolvedValue(collecting({ pinged: 93, answering: 80, reachLost: false }));
+    openDashboard();
+    await waitFor(() => expect(api.freshness).toHaveBeenCalled());
+    expect(screen.queryByText(/cannot reach the network/)).toBeNull();
+    expect(document.querySelector('.live')).toHaveTextContent('Live');
   });
 });
 
@@ -439,6 +484,7 @@ describe('a page that shows an old copy says so (IN-05)', () => {
     wanPaths: [],
     web: [],
     gaps: [],
+    noDataWindows: [],
     stats: { zabbixCalls: 0, triggers: 0, events: 0, trendRows: 0, ms: 0 },
     generatedAt: 0,
   });

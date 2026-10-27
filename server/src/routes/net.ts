@@ -1,6 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { intParam, requireId } from '../core/validate.js';
 import { getInterfacePage, getNetDevices } from '../services/net.js';
+import { singleValues } from '../core/schemas.js';
+
+const INTERFACES_QUERY = singleValues('hostid', 'search', 'status', 'page', 'pageSize');
 
 /**
  * Network monitoring (setup.md §10). The portal never speaks SNMP: it just
@@ -11,7 +14,7 @@ export async function netRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/net/devices', () => getNetDevices());
 
   // ?hostid=&search=&status=up|down|other&page=&pageSize=
-  app.get('/api/net/interfaces', (req) => {
+  app.get('/api/net/interfaces', { schema: { querystring: INTERFACES_QUERY } }, (req) => {
     const q = req.query as {
       hostid?: string;
       search?: string;

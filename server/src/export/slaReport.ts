@@ -461,6 +461,11 @@ function computedNote(strict: SliReport, hcml: SliReport, at: Clock): Note {
       `Estate-wide spans with no collected data, ${durationText(seconds)} in all: ${strict.gaps.map((g) => spanText(g, at)).join(', ')}.`,
     );
   }
+  if (strict.noDataWindows.length) {
+    lines.push(
+      `Declared not measured by the portal's setting SLA_NO_DATA_WINDOWS, and treated as hours with no data by both methods: ${strict.noDataWindows.map((g) => spanText(g, at)).join(', ')}.`,
+    );
+  }
   return { heading: 'How it was computed', lines };
 }
 

@@ -324,7 +324,7 @@ describe('Inventory', () => {
 
 describe('Services, the tree derived from the estate', () => {
   const derived = (month: string, profile: DerivedServicesResponse['profile']) =>
-    ({ tree: [], total: 0, degraded: 0, worst: -1, source: 'derived', label: 'Derived', month, profile, target: 99, closed: true, gaps: [] }) as DerivedServicesResponse;
+    ({ tree: [], total: 0, degraded: 0, worst: -1, source: 'derived', label: 'Derived', month, profile, target: 99, closed: true, gaps: [], noDataWindows: [] }) as DerivedServicesResponse;
   const months = recentMonths(12);
 
   beforeEach(() => {

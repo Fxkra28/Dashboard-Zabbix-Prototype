@@ -47,6 +47,27 @@ the report method is shown beside it so the published figure can still be checke
 WAN legs are paired by name (`INET : SAMPANG WAN 1/2` → path `SAMPANG`); a path is down only while
 all legs are down. Web scenarios on the *Web Monitoring* host are measured from `web.test.fail`.
 
+## Hours declared not measured
+
+A collector cut off from the network keeps collecting: every ping it sends fails, so Zabbix records
+a real-looking outage for every device. Those hours cannot be told apart in the data, so they are
+named in a setting instead. `SLA_NO_DATA_WINDOWS` lists them as start/end in ISO time with the zone,
+comma-separated:
+
+```bash
+SLA_NO_DATA_WINDOWS=2026-10-26T16:10+07:00/2026-10-26T21:03+07:00
+```
+
+Both methods then treat those hours as hours with no data: the strict method leaves them out, the
+report method counts them as up, and the legacy all-problems basis counts no downtime in them. The
+SLA pages, the Services tree and the workbook say which spans were declared. Nothing in Zabbix
+changes, and removing the setting brings the old figures back. A value the BFF cannot read stops it
+at start-up with an example, rather than being ignored.
+
+The Dashboard and the Problems page say when it is happening: when at least 10 devices were pinged
+and at most a fifth answered, `GET /api/freshness` returns `reachLost: true` and both pages show a
+notice that the down hosts and new problems are most likely not real.
+
 ## Checked against HCML's own reports
 
 [`scripts/validate-sli.ts`](../../server/scripts/validate-sli.ts) reads the Jun/Jul/Aug 2026 report

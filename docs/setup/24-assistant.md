@@ -13,7 +13,10 @@ For every message the BFF builds a snapshot, [`services/assistantSnapshot.ts`](.
 (`problems`, `sites`, `sla`, `sli:*`, `services:tree`), so a busy conversation costs Zabbix nothing
 the pages were not already paying:
 
-- open problems, worst first, with host, age, acknowledgement state and tags;
+- open problems, worst first, with host, age, acknowledgement state and tags, under a title that says how many of them
+  are listed;
+- facts counted over every open problem, which the list above may not hold in full: how many monitored hosts have none,
+  the five busiest hosts with their counts, and the oldest problems still open;
 - sites with reachable / unreachable / unknown counts and worst severity;
 - every host by site on a small estate, or only the hosts that are not fine on a large one;
 - SLA standing per service (achieved vs target, error budget left or exceeded);
@@ -23,7 +26,7 @@ The snapshot is plain text, not JSON: roughly half the tokens for the same facts
 model reads *"3 hosts, 1 unreachable"* more reliably than nested braces. It is also capped.
 Ollama serves `qwen3:8b` with a 4 096-token window by default, and a prompt that overflows it is
 truncated from the *front*, which silently drops the system prompt and its rules. So the snapshot
-is built in sections and each has a character budget that it fills with whole lines and no more (the estate 350, sites 900,
+is built in sections and each has a character budget that it fills with whole lines and no more (the estate 350, the counted facts 650, sites 900,
 what is new 550, unreachable hosts 850, SLA standing 700, degraded services 400 and problems 1,850, about 5 500 characters
 overall), the problem list stops at 20, `meta.truncated` says so when a list was cut, and the page shows *partial view*. `OLLAMA_CONTEXT_LENGTH` raises the window. SLA and
 services are fetched with `Promise.allSettled`: a Zabbix without Services configured must not leave
@@ -32,7 +35,7 @@ the assistant unable to say what is down.
 Host, site, problem, service and SLA names are text typed into devices and Zabbix, so before they
 enter the prompt each one is cut to a single line (control characters and line breaks become
 spaces), capped at 80 characters for a host or site and 200 for the rest, and the snapshot and the
-focused-site block sit between `~~~ BEGIN` and `~~~ END` lines that the system prompt calls data,
+focus blocks sit between `~~~ BEGIN` and `~~~ END` lines that the system prompt calls data,
 never instructions (`promptText()` in `services/assistantLines.ts`).
 
 ## What the model may do

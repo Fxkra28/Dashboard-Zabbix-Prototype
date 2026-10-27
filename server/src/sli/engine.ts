@@ -145,6 +145,8 @@ export interface SliReport {
   web: SliWeb[];
   /** Estate-wide spans in which (almost) nothing was collected. */
   gaps: { from: number; to: number }[];
+  /** Spans the setting SLA_NO_DATA_WINDOWS declares not measured, treated as gaps by both profiles. */
+  noDataWindows: { from: number; to: number }[];
   stats: { zabbixCalls: number; triggers: number; events: number; trendRows: number; ms: number };
   generatedAt: number;
 }
@@ -328,12 +330,13 @@ async function firstEventsAfter(
   return found;
 }
 
-/** Collected-time intervals per host from its ICMP `icmpping` item. */
+/** Collected-time intervals per host from its ICMP `icmpping` item, inside `outside` (the window less its declared spans). */
 async function icmpCoverage(
   counter: Counter,
   icmpItems: ZIcmpItem[],
   from: number,
   end: number,
+  outside: Interval[],
 ): Promise<{ byHost: Map<string, Interval[]>; gaps: Interval[] }> {
   const items = icmpItems.filter((i) => i.key_ === 'icmpping' || i.key_.startsWith('icmpping['));
 
@@ -410,6 +413,8 @@ async function icmpCoverage(
     }
   }
 
+  for (const [hostid, iv] of byHost) byHost.set(hostid, intersectIntervals(iv, outside));
+
   // Estate-wide gaps: hours in which fewer than 10% of the items that collected
   // anything in the window collected data.
   const active = [...byHost.values()].filter((iv) => iv.length);
@@ -422,7 +427,8 @@ async function icmpCoverage(
       if (n < 0.1 * active.length) gaps.push([s, e]);
     }
   }
-  return { byHost, gaps: mergeIntervals(gaps) };
+  // A declared span is reported as such, not again as an hour nothing was collected in.
+  return { byHost, gaps: intersectIntervals(mergeIntervals(gaps), outside) };
 }
 
 /** Web scenarios on the "Web Monitoring" host, strict profile only. */
@@ -432,6 +438,7 @@ async function webScenarios(
   end: number,
   now: number,
   estateSeconds: number,
+  outside: Interval[],
 ): Promise<SliWeb[]> {
   const [host] = await counted<{ hostid: string }[]>(counter, 'host.get', {
     filter: { name: ['Web Monitoring'] },
@@ -482,11 +489,13 @@ async function webScenarios(
       });
       const mixedSet = new Set(mixed);
       for (const row of hist) {
-        if (mixedSet.has(hourFloor(Number(row.clock))) && Number(row.value) > 0) mixedDown += delay;
+        const clock = Number(row.clock);
+        const counts = outside.some(([s, e]) => clock >= s && clock < e);
+        if (counts && mixedSet.has(hourFloor(clock)) && Number(row.value) > 0) mixedDown += delay;
       }
       for (const h of mixed) covered.push([h, h + 3600]);
     }
-    const coveredIv = intersectIntervals(covered, [[from, end]]);
+    const coveredIv = intersectIntervals(covered, outside);
     const coveredSec = totalSeconds(coveredIv);
     const downtime = Math.min(coveredSec, totalSeconds(intersectIntervals(down, coveredIv)) + mixedDown);
     const window = end - from;
@@ -533,6 +542,10 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
   const end = Math.min(to, now);
   const closed = to <= now;
   const window = end - from;
+  // Spans declared not measured (SLA_NO_DATA_WINDOWS) are a gap in both profiles: left out of the strict figure,
+  // counted as up in HCML's, as an hour nothing was collected in is.
+  const declared = mergeIntervals(clipIntervals(config.sla.noDataWindows, from, end));
+  const outsideDeclared = complementIntervals(declared, from, end);
   // HCML's report clips a problem still open at month end to the last second.
   const endClip = !strict && closed ? to - 1 : end;
   const counter: Counter = { calls: 0, events: 0, trendRows: 0 };
@@ -620,10 +633,10 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
     icmpByHost.set(i.hostid, list);
   }
 
-  const coverage = strict ? await icmpCoverage(counter, icmpItems, from, end) : undefined;
+  const coverage = strict ? await icmpCoverage(counter, icmpItems, from, end, outsideDeclared) : undefined;
   // "Partial" is judged against the time the estate as a whole was collecting:
   // an hour nobody collected in is the estate's gap, not this host's.
-  const gapSeconds = totalSeconds(coverage?.gaps ?? []);
+  const gapSeconds = totalSeconds(coverage?.gaps ?? []) + (strict ? totalSeconds(declared) : 0);
   const estateSeconds = Math.max(0, window - gapSeconds);
 
   const hosts: SliHost[] = [];
@@ -652,7 +665,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
     let covered: Interval[];
     if (strict) covered = intersectIntervals(coverage!.byHost.get(hostid) ?? [], outsidePlanned);
     else covered = outsidePlanned;
-    const measured = intersectIntervals(merged, covered);
+    const measured = intersectIntervals(intersectIntervals(merged, covered), outsideDeclared);
     const downtime = totalSeconds(measured);
     const coveredSec = totalSeconds(covered);
     const cov = measurable > 0 ? coveredSec / measurable : 0;
@@ -720,7 +733,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
   ).sort((a, b) => naturalCompare(a.name, b.name));
 
   const wanPaths = buildWanPaths(hosts, downByHost, coveredByHost, window, strict, estateSeconds);
-  const web = strict ? await webScenarios(counter, from, end, now, estateSeconds) : [];
+  const web = strict ? await webScenarios(counter, from, end, now, estateSeconds, outsideDeclared) : [];
 
   return {
     source: 'derived',
@@ -747,6 +760,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
     wanPaths,
     web,
     gaps: (coverage?.gaps ?? []).map(([s, e]) => ({ from: s, to: e })),
+    noDataWindows: declared.map(([s, e]) => ({ from: s, to: e })),
     stats: {
       zabbixCalls: counter.calls,
       triggers: triggers.length,

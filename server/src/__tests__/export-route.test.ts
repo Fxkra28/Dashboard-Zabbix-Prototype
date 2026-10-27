@@ -131,7 +131,7 @@ describe('GET /api/sli/export', () => {
     ]);
   });
 
-  it.each(['?month=2026-13&format=pdf', '?month=2026-00&format=pdf', '?month=2026-8&format=pdf', '?month=August&format=pdf', '?month=2026-08-01&format=pdf', '?month=%202026-08&format=pdf', '?month=2026-08&month=2026-07&format=pdf'])(
+  it.each(['?month=2026-13&format=pdf', '?month=2026-00&format=pdf', '?month=2026-8&format=pdf', '?month=August&format=pdf', '?month=2026-08-01&format=pdf', '?month=%202026-08&format=pdf'])(
     'answers 400 for a bad month: %s',
     async (query) => {
       const res = await get(query);
@@ -141,6 +141,13 @@ describe('GET /api/sli/export', () => {
       expect(sliMock).not.toHaveBeenCalled();
     },
   );
+
+  it('answers 400 for a month sent twice, saying so (BK-14)', async () => {
+    const res = await get('?month=2026-08&month=2026-07&format=pdf');
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'bad_request', message: 'month must be given once.' });
+    expect(sliMock).not.toHaveBeenCalled();
+  });
 
   it.each(['?month=2026-08', '?month=2026-08&format=', '?format=', ''])('answers 400 when no format is given: "%s"', async (query) => {
     const res = await get(query);

@@ -64,6 +64,9 @@ describe('collectingStatus', () => {
       ageSeconds: 45,
       stale: false,
       staleAfterSeconds: 600,
+      pinged: 0,
+      answering: 0,
+      reachLost: false,
     });
     expect(collectingStatus(NOW - 600, NOW).stale).toBe(false);
     expect(collectingStatus(NOW - 601, NOW).stale).toBe(true);
@@ -75,8 +78,32 @@ describe('collectingStatus', () => {
       ageSeconds: null,
       stale: false,
       staleAfterSeconds: 600,
+      pinged: 0,
+      answering: 0,
+      reachLost: false,
     });
     expect(collectingStatus(NOW + 30, NOW).ageSeconds).toBe(0);
+  });
+
+  const hosts = (up: number, down: number, unknown = 0) =>
+    new Map(
+      [
+        ...Array.from({ length: up }, () => 'up' as const),
+        ...Array.from({ length: down }, () => 'down' as const),
+        ...Array.from({ length: unknown }, () => 'unknown' as const),
+      ].map((state, i) => [String(i), { state, items: 1, unsupported: 0 }]),
+    );
+
+  it('calls the reach lost when at most a fifth of the fresh pings are answered, from ten hosts up', () => {
+    expect(collectingStatus(NOW - 30, NOW, hosts(2, 10))).toMatchObject({ pinged: 12, answering: 2, reachLost: true });
+    expect(collectingStatus(NOW - 30, NOW, hosts(0, 93))).toMatchObject({ pinged: 93, answering: 0, reachLost: true });
+    expect(collectingStatus(NOW - 30, NOW, hosts(3, 9)).reachLost).toBe(false);
+    expect(collectingStatus(NOW - 30, NOW, hosts(80, 13)).reachLost).toBe(false);
+  });
+
+  it('does not call it on a handful of hosts, and counts only fresh pings', () => {
+    expect(collectingStatus(NOW - 30, NOW, hosts(0, 9)).reachLost).toBe(false);
+    expect(collectingStatus(NOW - 30, NOW, hosts(1, 1, 50))).toMatchObject({ pinged: 2, answering: 1, reachLost: false });
   });
 });
 
@@ -97,6 +124,22 @@ describe('GET /api/freshness', () => {
       ageSeconds: 20 * 86_400,
       stale: true,
       staleAfterSeconds: 600,
+      pinged: 0,
+      answering: 0,
+      reachLost: false,
+    });
+    await server.close();
+  });
+
+  it('says the reach is lost when Zabbix still collects but almost no device answers its ping', async () => {
+    const pings = Array.from({ length: 12 }, (_, i) => icmp(String(i), 30, { itemid: `${i}-1`, lastvalue: i === 0 ? '1' : '0' }));
+    zbxMock.mockResolvedValue(pings);
+    const server = await app();
+    expect((await server.inject({ url: '/api/freshness' })).json()).toMatchObject({
+      stale: false,
+      pinged: 12,
+      answering: 1,
+      reachLost: true,
     });
     await server.close();
   });
@@ -143,6 +186,9 @@ describe('GET /api/freshness', () => {
       ageSeconds: 1,
       stale: false,
       staleAfterSeconds: 600,
+      pinged: 1,
+      answering: 1,
+      reachLost: false,
     });
     expect(zbxMock).toHaveBeenCalledTimes(2);
     await server.close();

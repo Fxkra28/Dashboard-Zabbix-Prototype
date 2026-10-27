@@ -321,7 +321,11 @@ export default function Availability() {
                   <strong>{METHOD_LABEL[data.profile ?? profile]}.</strong> {METHOD_NOTE}
                 </p>
               )}
-              {engine && <GapsNote gaps={data.gaps} profile={data.profile ?? profile} />}
+              <GapsNote
+                gaps={engine ? data.gaps : undefined}
+                windows={data.noDataWindows}
+                profile={engine ? (data.profile ?? profile) : 'all-problems'}
+              />
 
               {monthIgnored && (
                 <div className="notice warn">

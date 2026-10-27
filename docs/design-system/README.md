@@ -29,7 +29,8 @@ another project.
    spinner and the streaming cursor), wall mode turns the rest off, and the reduced-motion rule in `01-tokens.css`
    stops all of it.
 6. **A finger gets 44 px.** No target is under 24 px (WCAG 2.5.8). Where the pointer is coarse, a tablet or a phone,
-   `19-touch.css` makes every control at least 44 px; a new control goes into its list.
+   `19-touch.css` makes every control at least 44 px; a new control goes into its list. There a select is drawn without its
+   native look, with an arrow drawn in its text colour, because WebKit keeps a native select at its own height.
 7. **Both themes, every time.** Look at a change in light and in dark; the theme picker in the top bar switches
    between light, dark and the system's choice.
 8. **After a token change**, run `npm run tokens:export`, then `npm run check:styles`, which fails while the files in

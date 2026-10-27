@@ -13,7 +13,7 @@ import { getServiceTree, type ServiceNode } from './services.js';
 import { siteFromHostName, naturalCompare } from '../domain/naming.js';
 import { derivedServiceLines, derivedSlaLines } from '../sli/summary.js';
 import { percentText } from '../export/slaReport.js';
-import { availabilitySince, stateCounts, stateSince } from './assistantFacts.js';
+import { availabilitySince, stateCounts, stateSince, wholeListLines } from './assistantFacts.js';
 import { downFor, HOST_NAME_MAX, PROBLEM_NAME_MAX, problemLine, promptText, section, severityCounts, severityList, sevName, worstFirst } from './assistantLines.js';
 
 /** What the model was shown, surfaced to the UI so the reader knows the scope. */
@@ -54,6 +54,7 @@ export const SNAPSHOT_CHAR_CAP = 5_500;
 
 const BUDGET = {
   estate: 350,
+  whole: 650,
   sites: 900,
   recent: 550,
   unreachable: 850,
@@ -138,6 +139,11 @@ function snapshotZone(): string {
   }
 }
 
+/** "14 Jun 2024" in the SLA zone. */
+function snapshotDay(clock: number): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: snapshotZone(), day: 'numeric', month: 'short', year: 'numeric' }).format(clock * 1000);
+}
+
 /** "Wed, 7 Oct 2026, 15:00 WIB (Asia/Jakarta)": the Indonesian locale names WIB, WITA and WIT, other zones get e.g. "GMT+1". */
 export function snapshotClock(at: Date): string {
   const timeZone = snapshotZone();
@@ -204,6 +210,13 @@ export async function buildSnapshot(): Promise<Snapshot> {
         `${unacknowledged} not acknowledged.`,
     ],
     BUDGET.estate,
+  );
+
+  /* 1b. counted over every open problem, which the list in section 7 is not */
+  sections.whole = section(
+    `ALL ${problems.length} OPEN PROBLEMS, COUNTED:`,
+    wholeListLines(problems, sitesRes.sites.flatMap((s) => s.hosts), snapshotDay),
+    BUDGET.whole,
   );
 
   /* 5 + 6. SLA and services: Zabbix's own when it has services, else derived */
@@ -345,15 +358,24 @@ export async function buildSnapshot(): Promise<Snapshot> {
   const problemBudget = Math.min(BUDGET.problems, SNAPSHOT_CHAR_CAP - used);
   const listed = ordered.slice(0, PROBLEM_CAP).map((p) => problemLine(p, now));
   const restCounts = (shown: number) => severityList(severityCounts(ordered.slice(shown)), true);
-  sections.problems = section(
-    `OPEN PROBLEMS (${ordered.length}, worst first):`,
-    ordered.length ? listed : ['- none'],
-    problemBudget,
-    (left, shown) => `- …and ${left} more (${restCounts(shown)})`,
-    Math.max(ordered.length, 1),
-  );
+  // The title says how many are listed, or a model takes the list for all of them.
+  const problemSection = (lines: string[], shown: number) =>
+    section(
+      ordered.length <= shown
+        ? `OPEN PROBLEMS (${ordered.length}, worst first):`
+        : shown
+          ? `OPEN PROBLEMS (${ordered.length}, worst first; only the worst ${shown} are listed):`
+          : `OPEN PROBLEMS (${ordered.length}; none listed, no room left):`,
+      ordered.length ? lines : ['- none'],
+      problemBudget,
+      // Counts of the unlisted ones only, or a model takes them for the totals.
+      (left, shown) => `- …and ${left} more not listed (of those: ${restCounts(shown)})`,
+      Math.max(ordered.length, 1),
+    );
+  const fitted = (problemSection(listed, listed.length).text.match(/^- \[/gm) ?? []).length;
+  sections.problems = problemSection(listed.slice(0, fitted), fitted);
 
-  const order = ['estate', 'sites', 'recent', 'unreachable', 'sla', 'services', 'problems'];
+  const order = ['estate', 'whole', 'sites', 'recent', 'unreachable', 'sla', 'services', 'problems'];
   const text = order.map((k) => sections[k].text).join('\n\n');
   const truncated = Object.values(sections).some((s) => s.truncated);
   const sizes = Object.fromEntries(order.map((k) => [k, sections[k].text.length]));

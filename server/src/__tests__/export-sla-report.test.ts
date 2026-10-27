@@ -1154,6 +1154,15 @@ describe('the notes', () => {
     );
   });
 
+  it('names the spans declared not measured, which both methods treat as hours with no data', () => {
+    const d = build((p) => {
+      p.strict.noDataWindows = [{ from: at('2026-08-26T16:10:00+07:00'), to: at('2026-08-26T21:03:00+07:00') }];
+    });
+    expect(d.notes[1]!.lines.at(-1)).toBe(
+      "Declared not measured by the portal's setting SLA_NO_DATA_WINDOWS, and treated as hours with no data by both methods: 26 Aug 16:10 to 21:03.",
+    );
+  });
+
   it('leaves the spans line out when nothing was missing, and adds the running line while a month is open', () => {
     const d = build((p) => {
       p.strict.gaps = [];

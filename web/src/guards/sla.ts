@@ -45,6 +45,7 @@ const availability = shape<AvailabilityReport>({
   categories: opt(listOf(sliGroup)),
   sites: opt(listOf(sliGroup)),
   gaps: opt(listOf(sliGap)),
+  noDataWindows: opt(listOf(sliGap)),
 });
 
 const serviceSla = shape<ServiceSla>({ slaid: text, name: text, slo: num, sli: num, errorBudget: num, meeting: flag });
@@ -88,6 +89,7 @@ const derivedServices = shape<DerivedServicesResponse>({
   target: num,
   closed: flag,
   gaps: listOf(sliGap),
+  noDataWindows: listOf(sliGap),
 });
 
 const sliHost = shape<SliHost>({
@@ -145,6 +147,7 @@ const sli = shape<SliReport>({
   wanPaths: listOf(sliPath),
   web: listOf(sliWeb),
   gaps: listOf(sliGap),
+  noDataWindows: listOf(sliGap),
   stats: shape<SliReport['stats']>({ zabbixCalls: num, triggers: num, events: num, trendRows: num, ms: num }),
   generatedAt: num,
 });

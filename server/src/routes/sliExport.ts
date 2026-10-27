@@ -5,9 +5,10 @@ import { reportFileBase } from '../export/slaReport.js';
 import { currentMonth, parseMonth } from '../sli/time.js';
 import { getMonthlySli } from '../services/sli.js';
 import { FORMATS, fileFor, parseFormat } from '../services/sliExport.js';
+import { singleValues } from '../core/schemas.js';
 
 export async function sliExportRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/sli/export', async (req, reply) => {
+  app.get('/api/sli/export', { schema: { querystring: singleValues('month', 'format') } }, async (req, reply) => {
     const q = req.query as { month?: string; format?: string };
     // A misspelt or bracketed month would otherwise be ignored, and the current month served in its place.
     if (Object.keys(q).some((key) => key !== 'month' && key !== 'format')) {

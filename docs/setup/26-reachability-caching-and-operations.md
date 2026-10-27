@@ -115,7 +115,7 @@ method counts each as 100 %; the SLA page lists them and the figures are unchang
 - Native Ollama API. Chat, explain, warm-up and prefill all call `/api/chat` with the same options
   (`AI_NUM_CTX` 8 192, `AI_TEMPERATURE` 0.7, `AI_TOP_P` 0.8, `keep_alive`), so the model is never
   reloaded with a different context size and really stays loaded for `AI_KEEP_ALIVE`.
-- Prefill when the Assistant page opens; site focus block for questions that name a site.
+- Prefill when the Assistant page opens; a focus block for questions that name a site or a host.
 - One request at a time: chat, explain and prefill share one slot; a request that waits more
   than 20 s gets `503 ai_busy` with `Retry-After`.
 

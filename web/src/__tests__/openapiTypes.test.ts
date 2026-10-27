@@ -1,7 +1,9 @@
+import { parseYaml } from '@redocly/openapi-core';
 import openapiTS, { astToString, COMMENT_HEADER } from 'openapi-typescript';
 import { describe, expect, it } from 'vitest';
 import specSource from '../../../docs/api/openapi.yaml?raw';
 import generatedSource from '../generated/openapi?raw';
+import generatedJson from '../generated/openapi.json?raw';
 import type { paths } from '../generated/openapi';
 import type * as Web from '../types';
 
@@ -173,4 +175,12 @@ describe('the OpenAPI file and the web types (FR-16)', () => {
     const made = COMMENT_HEADER + astToString(await openapiTS(specSource, { silent: true }));
     expect(made === generatedSource, 'src/generated/openapi.ts is out of date: run `npm run gen:api` in web/ and commit the result').toBe(true);
   }, 30_000);
+
+  it('has a JSON copy that is current, which the server holds every answer to (BK-14)', () => {
+    // What scripts/openapi-json.mjs writes: the file without `servers`, parsed by openapi-typescript's own parser.
+    const spec = parseYaml(specSource) as Record<string, unknown>;
+    delete spec.servers;
+    const made = `${JSON.stringify(spec, null, 2)}\n`;
+    expect(made === generatedJson, 'src/generated/openapi.json is out of date: run `npm run gen:api` in web/').toBe(true);
+  });
 });

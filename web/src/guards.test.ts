@@ -25,7 +25,7 @@ const host = (over: Partial<HostOverview> = {}): HostOverview => ({
   ...over,
 });
 const stats = (): Stats => ({ hosts: 24, items: 1000, triggers: 300, groups: 8, problems: 3, unacknowledged: 1, bySeverity: { '4': 3 } });
-const fresh = (): Freshness => ({ lastCollectedAt: 1_800_000_000, ageSeconds: 30, stale: false, staleAfterSeconds: 600 });
+const fresh = (): Freshness => ({ lastCollectedAt: 1_800_000_000, ageSeconds: 30, stale: false, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false });
 const group = (): GroupProblems => ({ groupid: '5', name: 'Core', total: 3, bySeverity: { '4': 3 } });
 const me = (): Me => ({ authEnabled: true, user: { name: 'ana', role: 'operator' }, expiresIn: 3600, pages: { '/problems': 'viewer' } });
 
@@ -207,6 +207,14 @@ describe('when Zabbix last collected data', () => {
     expect(freshnessGuard.misfit({ ...fresh(), stale: 'false' })).toBe('stale is not true or false');
     expect(freshnessGuard.misfit([])).toBe('the answer is not an object');
   });
+
+  it('needs the ping counts and the cut-off flag the notices read', () => {
+    const { pinged, ...noCount } = fresh();
+    void pinged;
+    expect(freshnessGuard.misfit(noCount)).toBe('pinged is missing');
+    expect(freshnessGuard.misfit({ ...fresh(), answering: '2' })).toBe('answering is not a number');
+    expect(freshnessGuard.misfit({ ...fresh(), reachLost: 'true' })).toBe('reachLost is not true or false');
+  });
 });
 
 describe('who is signed in', () => {
@@ -293,7 +301,7 @@ describe('answers as the BFF really sends them', () => {
   it('the dashboard counts, the groups, and the freshness of a Zabbix that has collected nothing', () => {
     expect(statsGuard.misfit({ hosts: 24, items: 1000, triggers: 12, groups: 8, problems: 2, unacknowledged: 2, bySeverity: { '4': 2 } })).toBeNull();
     expect(groupProblemsGuard.misfit([{ groupid: '5', name: 'Core', total: 1, bySeverity: { '4': 1 } }])).toBeNull();
-    expect(freshnessGuard.misfit({ lastCollectedAt: null, ageSeconds: null, stale: false, staleAfterSeconds: 600 })).toBeNull();
+    expect(freshnessGuard.misfit({ lastCollectedAt: null, ageSeconds: null, stale: false, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false })).toBeNull();
   });
 
   it('who is signed in, with sign-in on and with it off', () => {

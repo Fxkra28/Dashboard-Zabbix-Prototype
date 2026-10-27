@@ -44,8 +44,8 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 
 | | |
 |---|---|
-| Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1196 tests, linted with eslint |
-| Back end | Fastify 5 + TypeScript on Node 24. 22 route modules, 45 endpoints, 1704 tests, linted with eslint |
+| Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1209 tests, linted with eslint |
+| Back end | Fastify 5 + TypeScript on Node 24. 22 route modules, 45 endpoints, 1787 tests, linted with eslint |
 | Data source | The Zabbix JSON-RPC API. Nothing else: no database, no volumes, no data files |
 | Writes | Exactly one: acknowledge/close, behind a separate token and the operator role |
 | Downloads | The monthly SLA report as a PDF or an Excel file, built when asked from the cached figures and never stored |

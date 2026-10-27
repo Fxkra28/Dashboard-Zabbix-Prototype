@@ -165,22 +165,43 @@ export interface CollectingStatus {
   /** Nothing collected for longer than `staleAfterSeconds`. Never true while the age is unknown. */
   stale: boolean;
   staleAfterSeconds: number;
+  /** Hosts whose latest ping is fresh, and how many of them answered it. */
+  pinged: number;
+  answering: number;
+  /** Almost nothing answers at once: Zabbix has more likely lost its way into the network than every device its power. */
+  reachLost: boolean;
 }
 
-/** Work out the age at the moment of asking. Pure. */
-export function collectingStatus(lastCollectedAt: number | null, now: number): CollectingStatus {
+/** Below this share of the fresh pings answered, with at least REACH_MIN_PINGED of them, the collector is taken as cut off. */
+export const REACH_LOST_SHARE = 0.2;
+export const REACH_MIN_PINGED = 10;
+
+/** Work out the age at the moment of asking, and how many fresh pings were answered. Pure. */
+export function collectingStatus(
+  lastCollectedAt: number | null,
+  now: number,
+  readings: Map<string, IcmpReading> = new Map(),
+): CollectingStatus {
   const ageSeconds = lastCollectedAt === null ? null : Math.max(0, now - lastCollectedAt);
+  const fresh = [...readings.values()].filter((r) => r.state !== 'unknown');
+  const answering = fresh.filter((r) => r.state === 'up').length;
   return {
     lastCollectedAt,
     ageSeconds,
     stale: ageSeconds !== null && ageSeconds > COLLECTING_STALE_SECONDS,
     staleAfterSeconds: COLLECTING_STALE_SECONDS,
+    pinged: fresh.length,
+    answering,
+    reachLost: fresh.length >= REACH_MIN_PINGED && answering <= REACH_LOST_SHARE * fresh.length,
   };
 }
 
-/** When Zabbix last collected a value. Cached; the age is worked out per request, from this. */
-export function getLastCollected(): Promise<number | null> {
-  return cached('collecting:last', 30_000, async () => newestClock(await getIcmpItems()));
+/** When Zabbix last collected a value, and every host's ping as read then. Cached; the age is worked out per request. */
+export function getCollecting(): Promise<{ lastCollectedAt: number | null; readings: Map<string, IcmpReading> }> {
+  return cached('collecting:last', 30_000, async () => {
+    const items = await getIcmpItems();
+    return { lastCollectedAt: newestClock(items), readings: foldIcmp(items, Math.floor(Date.now() / 1000)) };
+  });
 }
 
 /**

@@ -39,6 +39,7 @@ const sliReport = (month: string, profile: SliReport['profile']): SliReport =>
     wanPaths: [],
     web: [],
     gaps: [],
+    noDataWindows: [],
     stats: { zabbixCalls: 0, triggers: 0, events: 0, trendRows: 0, ms: 0 },
     generatedAt: 0,
   }) as SliReport;

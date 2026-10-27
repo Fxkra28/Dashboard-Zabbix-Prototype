@@ -713,7 +713,7 @@ function DerivedSla() {
               <strong>Why two figures?</strong> {METHOD_NOTE}
               {!s.closed && <em> This month is still running: figures so far.</em>}
             </p>
-            <GapsNote gaps={s.gaps} profile={method} />
+            <GapsNote gaps={s.gaps} windows={s.noDataWindows} profile={method} />
             <NeverMeasured hosts={s.hosts} />
           </>
         )}

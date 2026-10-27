@@ -165,4 +165,18 @@ describe('placeholders and small targets in the stylesheet (UX-25, UX-27)', () =
     }
     expect(coarse).toMatch(/min-height:\s*var\(--target-touch\)/);
   });
+
+  it('draws a finger’s dropdowns without the native look, which WebKit keeps at its own height (UX-36)', () => {
+    const coarse = styles.slice(styles.indexOf('@media (pointer: coarse)'));
+    const drawn = /select,\s*\.theme-pick select\s*\{([^}]*)\}/.exec(coarse)?.[1] ?? '';
+    expect(drawn).toMatch(/appearance:\s*none/);
+    expect(drawn).toMatch(/background-image:[^;]*currentColor/);
+    // Forced colours drop the drawn arrow, so the native one comes back there.
+    expect(coarse).toMatch(/@media \(forced-colors: active\)\s*\{\s*select,\s*\.theme-pick select\s*\{\s*appearance:\s*auto;/);
+  });
+
+  it('makes a short port name a finger wide, not only tall (UX-37)', () => {
+    const coarse = styles.slice(styles.indexOf('@media (pointer: coarse)'));
+    expect(coarse).toMatch(/table\.data\.ports button\.port-open\s*\{\s*min-width:\s*var\(--target-touch\)/);
+  });
 });

@@ -10,8 +10,8 @@ import { problem } from '../../__tests__/problems';
  * The warning before a write goes to a Zabbix that has stopped collecting. A stopped zabbix-server
  * leaves every API call working, so a close is accepted and never applied; the dialog says so first.
  */
-const fresh: Freshness = { lastCollectedAt: 1_799_999_960, ageSeconds: 40, stale: false, staleAfterSeconds: 600 };
-const stopped: Freshness = { lastCollectedAt: 1_799_995_680, ageSeconds: 4_320, stale: true, staleAfterSeconds: 600 };
+const fresh: Freshness = { lastCollectedAt: 1_799_999_960, ageSeconds: 40, stale: false, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false };
+const stopped: Freshness = { lastCollectedAt: 1_799_995_680, ageSeconds: 4_320, stale: true, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false };
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -76,11 +76,11 @@ describe('AckDialog and a Zabbix that has stopped collecting', () => {
   });
 
   it('says nothing when the portal cannot tell when Zabbix last collected', async () => {
-    open({ lastCollectedAt: null, ageSeconds: null, stale: false, staleAfterSeconds: 600 });
+    open({ lastCollectedAt: null, ageSeconds: null, stale: false, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false });
     await waitFor(() => expect(api.freshness).toHaveBeenCalled());
     expect(warning()).toBeNull();
     // Even a stale flag with no time to name is not shown: there is nothing true to say.
-    open({ lastCollectedAt: null, ageSeconds: null, stale: true, staleAfterSeconds: 600 });
+    open({ lastCollectedAt: null, ageSeconds: null, stale: true, staleAfterSeconds: 600, pinged: 0, answering: 0, reachLost: false });
     await waitFor(() => expect(api.freshness).toHaveBeenCalledTimes(2));
     expect(warning()).toBeNull();
   });

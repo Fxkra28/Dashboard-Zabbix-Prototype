@@ -78,6 +78,8 @@ services:
       SLI_AVAILABILITY_TRIGGERS: ${SLI_AVAILABILITY_TRIGGERS:-Unavailable by ICMP ping,High ICMP ping loss}
       SLI_MIN_COVERAGE: ${SLI_MIN_COVERAGE:-0.5}
       SLI_ZBX_PARALLEL: ${SLI_ZBX_PARALLEL:-4}
+      # Spans the SLA figures treat as hours with no data, such as a collector cut off from the network.
+      SLA_NO_DATA_WINDOWS: ${SLA_NO_DATA_WINDOWS:-}
       # Two backends behind one switch: "anthropic" (hosted, needs a key) or
       # "openai-compatible" (a local model, needs a URL). A local Ollama is
       # reached exactly the way Zabbix is above: the container cannot see the

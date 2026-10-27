@@ -9,15 +9,51 @@ A build is named by the commit it was made from. The sidebar footer shows it onc
 and so does a signed-in `/api/health`. A `-dirty` suffix means the build was made from a working tree
 with changes that were not committed. The commit is the version; since 22 October the commit that went live is also tagged `live-<date>`.
 
-## 26 October 2026, later in the evening: the Dashboard counts the triggers of monitored hosts (not committed, not live)
+## 27 October 2026, morning: the fix list of 26 October applied (IN-39, BK-20, UX-36, UX-37, BK-14, SC-30); live as `0aa74d2-dirty`, not committed
+
+At your word, "please aplied fully and fix all of these list", with your answers: count the hours off HCML's network as no data, keep `/api`, keep the OpenAPI file written by hand, and keep the licence as all rights reserved. Both copies' `tracker.md` and `CHANGELOG.md` were backed up first in `myown/backup-27oct-fix-list/`; the code before is commit `0aa74d2`.
+
+- IN-39, the false hours. A new setting, `SLA_NO_DATA_WINDOWS`, names spans the SLA figures treat as hours with no data: the strict method leaves them out, HCML's method counts them as up, and the legacy basis counts no downtime in them (`core/config.ts`, `sli/engine.ts`, `services/availability.ts`). The SLA pages, the Services tree and the workbook say which spans were declared. Both root `.env` files declare 26 October 16:10 to 21:03 WIB. Nothing in Zabbix changed, and a value the BFF cannot read stops it at start-up with an example.
+- IN-39, the indicator. `/api/freshness` also says how many devices answered their last ping. When at least 10 were pinged and a fifth or fewer answered, the Dashboard, the wall screen and the Problems page say that Zabbix cannot reach the network and that its down hosts and new problems are most likely not real (`shared/components/CollectorNotice.tsx`). The Problems page now also says when Zabbix has stopped collecting.
+- IN-39, the pause. `myown/checks/zabbix-source/collector-guard.sh` pings eight of HCML's core devices. It stops the local Zabbix server after two rounds with at most one answering, starts it again only if it was the one that stopped it, once three answer, and logs each change with the span to declare. Tested on a throwaway container. Not installed: Claude Code's permission check refused the launchd install, so it waits for your command (`collector-guard.sh --install`). One round run by hand resumed the collector at 09:03 WIB, with 8 of 8 probes answering.
+- BK-20. The Assistant's snapshot states counts over every open problem: hosts with none, the busiest hosts, the oldest problems still open. The problem list's title says how many it holds, its last line says its counts are of the problems not listed, and a question naming a host gets that host's count. On the local model: 8 of 8 questions right on the local copy's 755 problems, where 26 October had 3 of 7.
+- UX-36 and UX-37. Under a finger, dropdowns are drawn without the native look, with an arrow in their text colour, so WebKit makes them 44 px tall; short port buttons are 44 px wide. On emulated phones no control is under 44 px.
+- BK-14. Each GET route that reads a query declares its names: a name sent twice is a 400 that says so. `openapi.check.ts` holds those names to the file and its 400s (three reports gained theirs), and a new test asks for every operation on a made-up estate and checks status and body against the file (`openapi-contract.test.ts`), read from a JSON copy that `npm run gen:api` now writes. Decided: no `/api/v1` prefix, and no generated spec.
+- SC-30. The licence stays "all rights reserved". Not done: GitHub's private vulnerability reporting (no `gh` here; Settings, Code security, Private vulnerability reporting, Enable). A draft request to HCML is in `myown/documents/notes/hcml-permission-request-2026-10-27.md`.
+- Counts: server 1,787 tests in 80 files, web 1,209 in 83.
+- Live since 08:44 WIB: `deploy/rebuild.sh --allow-dirty` rebuilt both portals as `0aa74d2-dirty` after `npm run verify` passed in both copies, and both `.env` files were checked to parse first. The images it replaced are tagged `rollback-27oct`; to go back, `docker tag <image>:rollback-27oct <image>:latest`, then `docker compose up -d --no-build` in that copy.
+- Checked signed in on both portals: `tools/live/signedin_check.py` 7 of 7, 38 of 38 page loads clean in Chrome, the footer naming the build, the new notices on the live pages. Not checked: Firefox (refused outside the sandbox), the meters on live data (the site firewalls do not answer SNMP from this Mac), and the workbook in Excel, which held your own workbook and answered no script.
+
+## 26 October 2026, late at night: the rest of the not-checked list checked, and option C paused off HCML's network (documents only)
+
+At your word, the items of the not-checked list again. No code changed. Rows BK-20, UX-36, UX-37 and IN-39 of [`tracker.md`](tracker.md) are new, and its Not checked section has the details.
+
+- The schema PDFs of both copies match their sources: all six show every entity, attribute, comment, relationship and cardinality of their `.mmd`, and no other word.
+- Zabbix 7.0.30 accepts a repeat acknowledge without an error and files it as a message, so a second operator sees success and the problem stays acknowledged. Tried on a problem the local copy had opened, which was unacknowledged again afterwards.
+- BE-22: the Assistant answers what its data states outright and answers questions that need the whole list from its 40 problems, as if they were all (BK-20, open).
+- Emulated phones (an iPhone 15 in WebKit, a Pixel 7 in Chrome) loaded the 19 pages with no error and no sideways scroll; WebKit keeps the dropdowns at 20 to 22 px (UX-36) and short port buttons are narrow (UX-37). The accessibility tree gives every page one heading 1, one main and the navigation, and names every control. Firefox could not start in the sandbox these checks run in.
+- This Mac left HCML's network at about 16:10 WIB, after which the local copy recorded every device as down. At your word, "Pause it now", its Zabbix server was stopped at 21:03 WIB (IN-39); start it again with `docker start proto1-zabbix-server-1` once back on HCML's network.
+- Still yours: the live portals signed in (your password), what Excel showed on your own download of the SLA report, and whether operators want Indonesian (HCML).
+
+## 26 October 2026, at night: the `.env` fixed and both portals rebuilt from `0aa74d2` (live, tagged `live-2026-10-26`)
+
+At your word, "fix the env and rebuild", after you committed the day's work as `0aa74d2` ("fix: feature audit findings, theme before first paint, SLA workbook and trigger count") and pushed it.
+
+- `hcml-portal/.env`: line 9, a 5-character fragment Docker could not read, removed. In both copies' `.env`, `ZABBIX_WRITE_TOKEN` emptied again: it held a Super admin token of HCML's Zabbix, which would have turned writing on. Nothing else in either file changed, and no value was printed.
+- `deploy/rebuild.sh` at 20:42 WIB, from the clean tree: its gates passed (parity, and `npm run verify`: server 1,704 tests, web 1,196), the images it replaced are tagged `rollback-26oct-3` (hosted) and `rollback-26oct-2` (ollama copy), and both copies came up healthy as `0aa74d2` (`BUILD_TIME=2026-10-26T13:42:24Z`). The local tag `live-2026-10-26` marks the commit; `git push origin live-2026-10-26` makes it public.
+- What an anonymous caller sees on :8081 and :8082: health 200 with `writeBack: false`, the meters 401, `/.env` and `/.git/config` 404, a Content-Security-Policy, the bundle `index-DIo-wnM3.js`, and `/theme.js` served as JavaScript.
+- To go back to the build of 11:59: `docker tag <image>:rollback-26oct-3 <image>:latest` (hosted) or `:rollback-26oct-2` (ollama copy), then `docker compose up -d --no-build` in that copy.
+- Not checked: the pages behind the sign-in on this build, which needs your password (`tools/live/signedin_check.py`).
+
+## 26 October 2026, later in the evening: the Dashboard counts the triggers of monitored hosts (committed as `0aa74d2`; live since 26 October, 20:42)
 
 At your word, "please choose A", for row BK-19 of [`tracker.md`](tracker.md). The two files were backed up first in `myown/backup-26oct-bk19/`.
 
 - The Triggers card counts the triggers of monitored hosts, as the Hosts and Items cards count monitored ones (`services/reports.ts`, `trigger.get` with `monitored: true`). On the local copy it reads 15,111 instead of 18,104: the 2,709 triggers of templates watch no host, and the other 284 are disabled or sit on a host or item that is not monitored. A read-only Zabbix account now gives the same figure.
 - A test in `routes.test.ts` asks for all three counts to be of monitored ones. Counts: server 1,704 tests in 79 files, web 1,196 in 83.
-- Not live, for the reason in the entries below.
+- Live since 20:42, once the `.env` was fixed (the entry at the top).
 
-## 26 October 2026, evening: the SLA workbook's two issues fixed, and the not-checked list checked (not committed, not live)
+## 26 October 2026, evening: the SLA workbook's two issues fixed, and the not-checked list checked (committed as `0aa74d2`; live since 26 October, 20:42)
 
 At your word: the items of the not-checked list, and "fix: SLA workbook". Rows BK-18 and BK-19 of [`tracker.md`](tracker.md), and its Not checked section. The two source files were backed up first in `myown/backup-26oct-sla-workbook/`.
 
@@ -28,18 +64,18 @@ At your word: the items of the not-checked list, and "fix: SLA workbook". Rows B
 - New open row: BK-19, the Dashboard's Triggers card counts the 2,709 triggers that belong to templates.
 - Not done: the live portals signed in, which needs your password.
 - Counts: server 1,703 tests in 79 files, web 1,196 in 83.
-- Not live, for the reason in the entries below.
+- Live since 20:42, once the `.env` was fixed (the entry at the top).
 
-## 26 October 2026, late afternoon: the count waits for the list, and the chosen theme is there from the first paint (not committed, not live)
+## 26 October 2026, late afternoon: the count waits for the list, and the chosen theme is there from the first paint (committed as `0aa74d2`; live since 26 October, 20:42)
 
 At your word, "please fix the first point and the third point": the first and third of the three rows found while testing, UX-34 and UX-35 of [`tracker.md`](tracker.md). IN-38 stays open. Both copies were backed up first in `myown/backup-26oct-ux34-ux35/`.
 
 - The Problems count is drawn once the list is in, so it no longer reads "0 matching" while the list loads, or beside the error when it cannot load (`features/problems/Problems.tsx`).
 - `web/public/theme.js`, a plain script in the `<head>` of `index.html`, puts the theme picked in the portal on `<html>` before the first paint, so a page opens in it instead of fading over from the computer's colours. A file rather than inline code, so the CSP stays `script-src 'self'`. A switch in the picker still fades.
 - Counts: web 1,196 tests in 83 files (a test file for the script, two tests for the count); server 1,701 in 79.
-- Not live, for the reason in the entry below: the rebuild waits on line 9 of `hcml-portal/.env`.
+- Live since 20:42; until then the rebuild waited on line 9 of `hcml-portal/.env`.
 
-## 26 October 2026, afternoon: the feature audit's nine findings, fixed (not committed, not live)
+## 26 October 2026, afternoon: the feature audit's nine findings, fixed (committed as `0aa74d2`; live since 26 October, 20:42)
 
 At your word, "please all ofthem getting fixed", for the nine findings of that day's feature audit. Rows IN-33 to IN-37, BK-17, UX-32, UX-33 and SC-31 of [`tracker.md`](tracker.md), and three new open rows, UX-34, IN-38 and UX-35. Both copies were backed up first in `myown/backup-26oct-audit-fixes/`.
 
@@ -49,7 +85,7 @@ At your word, "please all ofthem getting fixed", for the nine findings of that d
 - Sign-out ends the session it carried: the BFF refuses a signed-out token until it expires, as a cookie or a header, and each sign-in has its own `jti` (`security/auth.ts`). The list is kept in memory, so a restart of the BFF forgets it.
 - The local Zabbix copy that option C polls from this Mac was adjusted where polling from here raised false problems: the ping threshold, the SNMP timeout, more unreachable pollers and pingers, the Zabbix machine's own agent, the Intranet check, and a restart policy. HCML's Zabbix was not touched; each value the copy had before is in `myown/documents/notes/zabbix-local-copy-changes-2026-10-26.json`. The 13 site firewalls still do not answer SNMP from here, so their interface data and the Internet traffic meters stay empty under option C (IN-34).
 - Counts: server 1,701 tests in 79 files, web 1,186 in 82. `npm run verify` passes in both copies.
-- Not live: `deploy/rebuild.sh --allow-dirty` started at 15:06 WIB, passed its gates, tagged the hosted copy's images `rollback-26oct-2` and stopped at `docker compose up`, which cannot read line 9 of `hcml-portal/.env` (IN-38). The live portals still run the build of 11:59, and nothing on them changed.
+- Not live at first: `deploy/rebuild.sh --allow-dirty` started at 15:06 WIB, passed its gates, tagged the hosted copy's images `rollback-26oct-2` and stopped at `docker compose up`, which cannot read line 9 of `hcml-portal/.env` (IN-38). The live portals kept the build of 11:59, and nothing on them changed. All of it went live at 20:42 (`0aa74d2`), once the `.env` was fixed.
 
 ## 26 October 2026, at noon: both portals rebuilt with the day's changes (live as `7bc48db-dirty`, committed afterwards as `dd58bf5`)
 

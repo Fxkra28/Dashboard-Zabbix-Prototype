@@ -377,7 +377,7 @@ function DerivedServices() {
       >
         {(d) => (
           <>
-            <GapsNote gaps={d.gaps} profile={d.profile} />
+            <GapsNote gaps={d.gaps} windows={d.noDataWindows} profile={d.profile} />
             {/* Keyed by month+method so the expansion seed re-applies to a new tree. */}
             <ServiceTree
               key={`${d.month}:${d.profile}`}
