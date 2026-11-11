@@ -16,6 +16,7 @@ function deferred<T>() {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('useAsync', () => {
@@ -95,5 +96,66 @@ describe('useAsync', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
     unmount();
     await waitFor(() => expect(init.signal?.aborted).toBe(true));
+  });
+});
+
+describe('useAsync and a hidden tab (FR-25)', () => {
+  let visibility: DocumentVisibilityState = 'visible';
+  const setVisibility = (v: DocumentVisibilityState) => {
+    visibility = v;
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+  const settleRuns = () => {
+    const runs: number[] = [];
+    const hook = renderHook(() =>
+      useAsync(() => {
+        runs.push(Date.now());
+        return Promise.resolve(runs.length);
+      }, [], 1_000),
+    );
+    return { runs, hook };
+  };
+
+  it('does not poll while the tab is hidden, and catches up at once on return when a poll came due', async () => {
+    vi.useFakeTimers();
+    visibility = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    const { runs } = settleRuns();
+    await act(async () => vi.advanceTimersByTime(0));
+    expect(runs).toHaveLength(1);
+
+    await act(async () => void setVisibility('hidden'));
+    await act(async () => vi.advanceTimersByTime(30_000));
+    expect(runs).toHaveLength(1);
+
+    await act(async () => void setVisibility('visible'));
+    await act(async () => vi.advanceTimersByTime(0));
+    expect(runs).toHaveLength(2);
+  });
+
+  it('waits out the rest of the interval on return when the poll is not due yet', async () => {
+    vi.useFakeTimers();
+    visibility = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    const { runs } = settleRuns();
+    await act(async () => vi.advanceTimersByTime(0));
+    await act(async () => vi.advanceTimersByTime(400));
+    await act(async () => void setVisibility('hidden'));
+    await act(async () => void setVisibility('visible'));
+    await act(async () => vi.advanceTimersByTime(0));
+    expect(runs).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTime(599));
+    expect(runs).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(runs).toHaveLength(2);
+  });
+
+  it('starts no poll for a page that was hidden while its first load was out', async () => {
+    vi.useFakeTimers();
+    visibility = 'hidden';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    const { runs } = settleRuns();
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(runs).toHaveLength(1);
   });
 });

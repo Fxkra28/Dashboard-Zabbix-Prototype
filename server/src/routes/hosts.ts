@@ -1,16 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { BadRequestError, intParam, optionalId, requireId } from '../core/validate.js';
+import { searchGuard } from '../security/searchLimit.js';
 import { hidesNetwork, withoutNetworkItems } from '../security/viewerPolicy.js';
 import {
   MAX_ITEMIDS,
   findItems,
   getHostGroups,
-  getHostOverview,
+  hostsOverviewView,
   getHosts,
   getLatestItems,
   getLatestPage,
 } from '../services/hosts.js';
-import { cached } from '../core/cache.js';
 import { singleValues } from '../core/schemas.js';
 
 const ITEMS_QUERY = singleValues('hostid', 'search', 'graphable', 'itemids');
@@ -21,7 +21,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
 
   // Monitoring → Hosts: each host + its live problem severity counts, and its
   // reachability `state`/`reason` (ping first; reachability.ts).
-  app.get('/api/hosts/overview', () => cached('hosts:overview', 15_000, getHostOverview));
+  app.get('/api/hosts/overview', () => hostsOverviewView());
 
   app.get('/api/hostgroups', () => getHostGroups());
 
@@ -32,7 +32,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
   //   ?itemids=a,b       specific items (any host), resolves a deep link
   // hostid is required unless itemids is given: without it Zabbix would get `hostids: [undefined]`
   // and answer with an opaque 500.
-  app.get('/api/items', { schema: { querystring: ITEMS_QUERY } }, async (req) => {
+  app.get('/api/items', { schema: { querystring: ITEMS_QUERY }, preHandler: searchGuard }, async (req) => {
     const q = req.query as { hostid?: string; search?: string; graphable?: string; itemids?: string };
     const graphable = q.graphable === '1' || q.graphable === 'true';
     const itemids =
@@ -53,7 +53,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
   //
   // With `page`, the list is paged server-side (getLatestPage). Without `page` the
   // original first-500 read is kept for older callers.
-  app.get('/api/latest', { schema: { querystring: LATEST_QUERY } }, (req) => {
+  app.get('/api/latest', { schema: { querystring: LATEST_QUERY }, preHandler: searchGuard }, (req) => {
     const q = req.query as {
       hostid?: string;
       groupid?: string;

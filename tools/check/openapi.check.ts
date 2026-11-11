@@ -324,6 +324,58 @@ export function guardIn(source: string): Guard | null {
   return paths.length && rules.length ? { open: new Set(paths), rules } : null;
 }
 
+/** One entry of the Roles table: a path, with the method it names if it names one, and whether a star made it stand for everything below. */
+export interface RoleEntry {
+  path: string;
+  method?: string;
+  prefix: boolean;
+}
+
+/**
+ * The `### Roles` table in the spec's description: for each role, the paths its row names in backticks (`/api/net/*` stands for
+ * everything below `/api/net/`, and `POST /api/problems/acknowledge` for that method only). A row of words, such as "everything
+ * else", names none. Null when the heading or the table is missing, which the checker reports.
+ */
+export function rolesTable(yaml: string): Map<string, RoleEntry[]> | null {
+  const at = yaml.indexOf('### Roles');
+  if (at < 0) return null;
+  const rows = new Map<string, RoleEntry[]>();
+  for (const line of yaml.slice(at).split('\n').slice(1)) {
+    const row = /^\s*\|\s*`(\w+)`\s*\|(.*)\|\s*$/.exec(line);
+    if (!row) {
+      if (rows.size > 0 && !/^\s*\|/.test(line)) break;
+      continue;
+    }
+    rows.set(
+      row[1],
+      [...row[2].matchAll(/`(?:(GET|POST|PUT|PATCH|DELETE) )?(\/[^`*]*?)(\*)?`/g)].map((m) => ({ path: m[2], ...(m[1] ? { method: m[1].toLowerCase() } : {}), prefix: m[3] === '*' })),
+    );
+  }
+  return rows.size ? rows : null;
+}
+
+/**
+ * The Roles table against the guard's rules, both ways: every path the table names has the role of its row, and every
+ * operation the rules put above viewer is named under its role. The rules are read from auth.ts, so there is one list and a copy.
+ */
+export function compareRoles(table: Map<string, RoleEntry[]>, ops: SpecOp[], guard: Guard): string[] {
+  const problems: string[] = [];
+  const roleOf = (path: string) => guard.rules.find((r) => r.pattern.test(path))?.role ?? 'viewer';
+  for (const [role, entries] of table) {
+    for (const e of entries) {
+      const given = roleOf(e.prefix ? `${e.path}x` : e.path);
+      if (given !== role) problems.push(`docs/api/openapi.yaml  the Roles table puts ${e.path}${e.prefix ? '*' : ''} under ${role}, and ROUTE_RULES in auth.ts gives it ${given}`);
+    }
+  }
+  for (const o of ops) {
+    const role = roleOf(o.path.replace(/\{[^}]+\}/g, 'x'));
+    if (role === 'viewer') continue;
+    const named = (table.get(role) ?? []).some((e) => (e.method === undefined || e.method === o.method) && (e.prefix ? o.path.startsWith(e.path) : o.path === e.path));
+    if (!named) problems.push(`docs/api/openapi.yaml  ${o.method.toUpperCase()} ${o.path} needs ${role} (ROUTE_RULES in auth.ts) but the Roles table does not name it under ${role}`);
+  }
+  return problems;
+}
+
 const UNSAFE_METHODS = new Set(['post', 'put', 'patch', 'delete']);
 
 /**
@@ -560,6 +612,49 @@ function selfTest(): string[] {
   eq('no guard tables in the source', guardIn('const x = 1;'), null);
   eq('one table is not enough', guardIn(authSource.replace('PUBLIC_ROUTES', 'ELSEWHERE')), null);
 
+  // The Roles table of the spec's description, against the guard's rules (DC-15)
+
+  const rolesYaml = [
+    'info:',
+    '  description: |',
+    '    ### Roles',
+    '',
+    '    | Role | Paths |',
+    '    |---|---|',
+    '    | `admin` | `/api/reports/inventory`, `/api/sli/email` |',
+    '    | `operator` | `POST /api/problems/acknowledge` |',
+    '    | `wall` | `/api/links`, `/api/net/*`: the network pages |',
+    '    | `viewer` | everything else |',
+    '',
+    '    The ranks run viewer, wall, operator, admin.',
+    'paths:',
+  ].join('\n');
+  const table = rolesTable(rolesYaml);
+  eq('reads the rows with paths', table && [...table.keys()], ['admin', 'operator', 'wall', 'viewer']);
+  eq('reads a path, a method with a path and a star', table && [table.get('admin')?.map((e) => e.path), table.get('operator')?.map((e) => `${e.method} ${e.path}`), table.get('wall')?.map((e) => `${e.path}${e.prefix ? '*' : ''}`)], [['/api/reports/inventory', '/api/sli/email'], ['post /api/problems/acknowledge'], ['/api/links', '/api/net/*']]);
+  eq('no Roles heading', rolesTable('info:\n  title: x\n'), null);
+
+  const roleGuard: Guard = {
+    open: new Set(),
+    rules: [
+      { pattern: /^\/api\/reports\/inventory/, role: 'admin' },
+      { pattern: /^\/api\/sli\/(email|recipients)/, role: 'admin' },
+      { pattern: /^\/api\/(links|net)\b/, role: 'wall' },
+      { pattern: /^\/api\/problems\/(acknowledge|close)/, role: 'operator' },
+    ],
+  };
+  const roleOp = (method: string, path: string): SpecOp => ({ method, path, security: 'inherit', responses: ['200'], pathParams: [], queryParams: [] });
+  const okOps = [roleOp('get', '/api/reports/inventory'), roleOp('get', '/api/sli/email'), roleOp('post', '/api/sli/email'), roleOp('post', '/api/problems/acknowledge'), roleOp('get', '/api/links'), roleOp('get', '/api/net/devices'), roleOp('get', '/api/hosts')];
+  eq('a table that agrees with the rules', table && compareRoles(table, okOps, roleGuard), []);
+  const newOps = [...okOps, roleOp('put', '/api/sli/recipients'), roleOp('delete', '/api/sli/recipients')];
+  const missing = table ? compareRoles(table, newOps, roleGuard) : [];
+  eq('a path the rules put above viewer and the table does not name', [missing.length, missing.filter((p) => p.includes('PUT /api/sli/recipients needs admin')).length, missing.filter((p) => p.includes('DELETE /api/sli/recipients needs admin')).length], [2, 1, 1]);
+  const wrongRow = rolesTable(rolesYaml.replace('`/api/links`, `/api/net/*`', '`/api/links`, `/api/net/*`, `/api/hosts`')?.replace('| `wall` |', '| `wall` |') ?? '');
+  eq('a path under the wrong role', (wrongRow ? compareRoles(wrongRow, okOps, roleGuard) : []).filter((p) => p.includes('puts /api/hosts under wall')).length, 1);
+  eq('a method that is not the one in the table', (table ? compareRoles(table, [roleOp('delete', '/api/problems/acknowledge')], roleGuard) : []).length, 1);
+  eq('a star covers what is below it, and only that', table && compareRoles(table, [roleOp('get', '/api/net/a/b'), roleOp('get', '/api/net')], roleGuard), ['docs/api/openapi.yaml  GET /api/net needs wall (ROUTE_RULES in auth.ts) but the Roles table does not name it under wall']);
+  eq('a path no rule matches is left to viewer', table && compareRoles(table, [roleOp('get', '/api/networks')], roleGuard), []);
+
   // compare(): the clean case, then one break at a time
 
   const guard: Guard = { open: new Set(['/api/open']), rules: [{ pattern: /^\/api\/ops/, role: 'operator' }] };
@@ -665,6 +760,10 @@ if (!operations.length) {
 }
 const compared = guard ? compare(registered, operations, guard) : { problems: [], guarded: 0, forbidding: 0, refusing: 0, querying: 0 };
 problems.push(...compared.problems);
+
+const roles = rolesTable(yaml);
+if (!roles) problems.push('docs/api/openapi.yaml  no Roles table found under "### Roles" in the description, so the role rules cannot be compared with it.');
+else if (guard) problems.push(...compareRoles(roles, operations, guard));
 
 for (const c of cutDescriptions(yaml)) {
   problems.push(

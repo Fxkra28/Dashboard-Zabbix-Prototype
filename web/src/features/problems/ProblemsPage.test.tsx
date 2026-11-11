@@ -263,7 +263,7 @@ describe('a link to one problem (UX-11)', () => {
     vi.spyOn(api, 'explainProblem').mockImplementation(() => new Promise(() => undefined));
     open('/problems?eventid=1&action=explain');
     expect(await screen.findByRole('dialog', { name: 'In plain language' })).toBeInTheDocument();
-    expect(api.explainProblem).toHaveBeenCalledWith('1');
+    await waitFor(() => expect(api.explainProblem).toHaveBeenCalledWith('1'));
   });
 
   it('scrolls the marked row into view, once', async () => {
@@ -272,6 +272,8 @@ describe('a link to one problem (UX-11)', () => {
     try {
       open('/problems?eventid=2');
       const row = await screen.findByRole('row', { name: /Problem 2/ });
+      await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+      await act(async () => undefined);
       expect(scroll).toHaveBeenCalledTimes(1);
       expect(scroll).toHaveBeenCalledWith({ block: 'center' });
       expect(scroll.mock.contexts[0]).toBe(row);
@@ -510,6 +512,13 @@ describe('acknowledge and close are not instant (UX-13)', () => {
     expect(screen.queryByText(/Acknowledge is off/)).toBeNull();
   });
 
+  it('gives a wall screen no Ack, even on a portal where acknowledging is on (MT-06)', async () => {
+    open('/problems', 'wall');
+    await screen.findByRole('row', { name: /Problem 1\b/ });
+    expect(screen.queryByRole('button', { name: 'Ack' })).toBeNull();
+    expect(screen.queryByText(/Acknowledge is off/)).toBeNull();
+  });
+
   it('does not tell a viewer, who could not use it anyway', async () => {
     caps.writeBack = false;
     open('/problems', 'viewer');
@@ -643,5 +652,34 @@ describe('the action column header', () => {
     open('/problems');
     await screen.findByRole('row', { name: /Problem 1\b/ });
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+  });
+});
+
+describe('the tags of a problem (UX-38)', () => {
+  const tag = (n: number) => ({ tag: `tag${n}`, value: n % 2 ? `v${n}` : '' });
+
+  it('shows the first four and says how many more there are, with their names for a mouse and for a screen reader', async () => {
+    vi.spyOn(api, 'problems').mockResolvedValue([problem(1, 4, 600, { tags: [1, 2, 3, 4, 5, 6].map(tag) })]);
+    open('/problems');
+    const row = await screen.findByRole('row', { name: /Problem 1/ });
+    expect([...row.querySelectorAll('.tag')].map((t) => t.textContent?.trim())).toEqual(['tag1: v1', 'tag2', 'tag3: v3', 'tag4', '+2 more: tag5: v5, tag6']);
+    const more = row.querySelector('.tag-more') as HTMLElement;
+    expect(more).toHaveAttribute('title', 'tag5: v5, tag6');
+    expect(within(more).getByText(/tag5: v5, tag6/)).toHaveClass('sr-only');
+  });
+
+  it('says "+1 more" for a fifth tag', async () => {
+    vi.spyOn(api, 'problems').mockResolvedValue([problem(1, 4, 600, { tags: [1, 2, 3, 4, 5].map(tag) })]);
+    open('/problems');
+    const row = await screen.findByRole('row', { name: /Problem 1/ });
+    expect(row.querySelector('.tag-more')).toHaveTextContent('+1 more');
+  });
+
+  it('adds nothing for four tags or fewer', async () => {
+    vi.spyOn(api, 'problems').mockResolvedValue([problem(1, 4, 600, { tags: [1, 2, 3, 4].map(tag) }), problem(2, 3, 300)]);
+    open('/problems');
+    const row = await screen.findByRole('row', { name: /Problem 1/ });
+    expect(row.querySelector('.tag-more')).toBeNull();
+    expect(rowOf('Problem 2').querySelector('.tag')).toBeNull();
   });
 });

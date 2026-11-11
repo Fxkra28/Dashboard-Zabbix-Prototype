@@ -134,9 +134,10 @@ describe('the hint under an error', () => {
     expect(screen.getByText(/signed in as an operator/)).toBeInTheDocument();
   });
 
-  it('reads the wording for network interface data the same way', async () => {
+  it('reads the wording for network interface data the same way, and names the wall role as wall screens', async () => {
     asRole('viewer');
-    render(<ErrorState message={'Network interface data needs the "operator" role; you are signed in as "viewer".'} />);
-    expect(await screen.findByRole('status')).toHaveTextContent('This page is for operators');
+    render(<ErrorState message={'Network interface data needs the "wall" role; you are signed in as "viewer".'} />);
+    expect(await screen.findByRole('status')).toHaveTextContent('This page is for wall screens');
+    expect(screen.getByText(/signed in as a viewer\. Ask the portal admin/)).toBeInTheDocument();
   });
 });

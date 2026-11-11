@@ -49,13 +49,13 @@ export default function Hosts() {
           </label>
         </FieldGroup>
         <FieldSpacer>
-          <span className="pill">{count(filtered.length, 'host')}</span>
+          {q.data && <span className="pill">{count(filtered.length, 'host')}</span>}
         </FieldSpacer>
       </div>
 
       <div className="panel">
         <Async loading={q.loading} error={q.error} data={q.data} updatedAt={q.updatedAt}>
-          {() => <HostTable hosts={filtered} />}
+          {() => (filtered.length ? <HostTable hosts={filtered} /> : <div className="state">No host matches.</div>)}
         </Async>
       </div>
     </>

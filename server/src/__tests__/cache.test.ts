@@ -4,6 +4,8 @@ import {
   MAX_BYTES,
   MAX_ENTRIES,
   MAX_PINNED_BYTES,
+  MAX_TYPED_ENTRIES,
+  REFRESH_RETRY_MS,
   approxBytes,
   cached,
   invalidate,
@@ -201,7 +203,7 @@ describe('stale serving', () => {
       expect(await cached('avail', 1_000, fn, opts)).toBe('v1');
       await new Promise((r) => setImmediate(r));
 
-      // Still answered from the old value, and not retried inside this window.
+      // Still answered from the old value, and not retried at once.
       advance(1_000);
       expect(await cached('avail', 1_000, fn, opts)).toBe('v1');
       expect(fn).toHaveBeenCalledTimes(2);
@@ -216,6 +218,45 @@ describe('stale serving', () => {
     } finally {
       process.off('unhandledRejection', unhandled);
     }
+  });
+
+  it('starts another background refresh REFRESH_RETRY_MS after a failed one, not before', async () => {
+    const advance = useClock();
+    const fn = vi.fn().mockResolvedValueOnce('v1').mockRejectedValueOnce(new Error('zabbix down')).mockResolvedValueOnce('v2');
+    const opts = { staleMs: 24 * 3_600_000 };
+
+    await cached('catalog', 3_600_000, fn, opts);
+    advance(3_600_001);
+    expect(await cached('catalog', 3_600_000, fn, opts)).toBe('v1');
+    await new Promise((r) => setImmediate(r));
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    advance(REFRESH_RETRY_MS - 1_000);
+    expect(await cached('catalog', 3_600_000, fn, opts)).toBe('v1');
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    advance(1_000);
+    expect(await cached('catalog', 3_600_000, fn, opts)).toBe('v1');
+    await flush();
+    expect(fn).toHaveBeenCalledTimes(3);
+    expect(await cached('catalog', 3_600_000, fn, opts)).toBe('v2');
+    expect(fn).toHaveBeenCalledTimes(3);
+  });
+
+  it('asks a Zabbix that stays down about once a minute, however often it is asked for the value', async () => {
+    const advance = useClock();
+    const fn = vi.fn().mockResolvedValueOnce('v1').mockRejectedValue(new Error('zabbix down'));
+    const opts = { staleMs: 24 * 3_600_000 };
+
+    await cached('links', 3_600_000, fn, opts);
+    advance(3_600_001);
+    // Six requests for each pause, ten pauses, all answered from the old value.
+    for (let i = 0; i < 60; i++) {
+      expect(await cached('links', 3_600_000, fn, opts)).toBe('v1');
+      await new Promise((r) => setImmediate(r));
+      advance(REFRESH_RETRY_MS / 6);
+    }
+    expect(fn).toHaveBeenCalledTimes(1 + 10);
   });
 
   it('never serves a value past ttl + staleMs', async () => {
@@ -243,8 +284,9 @@ describe('stale serving', () => {
         expect.any(String),
       );
 
-      // Still the old value, and a recovered Zabbix replaces it.
+      // Still the old value, without another try; once the pause is over a recovered Zabbix replaces it.
       expect(await cached('avail:7', 1_000, down, opts)).toBe('v1');
+      advance(REFRESH_RETRY_MS);
       expect(await cached('avail:7', 1_000, async () => 'v2', opts)).toBe('v2');
 
       // Without the option the failure is the caller's.
@@ -254,6 +296,71 @@ describe('stale serving', () => {
     } finally {
       setCacheLogger(undefined);
     }
+  });
+
+  it('past the window, a fetch that failed is not tried again for REFRESH_RETRY_MS, however often the value is asked for (BK-31)', async () => {
+    const advance = useClock();
+    const fn = vi.fn().mockResolvedValueOnce('v1').mockRejectedValue(new Error('zabbix down'));
+    const opts = { staleMs: 10 * 60_000, staleIfError: true };
+
+    await cached('capacity:90', 3_600_000, fn, opts);
+    advance(3_600_000 + 10 * 60_000 + 1);
+    // Sixty requests ten seconds apart, ten minutes of a Zabbix that does not answer: every one gets the old value.
+    for (let i = 0; i < 60; i++) {
+      expect(await cached('capacity:90', 3_600_000, fn, opts)).toBe('v1');
+      advance(10_000);
+    }
+    expect(fn).toHaveBeenCalledTimes(1 + 10);
+  });
+
+  it('keeps the pause to values that can fall back on an old copy, and to calls that would take one (BK-31)', async () => {
+    const advance = useClock();
+    const plain = vi.fn().mockResolvedValueOnce('v1').mockRejectedValue(new Error('zabbix down'));
+    await cached('plain', 1_000, plain);
+    advance(5_000);
+    await expect(cached('plain', 1_000, plain)).rejects.toThrow('zabbix down');
+    await expect(cached('plain', 1_000, plain)).rejects.toThrow('zabbix down');
+    expect(plain).toHaveBeenCalledTimes(3);
+
+    const g = vi.fn().mockResolvedValueOnce('v1').mockRejectedValueOnce(new Error('zabbix down')).mockResolvedValue('v2');
+    const opts = { staleIfError: true };
+    await cached('limited', 1_000, g, opts);
+    advance(5_000);
+    expect(await cached('limited', 1_000, g, opts)).toBe('v1');
+    // Inside the pause, a call that takes no copy as old as this one fetches all the same.
+    expect(await cached('limited', 1_000, g, { ...opts, maxAgeMs: 1_000 })).toBe('v2');
+    expect(g).toHaveBeenCalledTimes(3);
+  });
+
+  it('joins a fetch that is already running instead of answering from the pause (BK-31)', async () => {
+    const advance = useClock();
+    const opts = { staleIfError: true };
+    await cached('k', 1_000, async () => 'v1', opts);
+    advance(5_000);
+    expect(await cached('k', 1_000, () => Promise.reject(new Error('zabbix down')), opts)).toBe('v1'); // the pause starts
+    let finish!: (v: string) => void;
+    const running = cached('k', 1_000, () => new Promise<string>((resolve) => (finish = resolve)), { ...opts, maxAgeMs: 0 });
+    const joined = cached('k', 1_000, async () => 'never asked', opts); // inside the pause, but a fetch is running
+    finish('v2');
+    expect(await running).toBe('v2');
+    expect(await joined).toBe('v2');
+  });
+
+  it('puts the pause on the copy a failed fetch started from, not on a newer one stored while it ran (BK-31)', async () => {
+    const advance = useClock();
+    const opts = { staleIfError: true };
+    await cached('k', 5_000, async () => 'v1', opts);
+    advance(6_000);
+    let failLate!: (e: Error) => void;
+    const first = cached('k', 5_000, () => new Promise<string>((_, reject) => (failLate = reject)), opts);
+    invalidate('k'); // cancels that fetch and drops the copy
+    expect(await cached('k', 5_000, async () => 'v2', opts)).toBe('v2');
+    failLate(new Error('zabbix down')); // the cancelled fetch fails late, and the answer is the newer copy
+    expect(await first).toBe('v2');
+    advance(6_000);
+    const fn = vi.fn().mockResolvedValue('v3');
+    expect(await cached('k', 5_000, fn, opts)).toBe('v3'); // the newer copy expired normally: fetched at once, no pause on it
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it('staleIfError never brings back a value that invalidate() dropped, nor answers inside a hold', async () => {
@@ -271,6 +378,70 @@ describe('stale serving', () => {
     await cached('stats', 15_000, async () => 'after the write', opts);
     advance(HOLD_TTL_MS + 1);
     await expect(cached('stats', 15_000, down, opts)).rejects.toThrow('zabbix down');
+  });
+});
+
+describe('maxAgeMs', () => {
+  it('counts a value as expired once it is that old for the caller that asks, and for that caller only', async () => {
+    const advance = useClock();
+    const fn = vi.fn().mockResolvedValueOnce('v1').mockResolvedValueOnce('v2');
+
+    expect(await cached('beat', 15_000, fn)).toBe('v1');
+    advance(10_000);
+    expect(await cached('beat', 15_000, fn)).toBe('v1');
+    expect(await cached('beat', 15_000, fn, { maxAgeMs: 10_000 })).toBe('v2');
+    expect(fn).toHaveBeenCalledTimes(2);
+    // The new value serves everyone again.
+    expect(await cached('beat', 15_000, fn)).toBe('v2');
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('takes no stale copy past maxAgeMs either: it fetches in the foreground', async () => {
+    const advance = useClock();
+    const fn = vi.fn().mockResolvedValueOnce('v1').mockResolvedValueOnce('v2');
+    const opts = { staleMs: 60_000 };
+
+    await cached('window', 1_000, fn, opts);
+    advance(6_000);
+    // Inside the stale window an ordinary call is answered at once from the old copy, and refreshes it behind its back.
+    expect(await cached('window', 1_000, async () => 'refresh', opts)).toBe('v1');
+    await flush();
+    expect(await cached('window', 1_000, fn, opts)).toBe('refresh');
+    advance(6_000);
+    // A call that insists on a copy under five seconds old waits for the new one.
+    expect(await cached('window', 1_000, fn, { ...opts, maxAgeMs: 5_000 })).toBe('v2');
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('maxAgeMs of 0 always fetches, and callers that wait for one fetch share it', async () => {
+    useClock();
+    const fn = vi.fn().mockResolvedValueOnce('v1').mockResolvedValueOnce('v2');
+    expect(await cached('every', 15_000, fn, { maxAgeMs: 0 })).toBe('v1');
+    expect(await cached('every', 15_000, fn, { maxAgeMs: 0 })).toBe('v2');
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    const slow = deferred<string>();
+    const gate = vi.fn().mockReturnValueOnce(slow.promise);
+    const first = cached('shared', 15_000, gate, { maxAgeMs: 0 });
+    const second = cached('shared', 15_000, gate, { maxAgeMs: 0 });
+    slow.resolve('one read');
+    expect(await Promise.all([first, second])).toEqual(['one read', 'one read']);
+    expect(gate).toHaveBeenCalledTimes(1);
+  });
+
+  it('never lengthens the TTL, and a write hold still wins', async () => {
+    const advance = useClock();
+    const fn = vi.fn().mockResolvedValueOnce('v1').mockResolvedValueOnce('v2').mockResolvedValueOnce('v3').mockResolvedValueOnce('v4');
+    const opts = { maxAgeMs: 60_000 };
+
+    await cached('short', 1_000, fn, opts);
+    advance(1_500);
+    expect(await cached('short', 1_000, fn, opts)).toBe('v2');
+
+    invalidate('short', { holdMs: 15_000 });
+    expect(await cached('short', 15_000, fn, opts)).toBe('v3');
+    advance(HOLD_TTL_MS + 1);
+    expect(await cached('short', 15_000, fn, opts)).toBe('v4');
   });
 });
 
@@ -444,6 +615,70 @@ describe('pin', () => {
     await flush();
     for (let i = 0; i < MAX_ENTRIES + 20; i++) await cached(`graph:${i}`, 60_000, async () => i);
     expect(await cached('derived-sli:open', 1_000, async () => 'v3', opts)).toBe('v2');
+  });
+});
+
+describe('typed', () => {
+  const typed = { typed: true };
+
+  it(`keeps at most ${MAX_TYPED_ENTRIES} of them (BK-36)`, async () => {
+    for (let i = 0; i < MAX_TYPED_ENTRIES + 20; i++) await cached(`search:${i}`, 60_000, async () => i, typed);
+    expect(invalidate('search:')).toBe(MAX_TYPED_ENTRIES);
+  });
+
+  it('lets the oldest go first (BK-36)', async () => {
+    for (let i = 0; i < MAX_TYPED_ENTRIES + 20; i++) await cached(`search:${i}`, 60_000, async () => i, typed);
+    // The 20 oldest went and the rest stay.
+    expect(await cached(`search:${MAX_TYPED_ENTRIES + 19}`, 60_000, async () => 'refetched', typed)).toBe(MAX_TYPED_ENTRIES + 19);
+    expect(await cached('search:20', 60_000, async () => 'refetched', typed)).toBe(20);
+    expect(await cached('search:19', 60_000, async () => 'refetched', typed)).toBe('refetched');
+    expect(await cached('search:0', 60_000, async () => 'refetched', typed)).toBe('refetched');
+  });
+
+  it('cannot push a shared entry out, however many distinct keys come (BK-36)', async () => {
+    await cached('problems', 60_000, async () => 'the list');
+    for (let i = 0; i < MAX_ENTRIES * 3; i++) await cached(`search:${i}`, 60_000, async () => i, typed);
+    expect(await cached('problems', 60_000, async () => 'rebuilt')).toBe('the list');
+  });
+
+  it('go before every other entry once the whole cache is full', async () => {
+    for (let i = 0; i < MAX_ENTRIES - 10; i++) await cached(`shared:${i}`, 60_000, async () => i);
+    for (let i = 0; i < 10; i++) await cached(`search:${i}`, 60_000, async () => i, typed);
+    await cached('shared:new', 60_000, async () => 'new');
+    // The oldest shared entry stays; the oldest typed one made the room.
+    expect(await cached('shared:0', 60_000, async () => 'rebuilt')).toBe(0);
+    expect(await cached('search:0', 60_000, async () => 'refetched', typed)).toBe('refetched');
+    expect(await cached('search:9', 60_000, async () => 'refetched', typed)).toBe(9);
+  });
+
+  it('reading one makes it recent, and replacing one does not count it twice', async () => {
+    for (let i = 0; i < MAX_TYPED_ENTRIES; i++) await cached(`search:${i}`, 60_000, async () => i, typed);
+    for (let n = 0; n < 5; n++) expect(await cached('search:0', 60_000, async () => -1, typed)).toBe(0);
+    await cached('search:new', 60_000, async () => 'new', typed);
+    expect(await cached('search:0', 60_000, async () => -1, typed)).toBe(0);
+    expect(await cached('search:1', 60_000, async () => 'refetched', typed)).toBe('refetched');
+  });
+
+  it('are given back when invalidated, so the count does not drift upward', async () => {
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < MAX_TYPED_ENTRIES; i++) await cached(`search:${i}`, 60_000, async () => i, typed);
+      expect(invalidate('search:')).toBe(MAX_TYPED_ENTRIES);
+    }
+    for (let i = 0; i < MAX_TYPED_ENTRIES; i++) await cached(`search:${i}`, 60_000, async () => i, typed);
+    expect(await cached('search:0', 60_000, async () => 'refetched', typed)).toBe(0);
+  });
+
+  it('stay typed when a background refresh stores the new value', async () => {
+    const advance = useClock();
+    const opts = { staleMs: 10_000, typed: true };
+    await cached('search:first', 1_000, async () => 'v1', opts);
+    advance(1_500);
+    expect(await cached('search:first', 1_000, async () => 'v2', opts)).toBe('v1');
+    await flush();
+    await cached('problems', 60_000, async () => 'the list');
+    for (let i = 0; i < MAX_ENTRIES * 2; i++) await cached(`search:${i}`, 60_000, async () => i, typed);
+    expect(await cached('problems', 60_000, async () => 'rebuilt')).toBe('the list');
+    expect(invalidate('search:')).toBe(MAX_TYPED_ENTRIES);
   });
 });
 

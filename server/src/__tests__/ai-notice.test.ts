@@ -9,7 +9,11 @@ import Fastify from 'fastify';
  * one. Each case re-imports config, which reads the environment once.
  */
 
-vi.mock('../domain/queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
+vi.mock('../domain/queries.js', () => ({
+  getProblems: vi.fn().mockResolvedValue([]),
+  cachedProblems: vi.fn().mockResolvedValue([]),
+  PROBLEMS_TTL_MS: 15_000,
+}));
 
 const NAMES = [
   'AI_PROVIDER',

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api';
 import { useAsync } from '../../shared/hooks/useAsync';
@@ -20,6 +20,16 @@ function defaultItems(items: Item[]): string[] {
   return first ? [first.itemid] : [];
 }
 
+/** Why items named in the address are not on the graph: one sentence for each reason. */
+function leftOutWords(ids: string[], why: 'elsewhere' | 'missing' | 'unread'): string {
+  const one = ids.length === 1;
+  const names = `${one ? 'Item' : 'Items'} ${ids.join(', ')}`;
+  const left = `so ${one ? 'it was' : 'they were'} left out.`;
+  if (why === 'elsewhere') return `${names} ${one ? 'is not a graphable item' : 'are not graphable items'} of this host, ${left}`;
+  if (why === 'missing') return `${names} ${one ? 'was' : 'were'} not found, ${left}`;
+  return `${names} could not be looked up, ${left}`;
+}
+
 /**
  * Graphs: one host, up to four of its items, any range.
  * URL: /graphs?hostid=10668&itemid=69356,69710&range=7d  (or month= / from=&to=)
@@ -37,6 +47,8 @@ export default function HostDetail() {
   );
 
   const update = useSearchPatch();
+  // Items the address named and the page left out, until the person chooses items or a host themselves.
+  const [leftOut, setLeftOut] = useState<string[]>([]);
 
   const groups = useMemo(
     () => groupBySite(hostsQ.data ?? [], (h) => h.name, (h) => h.site),
@@ -52,13 +64,24 @@ export default function HostDetail() {
   useEffect(() => {
     if (hostid || !itemids.length || resolving.current) return;
     resolving.current = true;
+    // No host to open from them: say so and open the first host, rather than wait for one that will not come.
+    const giveUp = (why: 'missing' | 'unread') => {
+      setLeftOut([leftOutWords(itemids, why)]);
+      update({ itemid: null });
+    };
+    // A person who chose a host while the lookup was out has answered it: the late result must not undo their choice.
+    const chosenMeanwhile = () => new URLSearchParams(window.location.search).has('hostid');
     api
       .itemsById(itemids)
       .then((items) => {
+        if (chosenMeanwhile()) return;
         const h = items[0]?.hosts?.[0]?.hostid;
         if (h) update({ hostid: h });
+        else giveUp('missing');
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (!chosenMeanwhile()) giveUp('unread');
+      })
       .finally(() => (resolving.current = false));
   }, [hostid, itemids, update]);
 
@@ -71,6 +94,8 @@ export default function HostDetail() {
     (items: Item[]) => {
       const valid = itemids.filter((id) => items.some((i) => i.itemid === id));
       if (valid.length === itemids.length && valid.length) return;
+      const dropped = itemids.filter((id) => !valid.includes(id));
+      if (dropped.length) setLeftOut([leftOutWords(dropped, 'elsewhere')]);
       const next = valid.length ? valid : defaultItems(items);
       update({ itemid: next.length ? next.join(',') : null });
     },
@@ -84,7 +109,10 @@ export default function HostDetail() {
           <select
             id="graph-host"
             value={hostid}
-            onChange={(e) => update({ hostid: e.target.value, itemid: null })}
+            onChange={(e) => {
+              setLeftOut([]);
+              update({ hostid: e.target.value, itemid: null });
+            }}
           >
             {!host && (
               <option value={hostid}>
@@ -107,6 +135,12 @@ export default function HostDetail() {
         </FieldGroup>
       </div>
 
+      {leftOut.length > 0 && (
+        <div className="notice warn" role="status">
+          {leftOut.join(' ')}
+        </div>
+      )}
+
       <div className="graph-layout">
         <div className="panel graph-side">
           <h2>Items</h2>
@@ -116,7 +150,10 @@ export default function HostDetail() {
               selected={itemids}
               max={MAX_ITEMS}
               onItems={onItems}
-              onChange={(ids) => update({ itemid: ids.length ? ids.join(',') : null })}
+              onChange={(ids) => {
+                setLeftOut([]);
+                update({ itemid: ids.length ? ids.join(',') : null });
+              }}
             />
           ) : hostsFailed ? (
             <ErrorState message={hostsQ.error as string} />

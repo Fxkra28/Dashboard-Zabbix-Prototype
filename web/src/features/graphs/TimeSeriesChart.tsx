@@ -18,7 +18,8 @@ import type { GraphPoint, GraphRange, GraphResponse, GraphSeries } from '../../t
 import { theme } from '../../theme';
 import { formatAxis, formatValue } from '../../shared/lib/units';
 import { fmtTime } from '../../shared/lib/severity';
-import { formatDateTime } from '../../shared/lib/time';
+import { axisNeedsDays, formatAxisTime, formatDateTime, formatDayTime } from '../../shared/lib/time';
+import { useReportTimeZone } from '../../shared/hooks/useReportTimeZone';
 import { chartTable, seriesLabel } from './chartTable';
 import { chartCsvFileName, chartCsvRows } from './chartCsv';
 import { downloadCsv } from '../../shared/lib/csv';
@@ -27,6 +28,7 @@ import { api } from '../../api';
 import { useAsync } from '../../shared/hooks/useAsync';
 import { useThemeChange } from './useThemeChange';
 import StaleNote from './StaleNote';
+import { MAX_UNIT_SCALES, unitFamilies } from './unitScales';
 import { Async, Loading } from '../../shared/components/states';
 import { isLiveRange, rangeKey } from './RangePicker';
 
@@ -47,6 +49,8 @@ echarts.use([
 ]);
 
 const SERIES_TOKENS = ['--series-1', '--series-2', '--series-3', '--series-4'];
+/** From this series on, the line is dashed: a second cue for a reader who cannot tell two of the hues apart. */
+const DASHED_FROM = 2;
 
 /**
  * The four series colours, read out of the stylesheet rather than written here, because ECharts
@@ -124,10 +128,10 @@ export default function TimeSeriesChart({
     onDataOpenChange?.(next);
   };
   const chartName = `Line chart of ${series.map((s) => seriesLabel(s, series)).join('; ')}, ${fmtTime(from)} to ${fmtTime(to)}`;
-  // Up to two unit families get their own axis (e.g. bps left, % right).
-  const unitAxes: string[] = [];
-  for (const s of series) if (!unitAxes.includes(s.units) && unitAxes.length < 2) unitAxes.push(s.units);
+  // Up to two unit families get their own axis (bps left, % right). A third goes on the first: the picker refuses it, an address can ask for it.
+  const unitAxes = unitFamilies(series.map((s) => s.units)).slice(0, MAX_UNIT_SCALES);
   const axisOf = (s: GraphSeries) => Math.max(0, unitAxes.indexOf(s.units));
+  const offScale = series.filter((s) => !unitAxes.includes(s.units));
 
   const band =
     series.length === 1 &&
@@ -136,6 +140,9 @@ export default function TimeSeriesChart({
 
   // The colours are read at render, so a theme switch must cause one even when no new data arrives.
   useThemeChange();
+  // The axis is drawn in the report zone, so a change of zone redraws it.
+  useReportTimeZone();
+  const dayOnTicks = axisNeedsDays(from, to);
   const palette = seriesColors();
   const ink = chartInk();
   const metas: Meta[] = [];
@@ -154,7 +161,7 @@ export default function TimeSeriesChart({
       showSymbol: s.points.length < 40,
       symbolSize: 4,
       sampling: undefined,
-      lineStyle: { width: 1.6, color },
+      lineStyle: { width: 1.6, color, type: i % palette.length >= DASHED_FROM ? 'dashed' : 'solid' },
       itemStyle: { color },
       areaStyle: series.length === 1 && !band ? { opacity: 0.07, color } : undefined,
       data: s.points.map((p) => [p[0], p[1]]),
@@ -247,13 +254,15 @@ export default function TimeSeriesChart({
         backgroundColor: ink.surface,
         borderColor: ink.border,
         textStyle: { color: ink.text },
+        labelFormatter: (value: number) => formatDayTime(value),
       },
     ],
     xAxis: {
       type: 'time',
       min: from * 1000,
       max: to * 1000,
-      axisLabel: { color: ink.muted, hideOverlap: true },
+      // ECharts draws a time axis in the browser's zone: the ticks are its own, the words are the report zone's.
+      axisLabel: { color: ink.muted, hideOverlap: true, formatter: (value: number) => formatAxisTime(value, to - from, undefined, dayOnTicks) },
       axisLine: { lineStyle: { color: ink.border } },
     },
     yAxis: (unitAxes.length ? unitAxes : ['']).map((units, i) => ({
@@ -269,6 +278,13 @@ export default function TimeSeriesChart({
 
   return (
     <div className="tsc">
+      {offScale.length > 0 && (
+        <div className="notice warn" role="status">
+          A graph has two scales at most, one for each kind of unit. {offScale.map((s) => seriesLabel(s, series)).join(', ')} {offScale.length === 1 ? 'does' : 'do'} not fit
+          and {offScale.length === 1 ? 'is' : 'are'} drawn on the first scale, so {offScale.length === 1 ? 'its line reads' : 'their lines read'} wrongly. The tooltip and the table have the true values;
+          remove an item to draw them properly.
+        </div>
+      )}
       {/* A canvas says nothing to a screen reader: name it, and point at the figures under it.
           The summary stays outside the img, since an img's children are not read (UX-17). */}
       <div role="img" aria-label={chartName} aria-describedby={summaryId}>

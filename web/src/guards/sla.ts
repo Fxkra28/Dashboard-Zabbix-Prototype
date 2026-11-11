@@ -1,6 +1,6 @@
 /** The checks for availability and SLA: the availability report, the derived monthly SLA, the service trees and Zabbix's own SLAs. */
 
-import type { AvailabilityReport, DerivedServiceNode, DerivedServicesResponse, HostAvailability, ServiceNode, ServiceSla, ServicesResponse, Sla, SlaSli, SlaSource, SliGap, SliGroup, SliHost, SliPath, SliReport, SliWeb } from '../types';
+import type { AvailabilityReport, DeletedRecipients, DerivedServiceNode, DerivedServicesResponse, EmailInfo, EmailSent, SavedRecipients, ScheduleInfo, ScheduleSettings, SendRecord, HostAvailability, ServiceNode, ServiceSla, ServicesResponse, Sla, SlaSli, SlaSource, SliGap, SliGroup, SliHost, SliPath, SliReport, SliWeb } from '../types';
 import { siteRef } from './hosts';
 import { type Check, flag, guard, lazy, listOf, num, opt, orNull, shape, type Shape, tag, text } from './shape';
 
@@ -178,3 +178,71 @@ export const slaListGuard = guard<Sla[]>('the SLA list', listOf(sla));
 
 /** GET /api/sla/sli. */
 export const slaSliGuard = guard<SlaSli[]>('the SLA figures', listOf(slaSli));
+
+/** GET /api/sli/email. */
+export const emailInfoGuard = guard<EmailInfo>(
+  'the email settings',
+  shape<EmailInfo>({ enabled: flag, from: text, recipients: listOf(text), max: num, allowedDomains: listOf(text), kept: flag }),
+);
+
+/** PUT /api/sli/recipients. */
+export const savedRecipientsGuard = guard<SavedRecipients>('the saved list', shape<SavedRecipients>({ recipients: listOf(text), saved: num }));
+
+/** DELETE /api/sli/recipients. */
+export const deletedRecipientsGuard = guard<DeletedRecipients>('the saved list', shape<DeletedRecipients>({ recipients: listOf(text), removed: num }));
+
+/** POST /api/sli/email: the mail has gone by the time this is read, so a page must not crash on it. */
+export const emailSentGuard = guard<EmailSent>(
+  'the email answer',
+  shape<EmailSent>({
+    sent: num,
+    refused: num,
+    month: text,
+    files: listOf(shape<EmailSent['files'][number]>({ format: text, fileName: text, bytes: num })),
+    remembered: flag,
+  }),
+);
+
+const reportStyle = shape<ScheduleSettings['style']>({ decimal: text, date: text, separator: text });
+
+const scheduleSettings = shape<ScheduleSettings>({
+  enabled: flag,
+  day: num,
+  time: text,
+  formats: listOf(text),
+  style: reportStyle,
+  notify: listOf(text),
+  setBy: text,
+  setAt: num,
+});
+
+const sendRecord = shape<SendRecord>({
+  month: text,
+  trigger: text,
+  by: text,
+  at: num,
+  outcome: text,
+  attempts: num,
+  formats: listOf(text),
+  recipients: num,
+  refused: num,
+  bytes: num,
+  reason: opt(text),
+});
+
+/** GET and PUT /api/sli/schedule. */
+export const scheduleInfoGuard = guard<ScheduleInfo>(
+  'the schedule',
+  shape<ScheduleInfo>({
+    available: flag,
+    why: text,
+    timezone: text,
+    schedule: orNull(scheduleSettings),
+    recipients: listOf(text),
+    next: orNull(shape<NonNullable<ScheduleInfo['next']>>({ month: text, at: num, retrying: flag })),
+    sends: listOf(sendRecord),
+    max: num,
+    maxNotify: num,
+    allowedDomains: listOf(text),
+  }),
+);

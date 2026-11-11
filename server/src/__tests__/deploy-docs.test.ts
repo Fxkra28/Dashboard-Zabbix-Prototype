@@ -19,11 +19,11 @@ const read = (rel: string) => readFileSync(root(rel), 'utf8');
 const flat = (rel: string) => read(rel).replace(/\s+/g, ' ');
 
 /** The credentials: the settings that must never appear with a value outside `.env`. */
-const SECRETS = ['JWT_SECRET', 'ZABBIX_API_TOKEN', 'ZABBIX_WRITE_TOKEN', 'PORTAL_PASS', 'PORTAL_USERS', 'PORTAL_USER', 'ANTHROPIC_API_KEY', 'AI_API_KEY'];
-/** Fixed in docker-compose.yml, not read from anyone's `.env`: the port, and the heap size set with the memory limit. */
-const NOT_SETTINGS = ['PORT', 'NODE_OPTIONS'];
+const SECRETS = ['JWT_SECRET', 'ZABBIX_API_TOKEN', 'ZABBIX_WRITE_TOKEN', 'PORTAL_PASS', 'PORTAL_USERS', 'PORTAL_USER', 'ANTHROPIC_API_KEY', 'AI_API_KEY', 'MAIL_PASS'];
+/** Fixed in docker-compose.yml, not read from anyone's `.env`: the port, the heap size set with the memory limit, and the folder of the state volume. */
+const NOT_SETTINGS = ['PORT', 'NODE_OPTIONS', 'PORTAL_STATE_DIR'];
 /** Settings whose default differs between the two copies, so the example shows them as comments. */
-const PER_COPY = ['WEB_PORT', 'WEB_ORIGIN', 'SESSION_COOKIE', 'AI_PROVIDER', 'AI_BASE_URL'];
+const PER_COPY = ['WEB_PORT', 'WEB_ORIGIN', 'SESSION_COOKIE', 'AI_PROVIDER', 'AI_BASE_URL', 'MAIL_PROVIDER', 'MAIL_HOST', 'MAIL_PORT', 'MAIL_SECURITY', 'MAIL_USER', 'MAIL_FROM', 'MAIL_TO', 'MAIL_ALLOWED_DOMAINS', 'MAIL_SCHEDULE'];
 
 /** The portal-bff service's `environment:` block: each name with its default, or null where it is fixed. Plain line reading, as compose-env.test.ts does. */
 function composeEnv(): Map<string, string | null> {

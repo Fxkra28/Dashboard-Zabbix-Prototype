@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildTestApp } from './helpers/app.js';
+import { pingZabbix } from './helpers/pingZabbix.js';
 import { COLLECTING_STALE_SECONDS, collectingStatus, getIcmpByHost, newestClock } from '../domain/reachability.js';
 
 /**
@@ -115,7 +116,7 @@ describe('GET /api/freshness', () => {
 
   it('says when Zabbix last collected and that it has stopped, for data frozen since September', async () => {
     const frozen = NOW - 20 * 86_400;
-    zbxMock.mockResolvedValue([icmp('1', 20 * 86_400), icmp('2', 20 * 86_400 + 90)]);
+    zbxMock.mockImplementation(pingZabbix([icmp('1', 20 * 86_400), icmp('2', 20 * 86_400 + 90)]));
     const server = await app();
     const res = await server.inject({ url: '/api/freshness' });
     expect(res.statusCode).toBe(200);
@@ -133,7 +134,7 @@ describe('GET /api/freshness', () => {
 
   it('says the reach is lost when Zabbix still collects but almost no device answers its ping', async () => {
     const pings = Array.from({ length: 12 }, (_, i) => icmp(String(i), 30, { itemid: `${i}-1`, lastvalue: i === 0 ? '1' : '0' }));
-    zbxMock.mockResolvedValue(pings);
+    zbxMock.mockImplementation(pingZabbix(pings));
     const server = await app();
     expect((await server.inject({ url: '/api/freshness' })).json()).toMatchObject({
       stale: false,
@@ -145,7 +146,7 @@ describe('GET /api/freshness', () => {
   });
 
   it('says Zabbix is collecting when a value is recent', async () => {
-    zbxMock.mockResolvedValue([icmp('1', 40), icmp('2', 2 * 86_400)]);
+    zbxMock.mockImplementation(pingZabbix([icmp('1', 40), icmp('2', 2 * 86_400)]));
     const server = await app();
     expect(await server.inject({ url: '/api/freshness' }).then((r) => r.json())).toMatchObject({
       ageSeconds: 40,
@@ -155,7 +156,7 @@ describe('GET /api/freshness', () => {
   });
 
   it('works the age out per request from one cached read, so it keeps growing while the cache holds', async () => {
-    zbxMock.mockResolvedValue([icmp('1', 540)]);
+    zbxMock.mockImplementation(pingZabbix([icmp('1', 540)]));
     const server = await app();
     const first = (await server.inject({ url: '/api/freshness' })).json();
     expect(first).toMatchObject({ ageSeconds: 540, stale: false });
@@ -165,20 +166,23 @@ describe('GET /api/freshness', () => {
     expect(second).toMatchObject({ ageSeconds: 560, stale: false });
     vi.setSystemTime(NOW_MS + 29_000);
     expect((await server.inject({ url: '/api/freshness' })).json()).toMatchObject({ ageSeconds: 569 });
-    expect(zbxMock).toHaveBeenCalledTimes(1);
+    // One read of the ping items and one of their values, both still held.
+    expect(zbxMock.mock.calls.map(([method]) => method)).toEqual(['item.get', 'history.get']);
     await server.close();
   });
 
   it('keeps its read for 30 seconds and then asks Zabbix again, so a collector that starts again is noticed', async () => {
-    zbxMock.mockResolvedValue([icmp('1', 20 * 86_400)]);
+    zbxMock.mockImplementation(pingZabbix([icmp('1', 20 * 86_400)]));
     const server = await app();
     expect((await server.inject({ url: '/api/freshness' })).json()).toMatchObject({ stale: true });
+    // The items, their values (none in the window), then Zabbix's own last value of the item, which says how old.
+    expect(zbxMock.mock.calls.map(([method]) => method)).toEqual(['item.get', 'history.get', 'item.get']);
 
     // Zabbix collects again. Within the 30 seconds the old read still stands, and Zabbix is not asked.
-    zbxMock.mockResolvedValue([icmp('1', -30)]);
+    zbxMock.mockImplementation(pingZabbix([icmp('1', -30)]));
     vi.setSystemTime(NOW_MS + 29_000);
     expect((await server.inject({ url: '/api/freshness' })).json()).toMatchObject({ stale: true });
-    expect(zbxMock).toHaveBeenCalledTimes(1);
+    expect(zbxMock).toHaveBeenCalledTimes(3);
 
     vi.setSystemTime(NOW_MS + 31_000);
     expect((await server.inject({ url: '/api/freshness' })).json()).toEqual({
@@ -190,12 +194,12 @@ describe('GET /api/freshness', () => {
       answering: 1,
       reachLost: false,
     });
-    expect(zbxMock).toHaveBeenCalledTimes(2);
+    expect(zbxMock).toHaveBeenCalledTimes(4); // the values again; the list of items is kept an hour
     await server.close();
   });
 
   it('has no age to give without an ICMP item, and does not call that stopped', async () => {
-    zbxMock.mockResolvedValue([]);
+    zbxMock.mockImplementation(pingZabbix([]));
     const server = await app();
     expect((await server.inject({ url: '/api/freshness' })).json()).toMatchObject({
       lastCollectedAt: null,
@@ -205,12 +209,12 @@ describe('GET /api/freshness', () => {
     await server.close();
   });
 
-  it('shares its one item.get with the host states, so asking for both costs Zabbix one call', async () => {
-    zbxMock.mockResolvedValue([icmp('7', 30)]);
+  it('shares its reads with the host states, so asking for both costs Zabbix one read of each', async () => {
+    zbxMock.mockImplementation(pingZabbix([icmp('7', 30)]));
     const server = await app();
     expect(await getIcmpByHost().then((m) => m.get('7')?.state)).toBe('up');
     expect((await server.inject({ url: '/api/freshness' })).statusCode).toBe(200);
-    expect(zbxMock).toHaveBeenCalledTimes(1);
+    expect(zbxMock.mock.calls.map(([method]) => method)).toEqual(['item.get', 'history.get']);
     expect(zbxMock).toHaveBeenCalledWith('item.get', expect.objectContaining({ search: { key_: 'icmpping' } }));
     await server.close();
   });

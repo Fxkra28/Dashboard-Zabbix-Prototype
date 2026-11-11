@@ -87,6 +87,10 @@
   font-size: var(--t-base);
 }
 
+.topbar .signout-error {
+  color: var(--danger-text);
+}
+
 .content {
   padding: var(--s-6) var(--s-7) var(--s-12);
 }

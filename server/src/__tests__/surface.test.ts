@@ -136,13 +136,8 @@ describe('API surface', () => {
     }, {});
 
     expect(byRole.admin).toEqual(['/api/reports/inventory']);
-    expect(byRole.operator?.sort()).toEqual([
-      '/api/links',
-      '/api/net/devices',
-      '/api/net/interfaces',
-      '/api/net/meters',
-      '/api/problems/acknowledge',
-    ]);
+    expect(byRole.wall?.sort()).toEqual(['/api/links', '/api/net/devices', '/api/net/interfaces', '/api/net/meters']);
+    expect(byRole.operator).toEqual(['/api/problems/acknowledge']);
     await app.close();
   });
 });

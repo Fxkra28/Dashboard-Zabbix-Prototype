@@ -4,7 +4,7 @@ import { deflateSync } from 'node:zlib';
 import { LOGO_PNG_BASE64, decodePng } from './logo.js';
 import { fitText, fontWidths, textWidth, toWinAnsi, wrapParagraph, wrapText, wrapWords, type FontFace, type WinAnsiText } from './pdfFonts.js';
 import { PALETTE, TONES, rgb } from './theme.js';
-import type { Bar, BarChart, Cell, Column, Kpi, Note, ReportDoc, Table } from './types.js';
+import { NOTHING_TO_LIST, type Bar, type BarChart, type Cell, type Column, type Kpi, type Note, type ReportDoc, type Table } from './types.js';
 
 /**
  * The PDF writer: turns a ReportDoc into an A4 landscape file in the portal's
@@ -313,7 +313,7 @@ class Layout {
     let targetX: number | undefined;
     if (Number.isFinite(chart.target)) {
       targetX = xOf(chart.target);
-      const targetLabel = toWinAnsi(`Target ${fmtNum(chart.target)}%`);
+      const targetLabel = toWinAnsi(chart.targetLabel ?? `Target ${fmtNum(chart.target)}%`);
       const targetW = textWidth(targetLabel, 'bold', 8);
       text(ops, targetLabel, Math.min(Math.max(targetX, x0 + targetW / 2), RIGHT - targetW / 2), this.y + 8, 'bold', 8, PALETTE.primaryStrong, 'center');
     }
@@ -345,7 +345,7 @@ class Layout {
       if (targetX !== undefined && f.x - 2 < targetX && targetX < f.x + w + 2) fillRect(ops, f.x - 2, f.top, w + 4, step.bar, PALETTE.tint);
       text(ops, f.label, f.x, f.base, 'bold', size, PALETTE.text);
     }
-    text(ops, toWinAnsi(`${fmtNum(axisMin)}%`), x0, bottom + 12, 'regular', 7.5, PALETTE.muted, 'center');
+    text(ops, toWinAnsi(chart.axisLabel ?? `${fmtNum(axisMin)}%`), x0, bottom + 12, 'regular', 7.5, PALETTE.muted, 'center');
     text(ops, toWinAnsi('100%'), x1, bottom + 12, 'regular', 7.5, PALETTE.muted, 'center');
     this.y = bottom + 16;
   }
@@ -362,7 +362,7 @@ class Layout {
       this.mark(t.title);
       this.heading(title, caption);
       paint(this.ops, roundPath(MARGIN, this.y, PRINT_W, 24, 4), { fill: PALETTE.neutralBg, stroke: PALETTE.border });
-      const empty = fitText(toWinAnsi(t.empty ?? 'Nothing to list.'), 'regular', BODY_SIZE, PRINT_W - 2 * PAD - 8);
+      const empty = fitText(toWinAnsi(t.empty ?? NOTHING_TO_LIST), 'regular', BODY_SIZE, PRINT_W - 2 * PAD - 8);
       text(this.ops, empty, MARGIN + PAD + 4, centred(this.y, 24, BODY_SIZE), 'regular', BODY_SIZE, PALETTE.neutralText);
       this.y += 24 + SECTION_GAP;
       return;

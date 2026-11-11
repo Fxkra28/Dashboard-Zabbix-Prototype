@@ -164,17 +164,19 @@ describe('the host list (the Hosts page)', () => {
 });
 
 describe('the dashboard counts', () => {
-  it('lets a whole answer through, and one with more than it names', () => {
+  it('lets a whole answer through, one with more than it names, and one whose item count is not in yet', () => {
     expect(statsGuard.misfit(stats())).toBeNull();
     expect(statsGuard.misfit({ ...stats(), uptime: 5 })).toBeNull();
     expect(statsGuard.misfit({ ...stats(), bySeverity: {} })).toBeNull();
+    expect(statsGuard.misfit({ ...stats(), items: null })).toBeNull();
+    expect(statsGuard.misfit({ ...stats(), triggers: null })).toBeNull();
   });
 
   it('refuses an empty answer, a list, a count sent as text, and a missing breakdown', () => {
     expect(statsGuard.misfit({})).toBe('hosts is missing');
     expect(statsGuard.misfit([])).toBe('the answer is not an object');
     expect(statsGuard.misfit({ ...stats(), hosts: '24' })).toBe('hosts is not a number');
-    expect(statsGuard.misfit({ ...stats(), items: null })).toBe('items is not a number');
+    expect(statsGuard.misfit({ ...stats(), items: '1000' })).toBe('items is not a number');
     expect(statsGuard.misfit({ ...stats(), bySeverity: null })).toBe('bySeverity is not an object');
   });
 });

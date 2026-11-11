@@ -205,7 +205,7 @@ describe('HostsView web monitoring', () => {
     show();
     const p = await panel();
     const row = p.querySelector('.web-failure') as HTMLElement;
-    expect(row).toHaveTextContent(/^SITE-WEB · Checkout\s*failed at step 2, \d\d:\d\d:\d\d$/);
+    expect(row).toHaveTextContent(/^SITE-WEB · Checkout\s*failed at step 2, \d\d:\d\d:\d\d WIB$/);
     expect(within(row).getByRole('link', { name: 'SITE-WEB' })).toHaveAttribute('href', '/graphs?hostid=4&itemid=401');
   });
 
@@ -280,6 +280,6 @@ describe('HostsView when a request fails or is awaited', () => {
   it('says when the device list was updated', async () => {
     ready();
     show();
-    expect(await screen.findByText(/^Updated \d\d:\d\d:\d\d$/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Updated \d\d:\d\d:\d\d WIB$/)).toBeInTheDocument();
   });
 });

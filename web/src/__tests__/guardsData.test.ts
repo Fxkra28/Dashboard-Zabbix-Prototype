@@ -29,8 +29,8 @@ const hostIf = { ip: '192.0.2.1', type: '2', available: '1' };
 const siteRef = { code: 1, name: 'Jakarta' };
 const hostBase = { hostid: '1', name: '1.1 SAMPLE SWITCH', status: '0', maintenance_status: '0', interfaces: [hostIf], site: siteRef };
 const HOST_OPT = ['maintenance_status', 'interfaces', 'site', 'interfaces[0].type', 'interfaces[0].available'];
-const item = { itemid: '10', name: 'CPU', key_: 'system.cpu.util', value_type: '0', units: '%', lastvalue: '1', lastclock: '1', state: '0', status: '0', delay: '1m', flags: '0', tags: [tag], hosts: [{ hostid: '1', name: 'x' }] };
-const ITEM_OPT = ['units', 'lastvalue', 'lastclock', 'state', 'status', 'delay', 'flags', 'tags', 'hosts'];
+const item = { itemid: '10', name: 'CPU', key_: 'system.cpu.util', value_type: '0', units: '%', state: '0', status: '0', delay: '1m', flags: '0', tags: [tag], hosts: [{ hostid: '1', name: 'x' }] };
+const ITEM_OPT = ['units', 'state', 'status', 'delay', 'flags', 'tags', 'hosts'];
 const sev = { '3': 1 };
 const sliGroup = { key: 'k', name: 'Group', hosts: 3, withData: 2, sli: 99.5, downtime: 60, meeting: true, belowTarget: 0 };
 const gap = { from: 1, to: 2 };
@@ -84,8 +84,8 @@ const cases: Case[] = [
   {
     name: 'latest data',
     guard: g.latestGuard,
-    sample: { items: [{ ...item, prevvalue: '0' }], truncated: false, total: 1, page: 1, pageSize: 100 },
-    optional: ['total', 'page', 'pageSize', 'items[0].prevvalue', ...ITEM_OPT.map((p) => `items[0].${p}`)],
+    sample: { items: [{ ...item, lastvalue: '1', lastclock: '1', prevvalue: '0' }], truncated: false, total: 1, page: 1, pageSize: 100 },
+    optional: ['total', 'page', 'pageSize', 'items[0].lastvalue', 'items[0].lastclock', 'items[0].prevvalue', ...ITEM_OPT.map((p) => `items[0].${p}`)],
   },
   {
     name: 'graph',

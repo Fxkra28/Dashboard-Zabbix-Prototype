@@ -6,11 +6,11 @@ import { normalizeIP } from '@fastify/rate-limit';
 import { config, SESSION_EPOCH_DEFAULT } from '../core/config.js';
 import { pageRoles } from './pageAccess.js';
 import { loginBody, noBody } from '../core/schemas.js';
-import { decoyVerify, isGuessable, parseStoredPassword, verifyPassword, type StoredPassword } from './passwords.js';
+import { decoyVerify, isCommon, isGuessable, parseStoredPassword, verifyPassword, type StoredPassword } from './passwords.js';
 
 /**
  * Portal auth and RBAC. Every source slide in HCML's review is stamped Private and Confidential, so
- * an open portal is not deployable: a JWT and three roles gate the portal's own routes. The Zabbix
+ * an open portal is not deployable: a JWT and four roles gate the portal's own routes. The Zabbix
  * token is never exposed either way; RBAC decides who sees which portal view, not what the BFF may
  * ask Zabbix.
  *
@@ -18,14 +18,16 @@ import { decoyVerify, isGuessable, parseStoredPassword, verifyPassword, type Sto
  *
  *   viewer:   all monitoring, plus the plain-language "Explain" actions. The AI layer exists for
  *             non-engineers, so gating it above this role would defeat its purpose.
- *   operator: + the engineering surfaces (network, links) and acknowledge/close.
- *   admin:    + governance (the inventory scorecard).
+ *   wall:     + the engineering surfaces (network, links, the meters), to read only: the account
+ *             of a NOC screen, which never acknowledges or closes (tracker MT-06).
+ *   operator: + acknowledge/close.
+ *   admin:    + governance (the inventory scorecard) and what leaves the portal: the emailed report and the monthly send.
  */
 
-export const ROLES = ['viewer', 'operator', 'admin'] as const;
+export const ROLES = ['viewer', 'wall', 'operator', 'admin'] as const;
 export type Role = (typeof ROLES)[number];
 
-const RANK: Record<Role, number> = { viewer: 1, operator: 2, admin: 3 };
+const RANK: Record<Role, number> = { viewer: 1, wall: 2, operator: 3, admin: 4 };
 
 export const isRole = (v: unknown): v is Role => ROLES.includes(v as Role);
 
@@ -35,7 +37,9 @@ export const isRole = (v: unknown): v is Role => ROLES.includes(v as Role);
  */
 const ROUTE_RULES: { pattern: RegExp; role: Role }[] = [
   { pattern: /^\/api\/reports\/inventory/, role: 'admin' },
-  { pattern: /^\/api\/(links|net)\b/, role: 'operator' },
+  // Sends a file out of the portal, and sets who gets it and when.
+  { pattern: /^\/api\/sli\/(email|schedule|recipients)/, role: 'admin' },
+  { pattern: /^\/api\/(links|net)\b/, role: 'wall' },
   // The acknowledge/close write-back.
   { pattern: /^\/api\/problems\/(acknowledge|close)/, role: 'operator' },
 ];
@@ -233,10 +237,10 @@ const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /**
  * Refuse to start with a password anyone can guess: empty (what copying
- * .env.example gave) or the built-in "admin". Names the users, never the
- * passwords. Only with auth on.
+ * .env.example gave) or the built-in "admin". Passwords on a short list are
+ * warned about, not refused. Names the users, never the passwords. Only with auth on.
  */
-export function assertUsers(): void {
+export function assertUsers(warn: (message: string) => void = () => undefined): void {
   if (!config.auth.enabled) return;
   // Falling back to PORTAL_USER/PORTAL_PASS here would blame a user nobody configured.
   const raw = (process.env.PORTAL_USERS ?? '').trim();
@@ -257,6 +261,14 @@ export function assertUsers(): void {
         'Set PORTAL_PASS, or PORTAL_USERS as name:password:role triples, in .env.',
     );
   }
+  // Not a refusal: a password on a short list is a weak choice and not an unset one, and the owner may have reasons.
+  const common = loaded.filter((u) => isCommon(u.pass));
+  if (common.length) {
+    warn(
+      `${common.map((u) => `"${u.name}"`).join(', ')} ${common.length === 1 ? 'has' : 'have'} a password that is on every short list of passwords, ` +
+        'or is still a placeholder from the documents. Anyone can guess it. Set a long one in .env.',
+    );
+  }
 }
 
 /** The role attached to a request. With auth off everyone is admin. */
@@ -264,6 +276,25 @@ export function roleOf(req: FastifyRequest): Role {
   if (!config.auth.enabled) return 'admin';
   const user = req.user as { role?: unknown } | undefined;
   return isRole(user?.role) ? user.role : 'viewer';
+}
+
+/**
+ * The session a token belongs to: its sid, else its jti (tokens from before sessions had one), else a hash of what it says.
+ * Read from the claims of a verified token, never from the header text, so no spelling of the header gets round a sign-out.
+ */
+export function sessionIdOf(claims: unknown): string | undefined {
+  const c = (claims ?? {}) as { sid?: unknown; jti?: unknown; sub?: unknown; iat?: unknown; exp?: unknown };
+  if (typeof c.sid === 'string' && c.sid) return c.sid;
+  if (typeof c.jti === 'string' && c.jti) return c.jti;
+  if (typeof c.sub !== 'string' || typeof c.iat !== 'number' || typeof c.exp !== 'number') return undefined;
+  return createHash('sha256').update(`${c.sub}|${c.iat}|${c.exp}`).digest('base64url');
+}
+
+const signOutListeners = new Set<(session: string) => void>();
+/** Call `listener` with the id of each session that signs out. Returns the function that stops it. */
+export function onSignOut(listener: (session: string) => void): () => void {
+  signOutListeners.add(listener);
+  return () => void signOutListeners.delete(listener);
 }
 
 /** Requests the guard saw arrive with a valid session on a public route that shows more to a signed-in caller. */
@@ -291,14 +322,9 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
   const users = loadUsers((m) => app.log.warn(m));
   const hashed = users.some((u) => u.check.kind === 'scrypt');
 
-  // Tokens signed out before they expire, by hash, with their expiry. In memory, so a restart of the
-  // BFF forgets them; SESSION_EPOCH still ends every session at once.
+  // Sessions signed out before their tokens expire, with the time the last of those tokens could still be valid.
+  // In memory, so a restart of the BFF forgets them; SESSION_EPOCH still ends every session at once.
   const signedOut = new Map<string, number>();
-  const tokenOf = (req: FastifyRequest): string | undefined => {
-    const header = req.headers.authorization;
-    return header?.startsWith('Bearer ') ? header.slice(7).trim() : req.cookies?.[cookieName];
-  };
-  const keyOf = (token: string) => createHash('sha256').update(token).digest('base64url');
 
   /**
    * The configured user a token belongs to, or undefined when that user is gone. A name
@@ -323,8 +349,8 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
     }
     // A token from before the epoch was raised. One with no epoch is epoch 1, so the default changes nothing for it.
     if (String(claims.ep ?? SESSION_EPOCH_DEFAULT) !== config.auth.sessionEpoch) return null;
-    const token = tokenOf(req);
-    if (token && signedOut.has(keyOf(token))) return null;
+    const session = sessionIdOf(claims);
+    if (session && signedOut.has(session)) return null;
     const user = currentUser(claims.sub, claims.role);
     if (!user) return null;
     req.user = { ...claims, role: user.role };
@@ -354,10 +380,12 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
     return matches.find((u) => u.name === username) ?? matches[0];
   };
 
-  /** Sign a token for `u` into the session cookie. The body carries its lifetime, never the token. */
-  const issue = (u: PortalUser, req: FastifyRequest, reply: FastifyReply) => {
-    // The jti keeps two sign-ins in the same second apart, so signing one out leaves the other.
-    const token = app.jwt.sign({ sub: u.name, role: u.role, ep: config.auth.sessionEpoch, jti: randomUUID() }, { expiresIn: tokenLifetime(), ...claimsOfThisPortal });
+  /**
+   * Sign a token for `u` into the session cookie; the body carries its lifetime, never the token. A renewal keeps the sid,
+   * so signing out ends every token of the chain; the jti keeps two tokens of one second apart.
+   */
+  const issue = (u: PortalUser, req: FastifyRequest, reply: FastifyReply, sid: string = randomUUID()) => {
+    const token = app.jwt.sign({ sub: u.name, role: u.role, ep: config.auth.sessionEpoch, jti: randomUUID(), sid }, { expiresIn: tokenLifetime(), ...claimsOfThisPortal });
     const { iat, exp } = app.jwt.decode(token) as { iat: number; exp: number };
     reply.setCookie(cookieName, token, { ...cookieOptions(req), maxAge: exp - iat });
     return { user: { name: u.name, role: u.role }, expiresIn: exp - iat };
@@ -471,16 +499,18 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
     };
   });
 
-  // Public, so an expired or missing cookie can still be cleared. The token it carried is refused from then
-  // on, so a copy of it ends too; only a token this BFF signed is remembered, so made-up ones cannot fill the list.
+  // Public, so an expired or missing cookie can still be cleared. Ends the whole session (every token, every renewal, its open
+  // streams), whatever the spelling of the header; only a token this BFF signed is remembered, so made-up ones cannot fill the list.
   app.post('/api/auth/logout', { schema: { body: noBody } }, async (req, reply) => {
-    const token = tokenOf(req);
-    const claims = token ? ((await req.jwtVerify().catch(() => null)) as { exp?: number } | null) : null;
-    if (token && claims?.exp) {
+    const claims = (await req.jwtVerify().catch(() => null)) as { exp?: number } | null;
+    const session = claims?.exp ? sessionIdOf(claims) : undefined;
+    if (session) {
       const now = Math.floor(Date.now() / 1000);
       for (const [key, exp] of signedOut) if (exp <= now) signedOut.delete(key);
-      signedOut.set(keyOf(token), claims.exp);
+      // No token of the session can outlast one signed this second.
+      signedOut.set(session, now + config.auth.sessionHours * 3600);
       if (signedOut.size > LOGIN_FAIL_KEYS) signedOut.delete(signedOut.keys().next().value as string);
+      for (const listener of signOutListeners) listener(session);
     }
     reply.clearCookie(cookieName, cookieOptions(req));
     return { ok: true };
@@ -527,6 +557,6 @@ export async function setupAuth(app: FastifyInstance): Promise<void> {
     if (!found) {
       return reply.code(401).send({ error: 'unauthorized', message: 'Your session has expired. Sign in again.' });
     }
-    return issue(found, req, reply);
+    return issue(found, req, reply, sessionIdOf(req.user));
   });
 }

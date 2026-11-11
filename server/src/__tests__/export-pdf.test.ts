@@ -474,6 +474,19 @@ describe('key figures and chart', () => {
     for (const b of chart.bars) expect(texts).toContain(b.text);
   });
 
+  it('prints the target and axis labels the document gives, and the numbers when it gives none', () => {
+    const d = sampleDoc();
+    d.chart = { ...d.chart!, target: 99.5, axisMin: 95, targetLabel: 'Target 99,5%', axisLabel: '95,0%' };
+    const labelled = pageTexts(build(d).pages.find((p) => p.content.includes('/Bar BMC'))!);
+    expect(labelled).toContain('Target 99,5%');
+    expect(labelled).toContain('95,0%');
+    expect(labelled).not.toContain('Target 99.5%');
+    d.chart = { ...d.chart, targetLabel: undefined, axisLabel: undefined };
+    const bare = pageTexts(build(d).pages.find((p) => p.content.includes('/Bar BMC'))!);
+    expect(bare).toContain('Target 99.5%');
+    expect(bare).toContain('95%');
+  });
+
   it('keeps 14 and 40 bars whole on one page', () => {
     for (const count of [14, 40]) {
       const d = sampleDoc();

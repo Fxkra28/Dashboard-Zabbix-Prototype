@@ -16,7 +16,7 @@ import { problemsApi } from './problems';
 import { reportsApi } from './reports';
 import { shellApi } from './shell';
 import { slaApi } from './sla';
-import { AUTH_CHANGED, goToSignIn, isSignedOut, lastKnownUser } from './session';
+import { goToSignIn, isSignedOut, lastKnownUser, userOrRoleChanged } from './session';
 
 export const api = {
   ...shellApi,
@@ -31,7 +31,7 @@ export const api = {
   ...assistantApi,
 };
 
-export { recordSession, sessionTiming, isSignedOut, AUTH_CHANGED, goToSignIn, renewSession, login, logout } from './session';
+export { recordSession, sessionTiming, isSignedOut, AUTH_CHANGED, goToSignIn, renewSession, login, logout, onSessionChange } from './session';
 export { withSignal, HttpFailure } from './client';
 export { fileNameFrom, reportFileName } from './sla';
 export type { AvailabilityQuery, ReportFormat } from './sla';
@@ -54,7 +54,7 @@ window.addEventListener('pageshow', (e) => {
     .me()
     .then((m) => {
       if (was && m.user && (m.user.name !== was.name || m.user.role !== was.role)) {
-        window.dispatchEvent(new Event(AUTH_CHANGED));
+        userOrRoleChanged();
       }
     })
     .catch(() => undefined);

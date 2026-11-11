@@ -1,7 +1,7 @@
 /** Open problems by age, and the ones that have gone unacknowledged longest: the aging report. */
 
 import { cached } from '../core/cache.js';
-import { getProblems, openProblems } from '../domain/queries.js';
+import { cachedProblems, openProblems } from '../domain/queries.js';
 
 export interface AgingReport {
   buckets: { label: string; count: number }[];
@@ -26,7 +26,7 @@ const BUCKETS: { label: string; maxSeconds: number }[] = [
 ];
 
 export async function getAging(): Promise<AgingReport> {
-  const problems = await cached('problems', 5_000, getProblems).then(openProblems);
+  const problems = await cachedProblems().then(openProblems);
   const now = Math.floor(Date.now() / 1000);
   const unacked = problems.filter((p) => p.acknowledged !== '1');
 

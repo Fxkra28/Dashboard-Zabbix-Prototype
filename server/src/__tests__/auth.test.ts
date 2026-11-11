@@ -97,7 +97,7 @@ describe('auth guard', () => {
 
   it('names the missing role in a 403', async () => {
     const res = await app.inject({ url: '/api/links', headers: bearer(tokenFor('ana', 'viewer')) });
-    expect(res.json()).toMatchObject({ error: 'forbidden', message: expect.stringContaining('"operator"') });
+    expect(res.json()).toMatchObject({ error: 'forbidden', message: expect.stringContaining('"wall"') });
   });
 
   // The role comes from PORTAL_USERS on every request, not from the token.
@@ -507,6 +507,112 @@ describe('POST /api/auth/logout', () => {
     const other = app.jwt.sign({ sub: 'ana', role: 'viewer', ...CLAIMS }, { expiresIn: '5h' });
     await logout(page(one));
     expect((await app.inject({ url: '/api/hosts', headers: cookieOnly(other) })).statusCode).toBe(200);
+  });
+
+  describe('a signed-out session stays signed out (SC-39, SC-40)', () => {
+    const signIn = () => app.inject({ method: 'POST', url: '/api/auth/login', headers: page(), payload: { username: 'ana', password: 'viewer-pass' } });
+    const renew = async (token: string) => sessionCookie(await app.inject({ method: 'POST', url: '/api/auth/refresh', headers: page(token) }))?.value;
+    const hosts = async (headers: Record<string, string>) => (await app.inject({ url: '/api/hosts', headers })).statusCode;
+
+    it('refuses the token whatever the case of the scheme', async () => {
+      const token = sessionCookie(await signIn())!.value;
+      const accepted = [`Bearer ${token}`, `bearer ${token}`, `BEARER ${token}`];
+      // The JWT library takes one space only, so these were never a way in.
+      const never = [`Bearer  ${token}`, `Bearer\t${token}`];
+      for (const authorization of accepted) expect(await hosts({ host: HOST, authorization }), `before: ${authorization.slice(0, 8)}`).toBe(200);
+      for (const authorization of never) expect(await hosts({ host: HOST, authorization }), `before: ${JSON.stringify(authorization.slice(0, 8))}`).toBe(401);
+      expect((await logout(page(token))).statusCode).toBe(200);
+      for (const authorization of [...accepted, ...never]) expect(await hosts({ host: HOST, authorization }), `after: ${JSON.stringify(authorization.slice(0, 8))}`).toBe(401);
+      expect(await hosts(cookieOnly(token))).toBe(401);
+    });
+
+    it('signs a token out when it arrives as a header written bearer and no cookie comes with it', async () => {
+      const token = sessionCookie(await signIn())!.value;
+      expect((await logout({ ...page(), authorization: `bearer ${token}` })).statusCode).toBe(200);
+      expect(await hosts(cookieOnly(token))).toBe(401);
+      expect(await hosts({ host: HOST, authorization: `Bearer ${token}` })).toBe(401);
+    });
+
+    it('carries one session id through the renewals, and gives each token an id of its own', async () => {
+      const first = sessionCookie(await signIn())!.value;
+      const second = (await renew(first))!;
+      const [a, b] = [first, second].map((t) => app.jwt.decode(t) as { sid?: string; jti?: string });
+      expect(a.sid).toBeTruthy();
+      expect(b.sid).toBe(a.sid);
+      expect(b.jti).not.toBe(a.jti);
+    });
+
+    it('ends every token of the session when one of them is signed out: the one it was renewed from, and the one it came to', async () => {
+      const first = sessionCookie(await signIn())!.value;
+      const second = (await renew(first))!;
+      expect(await hosts(cookieOnly(first))).toBe(200);
+      expect(await hosts(cookieOnly(second))).toBe(200);
+      await logout(page(second));
+      expect(await hosts(cookieOnly(first))).toBe(401);
+      expect(await hosts(cookieOnly(second))).toBe(401);
+    });
+
+    it('stops a copy from renewing once the session is signed out, so its renewals do not outlive it', async () => {
+      const mine = sessionCookie(await signIn())!.value;
+      const copy = (await renew(mine))!; // what someone who copied the cookie holds, and renews on
+      const copyRenewed = (await renew(copy))!;
+      await logout(page(mine));
+      expect(await renew(copy)).toBeUndefined();
+      expect(await renew(copyRenewed)).toBeUndefined();
+      expect(await hosts(cookieOnly(copyRenewed))).toBe(401);
+    });
+
+    it('leaves another session of the same user alone', async () => {
+      const [one, other] = [sessionCookie(await signIn())!.value, sessionCookie(await signIn())!.value];
+      await logout(page(one));
+      expect(await hosts(cookieOnly(other))).toBe(200);
+      expect(await renew(other)).toBeTruthy();
+    });
+
+    it('takes a token with only a jti, as the sign-ins before this change made, as its own session, and carries it on', async () => {
+      const old = app.jwt.sign({ sub: 'ana', role: 'viewer', ...CLAIMS, jti: 'issued-before-sessions' }, { expiresIn: '3h' });
+      const renewed = (await renew(old))!;
+      expect((app.jwt.decode(renewed) as { sid?: string }).sid).toBe('issued-before-sessions');
+      await logout(page(renewed));
+      expect(await hosts(cookieOnly(old))).toBe(401);
+    });
+
+    it('remembers the session for as long as any of its tokens could last, even when later sign-outs clear out the old entries', async () => {
+      const token = sessionCookie(await signIn())!.value;
+      await logout(page(token));
+      vi.useFakeTimers({ now: Date.now() + 11 * 3600_000, toFake: ['Date'] });
+      try {
+        // Eleven of the twelve hours have gone: the token itself would still verify, so only the list keeps it out.
+        const later = sessionCookie(await signIn())!.value;
+        await logout(page(later));
+        expect(await hosts(cookieOnly(token))).toBe(401);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('remembers it for a whole session length from the sign-out, not only until the token it was signed out with runs out', async () => {
+      const start = Date.now();
+      const first = sessionCookie(await signIn())!.value;
+      vi.useFakeTimers({ now: start + 6 * 3600_000, toFake: ['Date'] });
+      try {
+        const renewed = (await renew(first))!; // good until eighteen hours after the first sign-in
+        expect((await logout(page(first))).statusCode).toBe(200); // the token that ends first
+        vi.setSystemTime(start + 13 * 3600_000); // the first token has run out, the renewed one has five hours left
+        await logout(page(sessionCookie(await signIn())!.value)); // a sign-out clears the entries that have run out
+        expect(await hosts(cookieOnly(renewed))).toBe(401);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not remember a token this portal did not sign, so made-up ones cannot push a real entry out of the list', async () => {
+      const real = sessionCookie(await signIn())!.value;
+      await logout(page(real));
+      // The list holds 10,000 sessions at most and drops the oldest first.
+      for (let i = 0; i < 10_050; i += 1) await logout(page(`forged-${i}`));
+      expect(await hosts(cookieOnly(real))).toBe(401);
+    }, 60_000);
   });
 });
 

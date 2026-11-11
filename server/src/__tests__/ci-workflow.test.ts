@@ -101,6 +101,7 @@ const CHECKERS = [
   'tools/check/links.check.mjs',
   'tools/check/facts.check.mjs',
   'tools/check/diagrams.check.mjs',
+  'tools/check/handover.check.mjs',
   'tools/check/parity.check.mjs',
 ];
 
@@ -112,6 +113,33 @@ describe('.github/workflows/ci.yml', () => {
     expect(checkSteps.length).toBeGreaterThan(8);
     expect(images.length).toBeGreaterThan(2);
     expect(secretScan.length).toBeGreaterThan(1);
+  });
+
+  it('runs every job on a runner image named by its version, never a moving -latest label (IN-48)', () => {
+    const labels = [...text.matchAll(/^\s+runs-on:\s*(\S+)\s*$/gm)].map((m) => m[1]);
+    expect(labels).toHaveLength(5);
+    for (const label of labels) {
+      expect(label).not.toMatch(/-latest$/);
+      expect(label).toMatch(/^ubuntu-\d{2}\.\d{2}$/);
+    }
+    expect(new Set(labels).size).toBe(1);
+  });
+
+  it('cancels a superseded run of a branch but never one on main, so the scan of a push is not dropped by the next push (IN-55)', () => {
+    expect(text).toMatch(/cancel-in-progress:\s*\$\{\{\s*github\.ref != 'refs\/heads\/main'\s*\}\}/);
+    expect(text).not.toMatch(/cancel-in-progress:\s*true/);
+  });
+
+  it('gives each push to main a group of its own: GitHub drops a waiting run when another arrives in its group, cancel-in-progress or not (IN-55)', () => {
+    expect(text).toMatch(/group:\s*ci-\$\{\{\s*github\.ref == 'refs\/heads\/main' && github\.sha \|\| github\.ref\s*\}\}/);
+    expect(text).not.toMatch(/group:\s*ci-\$\{\{\s*github\.ref\s*\}\}\s*$/m);
+  });
+
+  it('names the parity step for what it does in CI, which is to run the checker\'s own checks and compare nothing (IN-55)', () => {
+    const step = checkSteps.find((s) => s.run?.includes('parity.check.mjs'));
+    expect(step?.name).toBeDefined();
+    expect(step!.name).not.toMatch(/two copies match/i);
+    expect(step!.name).toMatch(/own checks/i);
   });
 
   it('runs on pushes and pull requests to main', () => {

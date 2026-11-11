@@ -9,7 +9,7 @@ Implements `plan_1.2.md` (in `myown/documents/plan/`, outside this repo) Phase 2
 
 Every other page in this portal answers *"which host is broken?"*. This one answers *"which
 service is degraded, and why?"*, so a failure reads as "BD FPSO, Voice path is degraded,
-because the agent on FGR-60F-FPSO-01 stopped reporting" rather than a bare host alert.
+because the agent on FGR-60F-DELTA-01 stopped reporting" rather than a bare host alert.
 
 ## Zabbix does the roll-up; the portal makes it legible
 

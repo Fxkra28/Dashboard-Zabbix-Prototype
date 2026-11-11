@@ -16,12 +16,12 @@ entire point of this page.
 | Dimension | Counts as present when | Configure with |
 |---|---|---|
 | Naming | host name matches a regex | `HOST_NAME_PATTERN` (empty ⇒ *not scored*) |
-| Site | an explicit marker exists: tag or inventory | `SITE_TAG` |
+| Site | an explicit marker exists: tag, host name or inventory | `SITE_TAG` |
 | Owner / PIC | inventory `poc_1_name` / `poc_1_email`, or a tag | `OWNER_TAG` |
 | Criticality | a criticality tag | `CRITICALITY_TAG` |
 
 Site is deliberately strict. [`resolveSite()`](../../server/src/services/sites.ts) always returns
-*something* (falling back to a host group), but the scorecard counts only `tag` and `inventory` as
+*something* (falling back to a host group), but the scorecard counts only `tag`, `name` (the host name says the site) and `inventory` as
 present. Falling back to a group is exactly the ambiguity Goal 1 names, so it scores as a gap: the
 scorecard and the Sites board agree on the same 86% figure for that reason.
 
@@ -62,7 +62,7 @@ One real host, `INTERNET`, carries no prefix at all and correctly fails. That is
 not a false negative.
 
 Site-group naming is `Site/<CODE>` via `SITE_GROUP_PREFIX`; it only applies when a host has no
-`site` tag and no inventory location, since those are checked first (§14).
+`site` tag, no site in its name and no inventory location, since those are checked first (§14).
 
 The fifth dimension HCML lists, dependency, is answered by the
 [Services tree](15-services-tree.md#15-services-tree) rather than a per-host field: a host is in a dependency map when

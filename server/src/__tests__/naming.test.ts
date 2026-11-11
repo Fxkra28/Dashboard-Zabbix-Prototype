@@ -13,8 +13,8 @@ const PATTERN = /^(\d{1,2}\.\d{1,2}(\.\d{1,2})?\.?\s|(INET|WEB|SERVER)\s:\s).+$/
 
 const COMPLIANT = [
   // Two-segment device names.
-  '1.1 IDX02FW01',
-  '3.1 FG60F-SSB-01',
+  '1.1 ALPHA-FW01',
+  '3.1 FG60F-CHARLIE-01',
   '12.1 FG-100F-POR-1',
   // Three-segment device names.
   '1.2.1 IDX02CORESWITCH',

@@ -4,10 +4,9 @@
  */
 
 import { zbx } from '../clients/zabbix.js';
-import { BadRequestError } from '../core/validate.js';
 import { config } from '../core/config.js';
 import { chunk, fetchEventsSliced, mapLimit } from '../sli/events.js';
-import { monthBounds } from '../sli/time.js';
+import { checkPeriodStart, monthBounds } from '../sli/time.js';
 
 /**
  * Zabbix severity levels at or above `min`, for `event.get`'s `severities`.
@@ -56,15 +55,12 @@ export function lastDays(days: number): ReportWindow {
 /**
  * A calendar month, cut in the SLA time zone (Asia/Jakarta) like every monthly
  * figure in the portal, and clipped to now: the current month is measured as
- * far as it has happened. Mirrors the engine's limits (computeSli).
+ * far as it has happened. It asks the same period check as the engine (`checkPeriodStart`).
  */
 export function monthWindow(month: string): ReportWindow {
   const now = Math.floor(Date.now() / 1000);
   const { from, to } = monthBounds(month, config.sla.timezone);
-  if (from >= now) throw new BadRequestError('That period has not started yet.');
-  if (from < now - 400 * 86400) {
-    throw new BadRequestError('Zabbix keeps events for about a year; pick a later period.');
-  }
+  checkPeriodStart(from, now);
   return { from, to: Math.min(to, now) };
 }
 

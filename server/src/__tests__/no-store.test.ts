@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
+import { request } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import { registerNoStore } from '../http/noStore.js';
+import { askedPath, registerNoStore } from '../http/noStore.js';
 
 /** Signed-in replies tell a browser and a proxy to keep nothing. */
 
@@ -49,6 +52,57 @@ describe('Cache-Control on /api replies', () => {
   it('does not touch a path outside /api', async () => {
     const app = await appWithRoutes();
     expect((await app.inject({ url: '/elsewhere' })).headers['cache-control']).toBeUndefined();
+  });
+
+  it('reads a path written with encoded letters as the path it names (SC-34)', async () => {
+    const app = await appWithRoutes();
+    expect((await app.inject({ url: '/%61pi/problems' })).headers['cache-control']).toBe('no-store');
+    expect((await app.inject({ url: '/api/%70roblems?days=7' })).headers['cache-control']).toBe('no-store');
+    expect((await app.inject({ url: '/%61pi/nothing-here' })).headers['cache-control']).toBe('no-store');
+    expect((await app.inject({ url: '/%61pi/health' })).headers['cache-control']).toBeUndefined();
+    expect((await app.inject({ url: '/%65lsewhere' })).headers['cache-control']).toBeUndefined();
+  });
+
+  it('cuts the host of an absolute-form request line, which a direct client may send (SC-34)', async () => {
+    const app = await appWithRoutes();
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = app.server.address() as AddressInfo;
+    const get = (path: string) =>
+      new Promise<string | undefined>((resolve, reject) => {
+        const req = request({ host: '127.0.0.1', port, path }, (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.headers['cache-control']));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+    try {
+      expect(await get('http://example.test/api/problems')).toBe('no-store');
+      expect(await get('HTTPS://example.test:8443/%61pi/problems?days=7')).toBe('no-store');
+      expect(await get('http://example.test/api/health')).toBeUndefined();
+      expect(await get('http://example.test/elsewhere')).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('cuts the query and decodes the escapes, and keeps the path as it came when an escape is broken (SC-34)', () => {
+    expect(askedPath('/%61pi/problems?days=7')).toBe('/api/problems');
+    expect(askedPath('http://example.test/api/problems')).toBe('/api/problems');
+    expect(askedPath('/api/problems')).toBe('/api/problems');
+    expect(askedPath('/api/%E0%A4%A')).toBe('/api/%E0%A4%A'); // Fastify answers such a path with a 400 before any hook runs
+  });
+
+  it('keeps the header on a CORS preflight and a HEAD request, as before (SC-34)', async () => {
+    const app = Fastify({ logger: false });
+    registerNoStore(app);
+    await app.register(cors, { origin: 'http://localhost:8081', credentials: true });
+    app.get('/api/problems', async () => ({ ok: true }));
+    await app.ready();
+    const preflight = await app.inject({ method: 'OPTIONS', url: '/api/problems', headers: { origin: 'http://localhost:8081', 'access-control-request-method': 'GET' } });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers['cache-control']).toBe('no-store');
+    expect((await app.inject({ method: 'HEAD', url: '/api/problems' })).headers['cache-control']).toBe('no-store');
   });
 });
 

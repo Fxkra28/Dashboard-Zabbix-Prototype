@@ -1,4 +1,4 @@
-/* SLA report download (ReportDownload): two small buttons, and why one failed. */
+/* SLA report download (ReportDownload): the PDF, Excel and CSV buttons, and why one failed. */
 .report-actions {
   display: flex;
   flex-wrap: wrap;

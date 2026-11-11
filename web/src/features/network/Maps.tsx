@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { api } from '../../api';
 import { useAsync } from '../../shared/hooks/useAsync';
 import { useUrlState } from '../../shared/hooks/useUrlState';
 import type { ZMap, MapDetail, MapSelement } from '../../types';
-import { Async, Loaded, Loading } from '../../shared/components/states';
+import { Async, ErrorState, Loaded, Loading } from '../../shared/components/states';
 import { Field } from '../../shared/components/Field';
 import { severity } from '../../shared/lib/severity';
 import { clipLine, placeLabels } from './mapLabels';
@@ -27,7 +27,7 @@ function elementColor(s: MapSelement): string {
   return severity(s.maxSeverity ?? 0).color;
 }
 
-/** "1.1 IDX02FW01 (192.168.239.42)" reads better as a name line and an address line. */
+/** "1.1 ALPHA-FW01 (198.18.0.42)" reads better as a name line and an address line. */
 function labelLines(s: MapSelement): string[] {
   const text = s.labelText ?? s.label?.replace(/\{.*?\}/g, '').trim() ?? '';
   const lines = text
@@ -88,13 +88,13 @@ export default function Maps() {
                 </div>
               </div>
             ) : detailQ.error && (!map || detailQ.stale) ? (
-              <div className="state">Could not load this map: {detailQ.error}</div>
+              <ErrorState message={`Could not load this map: ${detailQ.error}`} />
             ) : detailQ.loading && !map ? (
               <Loading label="Loading topology…" />
             ) : map ? (
               // The previous map stays, dimmed, while another loads; a failed refresh keeps it with a note.
               <Loaded stale={detailQ.stale} error={detailQ.error} updatedAt={detailQ.updatedAt}>
-                <MapCanvas map={map} />
+                <MapCanvas key={map.sysmapid} map={map} />
               </Loaded>
             ) : (
               <div className="state">Select a map.</div>
@@ -114,6 +114,9 @@ function MapCanvas({ map }: { map: MapDetail }) {
 
   const hostEls = (map.selements ?? []).filter((s) => s.elementtype === '0');
   const withProblems = hostEls.filter((s) => s.problems).length;
+  // A host chosen on the canvas: its severity is printed in words under the map, since the node says it by colour only.
+  const [chosen, setChosen] = useState<string | null>(null);
+  const toggle = (id: string) => setChosen((now) => (now === id ? null : id));
 
   // Where each name goes so that none overlaps another or an element. Worst problem first.
   const placements = useMemo(
@@ -167,16 +170,33 @@ function MapCanvas({ map }: { map: MapDetail }) {
           const color = elementColor(s);
           const lines = labelLines(s);
           const isHost = s.elementtype === '0';
-          const what =
-            lines.join(' ') +
-            (isHost
-              ? s.problems
-                ? `, ${s.problems} open problem${s.problems === 1 ? '' : 's'}, worst: ${severity(s.maxSeverity ?? 0).name}`
-                : ', no open problems'
-              : '');
+          const problemsWords = s.problems
+            ? `${s.problems} open problem${s.problems === 1 ? '' : 's'}, worst: ${severity(s.maxSeverity ?? 0).name}`
+            : 'no open problems';
+          const what = lines.join(' ') + (isHost ? `, ${problemsWords}` : '');
           return (
             // The label also names the element for a screen reader, which is told every name, drawn or not.
-            <g key={s.selementid} transform={`translate(${Number(s.x)}, ${Number(s.y)})`} role="img" aria-label={what}>
+            // A host is a button that prints its severity under the map; the other elements stay pictures.
+            <g
+              key={s.selementid}
+              className={isHost ? 'map-node' : undefined}
+              transform={`translate(${Number(s.x)}, ${Number(s.y)})`}
+              role={isHost ? 'button' : 'img'}
+              aria-label={what}
+              aria-pressed={isHost ? chosen === s.selementid : undefined}
+              tabIndex={isHost ? 0 : undefined}
+              onClick={isHost ? () => toggle(s.selementid) : undefined}
+              onKeyDown={
+                isHost
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggle(s.selementid);
+                      }
+                    }
+                  : undefined
+              }
+            >
               <title>{what}</title>
               <rect
                 width={48}
@@ -184,7 +204,7 @@ function MapCanvas({ map }: { map: MapDetail }) {
                 rx={6}
                 style={{ fill: color, stroke: color }}
                 fillOpacity={0.14}
-                strokeWidth={s.problems ? 2 : 1}
+                strokeWidth={s.problems || chosen === s.selementid ? 2 : 1}
               />
               <circle cx={24} cy={16} r={5} style={{ fill: color }} />
               {isHost && s.problems ? (
@@ -218,6 +238,31 @@ function MapCanvas({ map }: { map: MapDetail }) {
           );
         })}
       </svg>
+      {chosen && (
+        <p className="map-selected" role="status">
+          {(() => {
+            const s = byId[chosen];
+            if (!s) return null;
+            const level = s.maxSeverity ?? 0;
+            return (
+              <>
+                <strong>{labelLines(s)[0]}</strong>:{' '}
+                {s.problems ? (
+                  <>
+                    {s.problems} open problem{s.problems === 1 ? '' : 's'}, worst:{' '}
+                    <span style={{ color: severity(level).color }} aria-hidden="true">
+                      ●
+                    </span>{' '}
+                    {severity(level).name}
+                  </>
+                ) : (
+                  'no open problems'
+                )}
+              </>
+            );
+          })()}
+        </p>
+      )}
       <div className="muted" style={{ fontSize: 12, marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <span>
           {count(map.selements?.length ?? 0, 'element')} · {count(map.links?.length ?? 0, 'link')} ·{' '}

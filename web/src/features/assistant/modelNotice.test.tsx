@@ -50,6 +50,14 @@ describe('useModelDown', () => {
     await waitFor(() => expect(result.current).toBe(expected));
   });
 
+  it.each([true, false])('is not down when ready is a plain %s, which is all an anonymous caller gets (IN-47)', async (ready) => {
+    health.mockResolvedValue({ ...answer(), ready });
+    const { useModelDown } = await import('./useModel');
+    const { result } = renderHook(() => useModelDown());
+    await waitFor(() => expect(health).toHaveBeenCalledTimes(1));
+    expect(result.current).toBe(false);
+  });
+
   it('is not down when the call fails: no answer is not the same as a model that is not answering', async () => {
     health.mockRejectedValue(new Error('Failed to fetch'));
     const { useModelDown } = await import('./useModel');

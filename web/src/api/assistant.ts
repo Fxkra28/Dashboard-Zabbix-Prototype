@@ -13,7 +13,8 @@ export type ExplainSlaQuery =
  * The assistant. A POST whose response is a text/event-stream (server
  * routes/chat.ts), so it fits neither `post()` nor `EventSource`. Read the
  * body as it arrives and hand each frame to the caller. Resolves on `done`,
- * rejects on an `error` frame, and stops early when `signal` aborts.
+ * rejects on an `error` frame or a stream that ends without `done`, and stops
+ * early when `signal` aborts.
  */
 export async function chatStream(
   messages: ChatMessage[],
@@ -46,7 +47,8 @@ export async function chatStream(
   let buf = '';
   for (;;) {
     const { value, done } = await reader.read();
-    if (done) return;
+    // A `done` frame returns below, so a stream that ends here ended without its closing frame.
+    if (done) throw new Error('The answer was cut off before it finished. Ask again.');
     buf += decoder.decode(value, { stream: true });
     let sep: number;
     while ((sep = buf.indexOf('\n\n')) >= 0) {

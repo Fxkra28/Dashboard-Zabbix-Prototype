@@ -17,12 +17,12 @@ index, and that absence is what made it feel gone.*
 | 3 · Telecom deep visibility | Voice, radio and SIP path monitoring incomplete | Link & WAN health, §17; the Dashboard's Internet traffic meters ([ADR-0012](../architecture/adr/0012-internet-meters-from-the-zabbix-dashboard.md)) | partial, SIP and UHF/VHF are blocked on Zabbix-side collection, out of scope since 2026-09-07 |
 | 4 · Smart alerting | Notifications lack context, correlation and escalation | Alert-noise and flapping, §21; the plain-language layer, §13 | partial, cross-trigger correlation not built |
 | 5 · Role-based dashboard | Dashboards not tailored to NOC, engineers, management | Site view §14, RBAC §19, the Dashboard's three views and the wall screen (§33 to §35) | partial, role-scoped landing pages need HCML to define what each role sees |
-| 6 · Automated reporting | Hard to see SLA, capacity trends and recurring issues | Availability, capacity, aging and top-triggers, §18; derived SLA §25; the monthly SLA report as a PDF or Excel download, §18 | partial, on-demand export built, scheduled or emailed export not |
+| 6 · Automated reporting | Hard to see SLA, capacity trends and recurring issues | Availability, capacity, aging and top-triggers, §18; derived SLA §25; the monthly SLA report as a PDF, Excel or CSV download, emailable by an administrator and sent by itself every month, §18 | partial: the export, the email and the monthly send are built; HCML's own mail (Microsoft 365) and a real first of the month are not proved |
 
 Two met, four partial. Two of the partial goals wait on someone outside the portal: Goal 3 needs
 Zabbix to collect SIP and UHF/VHF data it does not collect today, and Goal 5 needs HCML to say what
-each role should see. The other two wait on code that is not written: cross-trigger correlation
-(Goal 4) and scheduled or emailed report export (Goal 6).
+each role should see. The other two are code and proof: cross-trigger correlation
+(Goal 4) is not written, and the monthly report of Goal 6 is written but has not run on a real first of the month.
 
 §3's table *"Six things have no Zabbix equivalent"* carries the same mapping per feature, and is the
 better place to start if you are asking "why does this page exist?" rather than "is this goal done?".

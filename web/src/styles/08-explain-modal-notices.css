@@ -3,13 +3,16 @@
   min-height: 100vh;
   display: grid;
   place-items: center;
+  /* A margin to each edge: at 320 and 360 px the card would otherwise touch the screen. */
+  padding: var(--s-4);
   background: var(--chrome);
 }
 .login-card {
   background: var(--surface);
   border-radius: var(--r-lg);
   padding: var(--s-8);
-  width: 360px;
+  width: 100%;
+  max-width: 360px;
   box-shadow: var(--e-3);
 }
 .login-card h1 {
@@ -35,6 +38,8 @@
   color: var(--danger-text);
   font-size: var(--t-base);
   margin-top: var(--s-2-5);
+  /* An address of 254 characters has no place to break: let it wrap in a narrow dialog. */
+  overflow-wrap: anywhere;
 }
 
 /* Plain-language layer */
@@ -233,9 +238,51 @@ a.btn.sm {
 }
 .modal-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s-3);
+  gap: var(--s-2) var(--s-3);
+}
+/* The main button stays at the right edge when the row has to wrap. */
+.modal-foot > :last-child:not(:first-child) {
+  margin-left: auto;
+}
+.saved-list {
+  margin-top: var(--s-3);
+}
+.saved-list-items {
+  list-style: none;
+  margin: var(--s-2) 0;
+  padding: 0;
+}
+.saved-list-items li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-1) 0;
+  /* An address of 254 characters has no place to break: let it wrap in a narrow dialog. */
+  overflow-wrap: anywhere;
+}
+.saved-list-add {
+  display: flex;
+  gap: var(--s-2);
+  margin: var(--s-2) 0;
+}
+.saved-list-add input {
+  flex: 1;
+  min-width: 0;
+}
+.saved-list-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: var(--s-2) 0;
+}
+.saved-list-ask p {
+  flex-basis: 100%;
+  margin: 0;
 }
 .modal textarea {
   font-family: inherit;

@@ -4,13 +4,17 @@ import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { SHUTDOWN_TIMEOUT_MS, installShutdown } from '../http/shutdown.js';
+import { SHUTDOWN_TIMEOUT_MS, closeWith, installShutdown } from '../http/shutdown.js';
 import { streamRoutes } from '../routes/stream.js';
 import { connectedClients } from '../services/stream.js';
 import { invalidate } from '../core/cache.js';
 
 /** SIGTERM and SIGINT close the BFF. The signals come from a stand-in emitter, never the real process. */
-vi.mock('../domain/queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
+vi.mock('../domain/queries.js', () => ({
+  getProblems: vi.fn().mockResolvedValue([]),
+  cachedProblems: vi.fn().mockResolvedValue([]),
+  PROBLEMS_TTL_MS: 15_000,
+}));
 
 const logger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 const fakeApp = (close: () => Promise<void>) => ({ log: logger(), close: vi.fn(close) }) as unknown as FastifyInstance & {
@@ -116,6 +120,45 @@ describe('installShutdown', () => {
   });
 });
 
+describe('closeWith', () => {
+  it('pauses the schedule when the close begins, and waits for it only after the server has drained its requests', async () => {
+    const app = Fastify({ logger: false });
+    const events: string[] = [];
+    let finish: () => void = () => undefined;
+    const slow = new Promise<void>((resolve) => (finish = resolve));
+    app.get('/slow', async () => {
+      events.push('request started');
+      await slow;
+      events.push('request finished');
+      return { ok: true };
+    });
+    closeWith(app, {
+      pause: () => void events.push('pause'),
+      stop: async () => void events.push('stop'),
+    });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = app.server.address() as AddressInfo;
+
+    // A connection of its own, closed after the answer: a kept-alive one would hold the close open until its timeout.
+    const answered = new Promise<void>((resolve, reject) => {
+      http
+        .get({ host: '127.0.0.1', port, path: '/slow', agent: false }, (res) => {
+          res.resume();
+          res.on('end', resolve);
+        })
+        .on('error', reject);
+    });
+    await vi.waitFor(() => expect(events).toContain('request started'));
+    const closing = app.close();
+    await vi.waitFor(() => expect(events).toContain('pause'));
+    expect(events).not.toContain('stop'); // the server is still waiting for the request
+    finish();
+    await closing;
+    await answered;
+    expect(events).toEqual(['request started', 'pause', 'request finished', 'stop']);
+  });
+});
+
 describe('server/Dockerfile', () => {
   const dockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
   const lines = dockerfile.split('\n').map((l) => l.trim());
@@ -136,7 +179,8 @@ describe('server/Dockerfile', () => {
 
   it('puts the build arguments after the final stage\'s npm layers, so a new commit does not redo `npm ci`', () => {
     const final = lines.lastIndexOf(lines.filter((l) => l.startsWith('FROM '))[1]);
-    const npm = lines.indexOf('RUN npm ci --omit=dev');
+    // The step goes on over several lines (it also removes npm), so match where it starts.
+    const npm = lines.findIndex((l) => l.startsWith('RUN npm ci --omit=dev'));
     expect(npm).toBeGreaterThan(final); // a guard: this line must exist, or the checks below mean nothing
     for (const arg of ['ARG BUILD_COMMIT=unknown', 'ARG BUILD_TIME=unknown', 'ENV BUILD_COMMIT=$BUILD_COMMIT BUILD_TIME=$BUILD_TIME']) {
       expect(lines.indexOf(arg), arg).toBeGreaterThan(npm);
@@ -155,6 +199,12 @@ describe('index.ts', () => {
     expect(listen).toBeGreaterThan(-1);
     expect(callAt('installShutdown(app)')).toBeGreaterThan(listen);
     expect(code).toMatch(/import \{[^}]*\binstallShutdown\b[^}]*\} from '\.\/http\/shutdown\.js';/);
+  });
+
+  it('closes the monthly schedule through closeWith, not with a hook of its own', () => {
+    expect(code).toMatch(/import \{[^}]*\bcloseWith\b[^}]*\} from '\.\/http\/shutdown\.js';/);
+    expect(callAt('closeWith(app, reportSchedule)')).toBeGreaterThan(-1);
+    expect(code).not.toMatch(/addHook\('onClose'/);
   });
 
   it('starts the first readiness check once the server is listening, on the check /api/health serves', () => {

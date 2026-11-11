@@ -25,7 +25,7 @@ info:
 
     ### Authentication
 
-    One credential, a JWT carrying `{ sub, role, ep }` that lasts 12 hours unless `SESSION_HOURS` sets another
+    One credential, a JWT carrying `{ sub, role, ep, jti, sid }` that lasts 12 hours unless `SESSION_HOURS` sets another
     length (2 to 24), presented one of two ways.
     Every guarded path takes either:
 
@@ -48,7 +48,7 @@ info:
     and port. Anything else gets `403 csrf` (`CsrfRefused`), before the guard runs and with auth on
     or off. A request with a Bearer header is not checked, except on sign-in and sign-out, since a browser
     never adds one by itself.
-    `csrfRefusal` in `auth.ts:117-127`; ADR-0010.
+    `csrfRefusal` in `auth.ts:135-145`; ADR-0010.
 
     The guard judges the route the router matched, not the URL text, so a percent-encoded path such
     as `/%61pi/hosts` is guarded like `/api/hosts`. Only `/api/health`, `/api/auth/login`,
@@ -60,14 +60,17 @@ info:
     ### Roles
 
     OpenAPI cannot express a role requirement per path, so each operation states its role in the
-    description. From `ROUTE_RULES` (`server/src/security/auth.ts:39-44`), first match wins, unmatched is
+    description. From `ROUTE_RULES` (`server/src/security/auth.ts:38-45`), first match wins, unmatched is
     `viewer`:
 
     | Role | Paths |
     |---|---|
-    | `admin` | `/api/reports/inventory` |
-    | `operator` | `/api/links`, `/api/net/*`, `POST /api/problems/acknowledge` |
+    | `admin` | `/api/reports/inventory`, `/api/sli/email`, `/api/sli/schedule`, `/api/sli/recipients` |
+    | `operator` | `POST /api/problems/acknowledge` |
+    | `wall` | `/api/links`, `/api/net/*`: the network pages, read only, for a NOC screen's account |
     | `viewer` | everything else |
+
+    The ranks run viewer, wall, operator, admin, and a role passes every rule below its own.
 
     ### Errors
 
@@ -120,6 +123,19 @@ info:
     answer, a cache hit or an error, and the JSON body is not changed. When one request read several
     cached reports, the age is that of the oldest. A cached answer that was itself built on a stale
     report, `/api/services/derived` for its 30 s and `/api/explain/sla`, is not flagged again.
+
+    HCML's Zabbix takes tens of seconds to build some views, so past their cache time these answer at
+    once with their last copy while one refresh runs, for up to 10 minutes: `/api/hosts/overview`,
+    `/api/devices`, `/api/net/devices`, `/api/net/interfaces`, `/api/net/meters`,
+    `/api/reports/top-hosts`, `/api/reports/web-monitoring`, `/api/services`, `/api/services/derived`,
+    `/api/maps/detail`, `/api/sla` and `/api/sla/sli`, and, for as long as their cache time again,
+    the slow reports above (a day for `/api/reports/capacity`). Such an answer carries
+
+    - `X-Data-Refreshing: true`
+    - `X-Data-Age-Seconds: <how old the copy is, in seconds>`
+
+    and never `X-Data-Stale`, which wins when one request saw both. The problem list is never served
+    this way.
   contact:
     name: HCML Monitoring Portal
     url: https://github.com/Fxkra28/Dashboard-Zabbix-Prototype
@@ -140,7 +156,7 @@ tags:
   - name: History
     description: The downsampled graph series, from raw history or hourly trends.
   - name: Network
-    description: Devices, interfaces and ports. **operator.** `server/src/routes/net.ts`
+    description: Devices, interfaces and ports. **wall.** `server/src/routes/net.ts`
   - name: Reports
     description: Top triggers, stats, availability, noise, aging, capacity, inventory.
   - name: Sites
@@ -180,10 +196,10 @@ paths:
         The route is public, so anyone gets the liveness fields (`ok`, `ts`, `ai`, `aiProvider`,
         `aiExternal`, `writeBack`, `defaults`) and none of them holds a URL, host name, token or error
         text. A caller who is signed in, by cookie or Bearer header, also gets `version`, `startedAt`,
-        `build`, `ready` and `streams`: an anonymous caller must not learn the build, when the portal
-        restarted, how many screens are open, or that the Zabbix token was revoked. A bad or missing
-        token is never a 401 here, it just gets the short answer, and the readiness check is only
-        read for a signed-in caller. With sign-in off every caller counts as signed in. The container
+        `build`, `ready` as the whole check and `streams`: an anonymous caller must not learn the build, when the portal
+        restarted, how many screens are open, or why Zabbix cannot be read (a revoked token reads as any other failure). Anyone
+        gets `ready` as a plain `true` or `false`, so a monitor needs no account. A bad or missing
+        token is never a 401 here, it just gets the short answer. With sign-in off every caller counts as signed in. The container
         healthcheck sends no sign-in and reads only the status.
       operationId: getHealth
       tags: [Meta]
@@ -195,7 +211,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [ok, ts, ai, aiProvider, aiExternal, writeBack, defaults]
+                required: [ok, ts, ai, aiProvider, aiExternal, writeBack, defaults, ready]
                 properties:
                   ok: { type: boolean, const: true }
                   ts: { type: integer, description: 'Server time, milliseconds since epoch.' }
@@ -232,20 +248,24 @@ paths:
                       commit: { type: string }
                       time: { type: string }
                   ready:
-                    type: object
-                    description: Signed-in callers only.
-                    required: [ok, zabbix, zabbixMs, model, checkedAt]
-                    properties:
-                      ok: { type: boolean, description: The portal can read Zabbix. The model never changes it. }
-                      zabbix: { type: string, enum: [ok, token_rejected, timeout, error] }
-                      zabbixMs:
-                        type: [integer, 'null']
-                        description: How long the Zabbix call took. Null when it did not answer.
-                      model:
-                        type: string
-                        enum: [ok, down, off, not_checked]
-                        description: '`off` is no model configured, `not_checked` is the hosted Anthropic model, which a probe would bill.'
-                      checkedAt: { type: integer, description: 'When these answers were read, milliseconds since epoch.' }
+                    description: |
+                      Whether the portal can read Zabbix. Anyone gets a plain boolean (the model never changes it). A signed-in caller gets
+                      the whole check instead, as the object below.
+                    oneOf:
+                      - type: boolean
+                      - type: object
+                        required: [ok, zabbix, zabbixMs, model, checkedAt]
+                        properties:
+                          ok: { type: boolean, description: The portal can read Zabbix. The model never changes it. }
+                          zabbix: { type: string, enum: [ok, token_rejected, timeout, error] }
+                          zabbixMs:
+                            type: [integer, 'null']
+                            description: How long the Zabbix call took. Null when it did not answer.
+                          model:
+                            type: string
+                            enum: [ok, down, off, not_checked]
+                            description: '`off` is no model configured, `not_checked` is the hosted Anthropic model, which a probe would bill.'
+                          checkedAt: { type: integer, description: 'When these answers were read, milliseconds since epoch.' }
                   streams: { type: integer, minimum: 0, description: Signed-in callers only. Screens connected to `/api/stream` right now. }
 
   /api/ready:
@@ -367,7 +387,7 @@ paths:
                   pages:
                     type: object
                     description: The minimum role for each menu page, by path, such as `/network`.
-                    additionalProperties: { type: string, enum: [viewer, operator, admin] }
+                    additionalProperties: { type: string, enum: [viewer, wall, operator, admin] }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -416,10 +436,12 @@ paths:
       description: |
         Public, so a missing or expired cookie can still be cleared: answers 200 with or without one,
         and with auth off. The `Set-Cookie` header empties the cookie with the attributes it was set
-        with. It clears the cookie in this browser only: the BFF keeps no list to cancel tokens on, so a
-        copied token keeps working until it expires, up to `SESSION_HOURS` (12 by default). Taking the user
-        out of `PORTAL_USERS` and restarting the BFF ends their access at once; a new `JWT_SECRET`, or a
-        higher `SESSION_EPOCH` and a restart, ends every session at once (SC-14). A live stream opened before then is ended when its token expires, and the browser reconnects (SC-15). Needs `X-HCML-CSRF: 1` like any POST that touches the cookie. It takes no body: none, or a JSON object that is ignored. Any other JSON body is a 400.
+        with. It also ends the session on the server: every token of that sign-in, the ones a renewal gave
+        too, is refused from then on (a list in memory, which a restart forgets), and the live streams of
+        the session are closed at once. A copy of a token that someone keeps renewing after the owner only
+        closed the tab, without signing out, works until the user is taken out of `PORTAL_USERS`, a new
+        `JWT_SECRET` is set, or a higher `SESSION_EPOCH` is set and the server restarted (SC-14); there is no
+        absolute age, because a wall screen must stay signed in. A live stream also ends when its token expires, and the browser reconnects (SC-15). Needs `X-HCML-CSRF: 1` like any POST that touches the cookie. It takes no body: none, or a JSON object that is ignored. Any other JSON body is a 400.
       operationId: logout
       tags: [Meta]
       security: []
@@ -562,6 +584,13 @@ paths:
 
         `search` is passed to Zabbix with `startSearch: true` deliberately: without it Zabbix runs
         `LIKE '%…%'` and scans all 51,845 items at about 105 ms per call.
+
+        The items carry no `lastvalue` or `lastclock`. Zabbix looks each of them up on its own, from 30 ms to half a second an
+        item on HCML's, which made a host of 609 items take 20 to 32 s, and the item picker never shows them. `/api/latest` has them.
+
+        A request with a `search` of more than spaces counts against 120 searches a minute for each signed-in person (or each
+        client address with sign-in off), since a search with new text is a cold read of Zabbix. `/api/latest` shares that count.
+        The text is trimmed before it is used. Ids are digits, at most 20 of them, and not above 18446744073709551615.
       operationId: getItems
       tags: [Hosts]
       parameters:
@@ -589,6 +618,10 @@ paths:
               schema: { type: array, items: { $ref: '#/components/schemas/Item' } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429':
+          description: |
+            `rate_limited`, the person made more than 120 searches in a minute, or the 300 requests a minute of the client address. `Retry-After` says how long to wait.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
 
@@ -600,6 +633,8 @@ paths:
         pagination: paged mode searches `name` OR `key_`, un-paged searches `name` only.
 
         With neither `hostid` nor `groupid` this returns an empty result with 200, not 400.
+
+        A request with a `search` of more than spaces counts against 120 searches a minute for each person, shared with `/api/items`.
       operationId: getLatest
       tags: [Hosts]
       parameters:
@@ -622,8 +657,8 @@ paths:
       responses:
         '200':
           description: |
-            `total`, `page` and `pageSize` are present only in paged mode. `truncated` means the cap
-            was hit: 500 rows un-paged, 20,000 ids paged.
+            `total`, `page` and `pageSize` are present only in paged mode. `page` is the page returned: the last one
+            when a later one was asked for. `truncated` means the cap was hit: 500 rows un-paged, 20,000 ids paged.
           content:
             application/json:
               schema:
@@ -637,6 +672,10 @@ paths:
                   pageSize: { type: integer }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429':
+          description: |
+            `rate_limited`, the person made more than 120 searches in a minute, or the 300 requests a minute of the client address. `Retry-After` says how long to wait.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
 
@@ -644,8 +683,12 @@ paths:
     get:
       summary: Open problems
       description: |
-        Cached 5 s, and never served stale: an operator who has just acknowledged must not be
+        Cached 15 s, and never served stale: an operator who has just acknowledged must not be
         shown the previous list. About 664 problems at HCML, 459 kB compressing to 25 kB.
+
+        `opdata` is not in the list: Zabbix fills it from history one problem at a time, which took
+        HCML's Zabbix 35 to 46 s for 650 problems against 0.9 s without it. Explain reads it for its
+        one problem.
 
         The list also carries problems Zabbix resolved moments ago (`r_eventid` other than `0`),
         which the Problems page marks Resolved, and problems raised inside a planned maintenance
@@ -674,7 +717,7 @@ paths:
         `Retry-After: 30`, before any stream header. The browser's `EventSource` cannot read that body,
         so it falls back to polling and retries.
 
-        One shared 5 s ticker serves every client. A frame is sent at once when the fingerprint over
+        One shared 15 s ticker serves every client, the pace the problem list is cached. A frame is sent at once when the fingerprint over
         `eventid:severity:acknowledged:suppressed:r_eventid` changes. A list identical to the last one
         sent is never sent again, and one where only a name or host changed goes after at most 30 s. A change in tags alone is not in the frame. A
         new client receives the current frame immediately, and an acknowledge force-pushes one.
@@ -767,7 +810,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403':
-          description: '`forbidden`, a viewer asked for a network interface item (key starting `net.if`). Operators and admins may read them.'
+          description: '`forbidden`, a viewer asked for a network interface item (key starting `net.if`). Wall screens, operators and admins may read them.'
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
@@ -775,7 +818,7 @@ paths:
   /api/net/devices:
     get:
       summary: Network devices with ICMP state
-      description: '**operator.** Cached 30 s. Narrowed to `NET_GROUP_IDS` when that is configured.'
+      description: '**wall.** Cached 30 s. Narrowed to `NET_GROUP_IDS` when that is configured.'
       operationId: getNetDevices
       tags: [Network]
       responses:
@@ -793,7 +836,7 @@ paths:
     get:
       summary: Internet traffic meters, read from the gauge widgets of a Zabbix dashboard
       description: |
-        **operator.** Cached 30 s. The dashboard itself is kept for two minutes.
+        **wall.** Cached 30 s. The dashboard itself is kept for two minutes.
 
         Reads the dashboard named by `INTERNET_METERS_DASHBOARD` (default `Global view`, HCML's own) with
         `dashboard.get` and makes one meter of each gauge widget: the interface item it is bound to, the
@@ -831,7 +874,7 @@ paths:
     get:
       summary: Interfaces for one device, searched then filtered then paged
       description: |
-        **operator.** Cached 15 s.
+        **wall.** Cached 15 s.
 
         Order matters and is observable: `search` is applied first, `summary` is computed over the
         searched set, *then* `status` filters, *then* the page is sliced. So `summary` counts more
@@ -839,6 +882,9 @@ paths:
 
         **`status` fails silently.** Any value outside the enum is treated as no filter rather than
         rejected with 400.
+
+        **A page past the last is the last page.** `page` in the answer says which page the rows are, so an old
+        address, or a list that shrank, never reads as empty.
       operationId: getNetInterfaces
       tags: [Network]
       parameters:
@@ -991,7 +1037,9 @@ paths:
       description: |
         Cached 30 s. Four count-only Zabbix calls in parallel plus the shared problem list. `hosts`
         counts enabled (monitored) hosts only, as the Dashboard's card says, and `items` counts
-        monitored items.
+        monitored items. Counting items took HCML's Zabbix about 40 s and the monitored triggers 74 s,
+        so those two counts are kept for an hour and read again in the background; each is null until
+        its first count arrives.
       operationId: getStats
       tags: [Reports]
       responses:
@@ -1004,8 +1052,8 @@ paths:
                 required: [hosts, items, triggers, groups, problems, unacknowledged, bySeverity]
                 properties:
                   hosts: { type: integer }
-                  items: { type: integer }
-                  triggers: { type: integer }
+                  items: { type: [integer, 'null'] }
+                  triggers: { type: [integer, 'null'] }
                   groups: { type: integer }
                   problems: { type: integer }
                   unacknowledged: { type: integer }
@@ -1019,9 +1067,11 @@ paths:
       summary: When Zabbix last collected a value
       description: |
         Whether Zabbix is still collecting, for the Dashboard. A stopped `zabbix-server` leaves every
-        API call working and every value in place, so the newest `lastclock` of any supported ICMP item
-        is the only sign. It is rolled up from the same `item.get` the host states read, so asking for
-        both costs Zabbix one call.
+        API call working and every value in place, so the newest value of any supported ICMP item
+        is the only sign. It is rolled up from the reads the host states make, the ping items once an
+        hour and their values of the last 15 minutes in one `history.get` per value type, so asking for
+        both costs Zabbix nothing more. With no value in those 15 minutes, Zabbix's own last value of a
+        few items says how long ago it stopped.
 
         The newest clock is cached 30 s; `ageSeconds` is worked out at each request. `stale` is true
         once nothing has been collected for `staleAfterSeconds`, ten minutes (the floor `isFresh` allows
@@ -1192,8 +1242,10 @@ paths:
     get:
       summary: Average and peak utilisation per item
       description: |
-        Cached 300 s with `staleIfError`, marked by `X-Data-Stale` when an old copy is served. **The
-        heaviest endpoint in the portal.** At `days=365` it
+        Rebuilt about hourly: cached an hour, then the last report is answered with
+        `X-Data-Refreshing` for up to a day while the next one is built, and with `X-Data-Stale` when
+        a rebuild fails (`staleIfError`). The ports' link speeds are kept a day. **The heaviest
+        endpoint in the portal**: one run took HCML's Zabbix 256 s on 29 October 2026. At `days=365` it
         issues roughly 112 Zabbix calls, because `trend.get` is sliced to keep Zabbix's PHP within
         its memory limit, and each call costs about 20 SQL statements upstream, 10,771 in total,
         measured 22 Sep.
@@ -1245,7 +1297,7 @@ paths:
     get:
       summary: WAN links and paths, from ICMP item triplets
       description: |
-        **operator.** Cached 20 s.
+        **wall.** Cached 20 s.
 
         A "link" is not a Zabbix entity. It is synthesised from the `icmpping`, `icmppingloss` and
         `icmppingsec` items on a host, paired into a path by the `link_group` item tag. `jitter` is
@@ -1440,12 +1492,20 @@ paths:
 
   /api/sli/export:
     get:
-      summary: The monthly SLA report as a PDF or Excel download
+      summary: The monthly SLA report as a PDF, Excel or CSV download
       description: |
         **viewer.** The figures `/api/sli` shows for one month, both methods side by side, as one
         file. `format=pdf` is the printable report; `format=xlsx` is the workbook, a Summary sheet and
-        one sheet per table. The file states when it was generated and, for the current month, that its
-        figures are not final.
+        one sheet per table; `format=csv` is one zip holding a CSV file for the first page and for each
+        table, and a notes file that explains them. The file states when it was generated and, for the
+        current month, that its figures are not final.
+
+        `decimal`, `date` and `separator` choose how numbers and dates are written, and never what they say:
+        a figure, a verdict and the order of the rows are the same in every style. `decimal` is the mark in a
+        percentage (`dot` or `comma`), `date` is the shape of the dates in the report's text (`long` as in
+        `4 Nov 2026`, `numeric` as in `04/11/2026`, `iso` as in `2026-11-04`), and `separator` is what a CSV file
+        puts between its fields (`comma` or `semicolon`; the PDF and the workbook have none and ignore it).
+        All three are optional and default to `dot`, `long` and `comma`; anything else, or a value given twice, is a 400.
 
         It reads the same cached reports as `/api/sli`, so a month the page has already loaded costs
         no further Zabbix call, and it inherits that route's `staleIfError`: while Zabbix is failing it
@@ -1453,12 +1513,12 @@ paths:
         `X-Data-Stale` and `X-Data-Age-Seconds`. Nothing is kept for long: a
         built file is reused for ten seconds, then built again from the cached figures.
 
-        `format` is checked before Zabbix is asked, so a bad request costs nothing. `month` and
-        `format` are the only parameters: any other is a 400, so a misspelt `month` is never read as
-        the current month. `month` is
+        `format` and the style are checked before Zabbix is asked, so a bad request costs nothing. `month`,
+        `format`, `decimal`, `date` and `separator` are the only parameters: any other is a 400, so a misspelt
+        `month` is never read as the current month. `month` is
         validated as on `/api/sli`, and a month that has not started, or is more than about 400 days
-        back, is a 400. The file name is made from the validated month alone, `HCML_SLA_Report_<month>.<format>`,
-        never from other request text.
+        back, is a 400. The file name is made from the validated month alone, `HCML_SLA_Report_<month>.pdf`,
+        `.xlsx` or `_csv.zip`, never from other request text.
 
         The body is not JSON, so it is never compressed whatever `Accept-Encoding` says, and
         `Cache-Control: private, no-store` keeps a shared cache from holding on to it.
@@ -1472,8 +1532,20 @@ paths:
         - name: format
           in: query
           required: true
-          description: Exactly `pdf` or `xlsx`, in lower case. Missing, anything else, or given twice is a 400.
-          schema: { type: string, enum: [pdf, xlsx] }
+          description: Exactly `pdf`, `xlsx` or `csv`, in lower case. Missing, anything else, or given twice is a 400.
+          schema: { type: string, enum: [pdf, xlsx, csv] }
+        - name: decimal
+          in: query
+          description: The mark in a percentage. Defaults to `dot`.
+          schema: { type: string, enum: [dot, comma] }
+        - name: date
+          in: query
+          description: The shape of the dates in the report's text. Defaults to `long`.
+          schema: { type: string, enum: [long, numeric, iso] }
+        - name: separator
+          in: query
+          description: What a CSV file puts between its fields. Defaults to `comma`. Ignored for a PDF or a workbook.
+          schema: { type: string, enum: [comma, semicolon] }
       responses:
         '200':
           description: The report, as an attachment.
@@ -1481,7 +1553,8 @@ paths:
             Content-Disposition:
               description: |
                 `attachment; filename="HCML_SLA_Report_2026-08.pdf"; filename*=UTF-8''HCML_SLA_Report_2026-08.pdf`.
-                Only letters, digits, underscore, hyphen and the dot of the extension can appear in it.
+                Only letters, digits, underscore, hyphen and the dot of the extension can appear in it. The CSV zip is
+                `HCML_SLA_Report_2026-08_csv.zip`.
               schema: { type: string }
             Content-Length:
               description: The size of the file in bytes.
@@ -1494,10 +1567,226 @@ paths:
               schema: { type: string, format: binary }
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema: { type: string, format: binary }
+            application/zip:
+              schema: { type: string, format: binary }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '502': { $ref: '#/components/responses/ZabbixError' }
         '503': { $ref: '#/components/responses/ZabbixUnavailable' }
+
+  /api/sli/email:
+    get:
+      summary: Whether the SLA report can be emailed, from where, to whom by default, and how far a list may go
+      description: |
+        **admin.** Lets the screen offer the "Email report" button only where it works, and say who a report goes to unless
+        the person names others. It answers `enabled: false`, with no address, until the `MAIL_` settings are present and usable.
+        `recipients` is the list the portal has saved; until it has saved one, it is the list in `MAIL_TO`, which may be empty.
+        `max` is the most addresses a list may hold, `allowedDomains` the only domains an address may be in (empty: any), and
+        `kept` whether the saved list survives a restart of the portal (it does when `PORTAL_STATE_DIR` names a folder that outlives the container).
+        The saved list is changed with `PUT` and `DELETE /api/sli/recipients`. While sign-in is off, email is off too (`enabled: false`) unless `ALLOW_EMAIL_WITHOUT_AUTH=true`.
+      operationId: getSliEmail
+      tags: [SLA]
+      responses:
+        '200':
+          description: Whether email is on.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, from, recipients, max, allowedDomains, kept]
+                properties:
+                  enabled: { type: boolean }
+                  from: { type: string, description: 'The sender address, or an empty string while email is off.' }
+                  recipients: { type: array, items: { type: string }, description: 'The saved recipients, or an empty list while email is off.' }
+                  max: { type: integer, description: The most addresses a list may hold. }
+                  allowedDomains: { type: array, items: { type: string }, description: 'Lower case. Empty: an address may be in any domain.' }
+                  kept: { type: boolean, description: Whether the saved list survives a restart of the portal. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Email one month's SLA report
+      description: |
+        **admin.** Builds the files `/api/sli/export` gives for the month, one to three formats, and sends them as attachments
+        to one message, with the four figures of the report's first page in its text, through the SMTP server the `MAIL_`
+        settings name. `to` is who it goes to: one to ten plain addresses, each in `allowedDomains` when that list is not empty.
+        Left out, the saved list is used (`GET`), and with `remember: true` the list that was given is saved once the report has gone.
+        `style` is written as `/api/sli/export` writes it. Any other field, in the body or in `style`, is a 400: there is no subject
+        and no message to set, and no copy or blind copy.
+
+        Checked in this order: the shape of the body (400), whether email is set up (503 `mail_disabled`), the month, the formats, the
+        style and the recipients (400, each with a sentence that says what is wrong; a month that has not started, that is more than about 400 days back or that ended less than ten minutes ago, is one of them), the allowance of 5 sends an hour for each person
+        (429 with `Retry-After`; only a request that gets this far is counted), the mail login (502 `mail_error`, before Zabbix is
+        asked, so a wrong password fails in a second), and then the two reports are read and the message is sent. A month that is
+        not cached can take as long as the download does.
+
+        Every send and every failure is logged with the user, the month, the formats, the size, the number of recipients and the
+        domains they are in, and never the addresses, the subject or a file; the portal also keeps a short record of it (counts only). A send that the mail server took for only some of the addresses is logged at warning level.
+        A failure at the mail server is one fixed sentence for its kind (`login`, `connect`, `timeout`, `tls`, `recipients`,
+        `rejected`, `other`); what the server said goes to the log only. The sentence for `timeout` says that the report may or may not have gone,
+        because the server may have had the whole message when it stopped answering.
+      operationId: emailSli
+      tags: [SLA]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [month, formats]
+              properties:
+                month: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+                formats:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  items: { type: string, enum: [pdf, xlsx, csv] }
+                  description: Each once. They are attached in the order pdf, xlsx, csv whatever order is given.
+                to:
+                  type: array
+                  maxItems: 40
+                  items: { type: string }
+                  description: 'One to ten plain addresses. Left out: the saved list.'
+                remember: { type: boolean, description: 'Save `to` as the list the portal uses from now on, if the report goes.' }
+                style:
+                  type: object
+                  properties:
+                    decimal: { type: string, enum: [dot, comma] }
+                    date: { type: string, enum: [long, numeric, iso] }
+                    separator: { type: string, enum: [comma, semicolon] }
+                  description: The same choices as the export route. Each left out takes its default.
+      responses:
+        '200':
+          description: The mail server took the message.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sent, refused, month, files, remembered]
+                properties:
+                  sent: { type: integer, description: How many recipients the server took the message for. }
+                  refused: { type: integer, description: How many it refused. The message still went to the others. }
+                  month: { type: string }
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [format, fileName, bytes]
+                      properties:
+                        format: { type: string, enum: [pdf, xlsx, csv] }
+                        fileName: { type: string, description: 'The attached file, `HCML_SLA_Report_<month>.pdf`, `.xlsx` or `_csv.zip`.' }
+                        bytes: { type: integer }
+                  remembered: { type: boolean, description: 'Whether the list was saved. False when it was not asked for, and when saving it failed after the report had gone.' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            `forbidden`, the role is below admin, or `csrf`, a cookie request without `X-HCML-CSRF: 1` or from another site (`CsrfRefused`).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '429':
+          description: |
+            `rate_limited`. This person has sent 5 reports in the last hour; `Retry-After` says how many seconds remain. The
+            portal-wide limit (`RateLimited`) answers in the same shape.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '502':
+          description: '`mail_error`, the mail server did not take the report, or `zabbix_error`. The message says which setting to check.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '503':
+          description: '`mail_disabled`, email is not set up on this portal, or it is off while sign-in is off and `ALLOW_EMAIL_WITHOUT_AUTH` is not true, or a Zabbix state (`zabbix_timeout`, `zabbix_auth`).'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /api/sli/recipients:
+    put:
+      summary: Replace the saved list of people a report goes to
+      description: |
+        **admin.** Saves `recipients` as the list the portal uses from now on, for a report sent by hand and for the monthly
+        send, with the checks every list has: one to ten plain addresses, once each (a repeat of any case is dropped), each in
+        `allowedDomains` when that list is not empty. A list that fails a check is a 400 with a sentence that says which address
+        and why, and the list the portal had is kept. An empty list is refused: delete the saved list instead. Any other field
+        in the body is a 400. It is refused with a 503 `mail_disabled` while sign-in is off, unless `ALLOW_EMAIL_WITHOUT_AUTH=true`.
+
+        One log line records who, from where and how many, and never an address.
+      operationId: putSliRecipients
+      tags: [SLA]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipients]
+              properties:
+                recipients:
+                  type: array
+                  maxItems: 40
+                  items: { type: string }
+                  description: 'One to ten plain addresses.'
+      responses:
+        '200':
+          description: The list is saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recipients, saved]
+                properties:
+                  recipients: { type: array, items: { type: string }, description: The list that applies now. }
+                  saved: { type: integer, description: How many addresses the saved list holds. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            `forbidden`, the role is below admin, or `csrf`, a cookie request without `X-HCML-CSRF: 1` or from another site (`CsrfRefused`).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '500':
+          description: '`state_error`, the portal could not write its data folder. The list it had is kept.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '503':
+          description: '`mail_disabled`, email is off while sign-in is off and `ALLOW_EMAIL_WITHOUT_AUTH` is not true.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    delete:
+      summary: Delete the saved list of people a report goes to
+      description: |
+        **admin.** Empties the portal's own list. The list in `MAIL_TO` applies again from then on, which may be empty. It is
+        refused with a 409 `schedule_uses_list` while the monthly schedule is on and `MAIL_TO` holds nobody, because the next send
+        would have no one to go to: turn the schedule off, or save another list, first. It is refused with a 503 `mail_disabled`
+        while sign-in is off, unless `ALLOW_EMAIL_WITHOUT_AUTH=true`. The answer says how many addresses were removed. It takes no body: the portal's own client sends none, and
+        a request that names a JSON content type with an empty body is a 400.
+
+        One log line records who, from where and how many, and never an address.
+      operationId: deleteSliRecipients
+      tags: [SLA]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: The saved list is empty.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recipients, removed]
+                properties:
+                  recipients: { type: array, items: { type: string }, description: 'The list that applies now: the one in `MAIL_TO`, or nobody.' }
+                  removed: { type: integer, description: How many addresses the saved list held. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            `forbidden`, the role is below admin, or `csrf`, a cookie request without `X-HCML-CSRF: 1` or from another site (`CsrfRefused`).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '409':
+          description: '`schedule_uses_list`, the monthly schedule is on and nothing else says who gets the report.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '500':
+          description: '`state_error`, the portal could not write its data folder. The list it had is kept.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '503':
+          description: '`mail_disabled`, email is off while sign-in is off and `ALLOW_EMAIL_WITHOUT_AUTH` is not true.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   /api/maps:
     get:
@@ -1811,9 +2100,97 @@ paths:
             `X-HCML-CSRF: 1` or from another site (`CsrfRefused`).
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
-        '502': { $ref: '#/components/responses/ZabbixError' }
+        '502':
+          description: |
+            `zabbix_error`. When Zabbix answered with an error, the message says that Zabbix refused the change and may already have
+            closed the problem, or the account may not be allowed to change it; Zabbix's own words go to the log. When Zabbix
+            could not be reached, it says the data source is not answering.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '503':
-          description: '`zabbix_write_disabled`, `ZABBIX_WRITE_TOKEN` is not set, or sign-in is off and `ALLOW_WRITE_WITHOUT_AUTH` is not true.'
+          description: |
+            `zabbix_write_disabled`, `ZABBIX_WRITE_TOKEN` is not set, or sign-in is off and `ALLOW_WRITE_WITHOUT_AUTH` is not true.
+            Or `zabbix_timeout`: Zabbix did not answer in time, and the message says that the change may or may not have been made.
+            Or `zabbix_auth`, Zabbix rejected the write token.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+
+  /api/sli/schedule:
+    get:
+      summary: 'The monthly send: whether it can run here, how it is set, when it goes next, and what was sent'
+      description: |
+        **admin.** What the Schedule dialog shows. `available` is false, with `why` in a sentence, when email is not set up (or is off while sign-in is off, unless `ALLOW_EMAIL_WITHOUT_AUTH=true`), when
+        `MAIL_SCHEDULE=off` switches the schedule off on this machine, or when the portal has no `PORTAL_STATE_DIR` to keep a schedule
+        in (a schedule that would not survive a restart must not look as if it would). `schedule` is null until one is saved. `next`
+        is the month the next send is for and the moment it goes (Unix seconds), `retrying` when a send has failed and is waiting to
+        be tried again; it is null when the schedule is off or not available. `sends` are the portal's last twelve sends, those made
+        by hand and those made by the schedule, newest first, with counts and never an address.
+      operationId: getSliSchedule
+      tags: [SLA]
+      responses:
+        '200':
+          description: The schedule as it stands.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportScheduleView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      summary: Set the monthly send
+      description: |
+        **admin.** Replaces the schedule in one step, and the saved recipients with it: a list that is not empty replaces the saved one, and an empty list with `enabled: false` leaves the saved one as it was. The report of a month goes on day `day` of the month
+        after it, at `time` in the report's time zone; Zabbix gets ten minutes after that to hold the last values, and a send that
+        fails is tried again after 15 minutes, an hour, and every four hours for a week. A slot that came before the schedule was
+        turned on, or before its day or time was changed, is never sent late. `notify` are up to three people who are told, once
+        after the third failed try and once when the portal stops trying. `recipients` must hold at least one address while the schedule
+        is on; every address, in both lists, must be in `allowedDomains` when that list is not empty. Any other field, in the body or in `style`, is a 400.
+
+        Refused with 503 `schedule_unavailable` where `GET` says `available: false`. Every change is logged with the user, what was set
+        and how many people, never who.
+      operationId: putSliSchedule
+      tags: [SLA]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, day, time, formats, recipients, notify]
+              properties:
+                enabled: { type: boolean }
+                day: { type: integer, minimum: 1, maximum: 28, description: 'Days 29 to 31 are left out so that every month has the day.' }
+                time: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', description: '24 hours, in the report time zone.' }
+                formats:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  items: { type: string, enum: [pdf, xlsx, csv] }
+                recipients: { type: array, maxItems: 40, items: { type: string }, description: 'One to ten plain addresses while the schedule is on; up to ten while it is off, where an empty list keeps the saved one.' }
+                notify: { type: array, maxItems: 10, items: { type: string }, description: 'Up to three plain addresses.' }
+                style:
+                  type: object
+                  properties:
+                    decimal: { type: string, enum: [dot, comma] }
+                    date: { type: string, enum: [long, numeric, iso] }
+                    separator: { type: string, enum: [comma, semicolon] }
+      responses:
+        '200':
+          description: The schedule as it now stands, the same answer as `GET`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportScheduleView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            `forbidden`, the role is below admin, or `csrf`, a cookie request without `X-HCML-CSRF: 1` or from another site (`CsrfRefused`).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '500':
+          description: '`state_error`, the portal could not save it (the data folder cannot be written), or `internal`.'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '503':
+          description: '`schedule_unavailable`, the schedule cannot run on this portal. The message says what to change.'
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
 components:
@@ -1826,7 +2203,7 @@ components:
         The browser's scheme. The JWT in an httpOnly, SameSite=Strict cookie, set by
         `POST /api/auth/login` and `POST /api/auth/refresh` and cleared by `POST /api/auth/logout`.
         Expires after `SESSION_HOURS` (12 hours by default), renewable while valid, carries
-        `{ sub, role, ep }`. The name is `SESSION_COOKIE`,
+        `{ sub, role, ep, jti, sid }`. The name is `SESSION_COOKIE`,
         default `hcml_session`. Cookies ignore ports, so the Docker stack of hcml-portal-ollama
         (port 8082) names it `hcml_session_ollama`, or signing in to one portal would replace the
         other's session. Unsafe methods sent with this cookie need `X-HCML-CSRF: 1` (`CsrfHeader`).
@@ -1893,7 +2270,7 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     ZabbixUnavailable:
       description: |
-        `zabbix_timeout` (no answer within `ZABBIX_TIMEOUT_MS`, default 10 s) or `zabbix_auth` (Zabbix
+        `zabbix_timeout` (no answer within `ZABBIX_TIMEOUT_MS`, default 300 s in Docker and 10 s in a bare run) or `zabbix_auth` (Zabbix
         rejected the API token). Both are configuration states rather than upstream faults, which is
         why they are 503 and not 504.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
@@ -1920,6 +2297,63 @@ components:
         requestId:
           type: string
           description: The reply's `X-Request-Id`. Quote it to an admin, who finds the request in the BFF log (`reqId`) and in nginx's (`rid=`).
+
+    ReportScheduleView:
+      type: object
+      required: [available, why, timezone, schedule, recipients, next, sends, max, maxNotify, allowedDomains]
+      description: The monthly send as the Schedule dialog shows it.
+      properties:
+        available: { type: boolean }
+        why: { type: string, description: 'Empty when available; otherwise a sentence that says what to change.' }
+        timezone: { type: string, description: The time zone `time` is read in; the report's own. }
+        schedule:
+          type: [object, 'null']
+          description: Null until one is saved.
+          required: [enabled, day, time, formats, style, notify, setBy, setAt]
+          properties:
+            enabled: { type: boolean }
+            day: { type: integer }
+            time: { type: string }
+            formats: { type: array, items: { type: string, enum: [pdf, xlsx, csv] } }
+            style:
+              type: object
+              required: [decimal, date, separator]
+              properties:
+                decimal: { type: string, enum: [dot, comma] }
+                date: { type: string, enum: [long, numeric, iso] }
+                separator: { type: string, enum: [comma, semicolon] }
+            notify: { type: array, items: { type: string } }
+            setBy: { type: string }
+            setAt: { type: integer, description: Unix seconds. }
+        recipients: { type: array, items: { type: string }, description: 'The saved recipients, which the button and the schedule share.' }
+        next:
+          type: [object, 'null']
+          required: [month, at, retrying]
+          properties:
+            month: { type: string, description: The month the next report is for. }
+            at: { type: integer, description: 'Unix seconds: when it goes, or when the next try is.' }
+            retrying: { type: boolean }
+        sends:
+          type: array
+          description: The last twelve, newest first. Counts only.
+          items:
+            type: object
+            required: [month, trigger, by, at, outcome, attempts, formats, recipients, refused, bytes]
+            properties:
+              month: { type: string }
+              trigger: { type: string, enum: [schedule, manual] }
+              by: { type: string, description: 'A user name, or "schedule".' }
+              at: { type: integer }
+              outcome: { type: string, enum: [sending, sent, failed, missed] }
+              attempts: { type: integer }
+              formats: { type: array, items: { type: string, enum: [pdf, xlsx, csv] } }
+              recipients: { type: integer }
+              refused: { type: integer }
+              bytes: { type: integer }
+              reason: { type: string, description: 'A word for why it failed: a mail failure kind, `zabbix`, `recipients`, `not running` or `error`.' }
+        max: { type: integer }
+        maxNotify: { type: integer }
+        allowedDomains: { type: array, items: { type: string } }
 
     Ready:
       type: object
@@ -1951,7 +2385,7 @@ components:
       required: [name, role]
       properties:
         name: { type: string }
-        role: { type: string, enum: [viewer, operator, admin] }
+        role: { type: string, enum: [viewer, wall, operator, admin] }
 
     Session:
       type: object
@@ -2053,8 +2487,6 @@ components:
         status: { type: string, description: '`0` enabled, `1` disabled.' }
         state: { type: string, description: '`0` normal, `1` not supported.' }
         flags: { type: string }
-        lastvalue: { type: string }
-        lastclock: { type: string }
         tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
         hosts:
           type: array
@@ -2072,6 +2504,8 @@ components:
         - $ref: '#/components/schemas/Item'
         - type: object
           properties:
+            lastvalue: { type: string, description: 'The newest value. Zabbix looks it up item by item, so only this route returns it.' }
+            lastclock: { type: string, description: 'When that value was collected, epoch seconds as text.' }
             prevvalue: { type: string, description: The value before `lastvalue`. }
 
     Tag:

@@ -10,7 +10,7 @@
  * From the code: the endpoints (and how many are GET), the route modules, the Zabbix methods (read and write), the
  * parts of the setup guide, the ADRs, the pages, the direct dependencies, the test files, the numbered parts of the
  * stylesheet, the jobs of the CI workflow, the checkers, and the entities and relationships of the logical and
- * conceptual ERDs and the tables of the database ERD.
+ * conceptual ERDs and the tables of the database ERD, and the cards on each of the three card pages of the handbook.
  *
  * Checked in the documents: sentences of the forms below ("45 endpoints", "14 read methods", "38 parts",
  * "13 ADRs", "19 pages", "40 direct dependencies", "78 files"). A line that tells of the past (it says "was", "claimed",
@@ -19,6 +19,8 @@
  * Also checked: every endpoint of docs/api/openapi.yaml has a row in the endpoint table of setup/05, and every
  * row names an endpoint; the table of Zabbix calls in ERD-Database.md lists exactly the lines of server/src
  * that name each method; and the Configuration section of README.md names every environment variable the BFF reads.
+ * The tracker is checked as a table: ten cells in every row (a pipe inside a code span splits a cell and moves every cell
+ * after it along), a mark that fits its status, one row for each id, and the totals that its text and the open-items page state.
  *
  * It does not read what a sentence means. A number the forms above do not reach, and a line citation that still
  * exists but no longer says what the sentence does, are for a person.
@@ -77,10 +79,10 @@ export function countEndpoints(root) {
   return { total: by.GET + by.POST + by.other, get: by.GET, post: by.POST, inModules: by.inModules };
 }
 
-/** Route modules: `await app.register(somethingRoutes)` in index.ts. */
+/** Route modules: `await app.register(somethingRoutes)` in index.ts, with or without options after the name. */
 export function countRouteModules(root) {
   const f = join(root, 'server/src/index.ts');
-  return existsSync(f) ? lines(f).filter((l) => /^\s*await app\.register\(\w+Routes\)/.test(l)).length : 0;
+  return existsSync(f) ? lines(f).filter((l) => /^\s*await app\.register\(\w+Routes[,)]/.test(l)).length : 0;
 }
 
 const METHOD = /'((?:host|hostgroup|item|history|trend|trigger|problem|event|service|sla|map|maintenance|dashboard|httptest|apiinfo|user|template)\.[A-Za-z]+)'/g;
@@ -106,6 +108,8 @@ export function zabbixCalls(root) {
 }
 
 const countFiles = (dir, re) => sourceFiles(dir, re, false).length;
+/** The cards of a handbook card page: each starts with a generated-block marker. */
+const countCards = (file) => (existsSync(file) ? (readFileSync(file, 'utf8').match(/<!-- gen:card /g) || []).length : 0);
 
 /** The environment variables server/src reads: `process.env.NAME`, `process.env['NAME']` and `envNum('NAME', ...)`, outside tests. */
 export function environmentVariables(root) {
@@ -180,6 +184,27 @@ const countJobs = (root) => {
 /** The scripts `npm run check` stands for: one `*.check.*` file in tools/check and in web/scripts each. */
 const countCheckers = (root) => sourceFiles(join(root, 'tools/check'), /\.check\.(mjs|ts)$/, false).length + sourceFiles(join(root, 'web/scripts'), /\.check\.(mjs|ts)$/, false).length;
 
+/**
+ * How many tests the last `npm test` ran, from the file each package's vitest config has it write (`.test-counts.json`, which git
+ * ignores). Null when there is no such file, when a test file is newer than it, or when it names fewer files than the package has (a
+ * run of one file): its count is then not the whole, and a statement is not judged against a count that does not hold.
+ */
+export function testCounts(root) {
+  const read = (dir) => {
+    const file = join(root, dir, '.test-counts.json');
+    if (!existsSync(file)) return null;
+    const tests = sourceFiles(join(root, dir, 'src'), /\.test\.tsx?$/, false);
+    if (statSync(file).mtimeMs < Math.max(0, ...tests.map((p) => statSync(p).mtimeMs))) return null;
+    try {
+      const run = JSON.parse(readFileSync(file, 'utf8'));
+      return Number.isInteger(run.numTotalTests) && run.testResults?.length === tests.length ? run.numTotalTests : null;
+    } catch {
+      return null;
+    }
+  };
+  return { serverTests: read('server'), webTests: read('web') };
+}
+
 /** Everything the code says, by name. */
 export function gatherFacts(root) {
   const endpoints = countEndpoints(root);
@@ -207,7 +232,9 @@ export function gatherFacts(root) {
     deps: dependencies(root),
     serverTestFiles: countFiles(join(root, 'server/src'), /\.test\.ts$/),
     webTestFiles: countFiles(join(root, 'web/src'), /\.test\.tsx?$/),
+    ...testCounts(root),
     cssParts: countFiles(join(root, 'web/src/styles'), /^\d{2}-.+\.css$/),
+    cardPages: ['files-server.md', 'files-web.md', 'files-tools.md'].map((f) => countCards(join(root, 'docs/handover/2-code', f))),
     jobs: countJobs(root),
     checkers: countCheckers(root),
     logical,
@@ -239,7 +266,10 @@ export const RULES = [
   { id: 'dependencies split', re: /\b(\d+) in the BFF and (\d+) in the web app\b/g, want: (f) => [[f.deps.server.run + f.deps.server.dev, f.deps.web.run + f.deps.web.dev]] },
   { id: 'dependencies in full', re: /\b(\d+) runtime \+ (\d+) dev on the server, (\d+) \+ (\d+) on the web: (\d+) in all, (\d+) of them shipped/g, want: (f) => [[f.deps.server.run, f.deps.server.dev, f.deps.web.run, f.deps.web.dev, f.deps.total, f.deps.shipped]] },
   { id: 'test files', re: /\b[\d,]+ tests in (\d+) files\b/g, want: (f) => [[f.serverTestFiles], [f.webTestFiles]] },
+  // The counts come from the files `npm test` writes (see testCounts): a test cannot be counted without running one.
+  { id: 'test counts', re: /\b(\d[\d,]*) tests in \d+ files\b/g, want: (f) => [[f.serverTests], [f.webTests]], when: (f) => f.serverTests !== null && f.webTests !== null },
   { id: 'stylesheet parts', re: /\b(\d+) numbered parts\b/g, want: (f) => [[f.cssParts]] },
+  { id: 'cards on a page', re: /has one card on this page, (\d+) in all/g, want: (f) => f.cardPages.map((n) => [n]) },
   { id: 'CI jobs', re: /\b(\w+) jobs\b/gi, want: (f) => [[f.jobs]], only: /workflow|ci\.yml|\bCI\b/ },
   { id: 'checkers', re: /\b(\w+) checkers\b/gi, want: (f) => [[f.checkers]], not: /tools\/check/ },
   { id: 'checkers that exist', re: /\bFollow the (\w+) that exist\b/g, want: (f) => [[f.checkers]] },
@@ -273,7 +303,7 @@ const claimsIn = (text, from, to, rule, facts) => {
   const left = [];
   let seen = 0;
   const spans = sentenceSpans(text);
-  for (const m of text.matchAll(rule.re)) {
+  for (const m of rule.when && !rule.when(facts) ? [] : text.matchAll(rule.re)) {
     if (m.index < from || m.index >= to) continue;
     const stated = m.slice(1).filter((x) => x !== undefined).map(toNumber);
     if (stated.some((n) => n === null)) continue;
@@ -388,6 +418,53 @@ export function checkCallTable(text, calls) {
 }
 
 /** Every problem under `root`, and how many statements and tables were checked. */
+/** The mark of a tracker row and the statuses that go with it. */
+const TRACKER_STATUS = { '☑': ['✔ applied', '✔ superseded'], '◐': ['◐ partly'], '☐': ['✘ not yet'] };
+/** The cells of a table row. A pipe splits a cell in Markdown even inside a code span, unless a backslash comes before it. */
+const splitCells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map((c) => c.trim());
+
+/**
+ * The rows of the tracker (a row is a table row whose first cell is a mark) and what is wrong with them. A row with a pipe inside a
+ * code span has an extra cell and every cell after it is in the wrong column, which went unseen for five days in the row of IN-59.
+ */
+export function checkTracker(text) {
+  const problems = [];
+  const seen = new Map();
+  const count = { '☑': 0, '◐': 0, '☐': 0 };
+  text.split('\n').forEach((line, index) => {
+    const m = /^\| ([☑◐☐]) \|/.exec(line);
+    if (!m) return;
+    const at = index + 1;
+    count[m[1]]++;
+    const cells = splitCells(line);
+    const id = cells[2] ?? '';
+    if (cells.length !== 10) {
+      problems.push(`tracker.md:${at}  the row of ${id || 'an item with no id'} has ${cells.length} cells, not 10 (a "|" inside a code span splits a cell: write the words, or "\\|")`);
+      return;
+    }
+    if (!/^[A-Z]{2}-\d\d$/.test(id)) problems.push(`tracker.md:${at}  "${id}" is not an id such as BK-38`);
+    else if (seen.has(id)) problems.push(`tracker.md:${at}  ${id} is also the row at line ${seen.get(id)}`);
+    else seen.set(id, at);
+    if (!TRACKER_STATUS[m[1]].includes(cells[1])) problems.push(`tracker.md:${at}  ${id}: the mark ${m[1]} does not go with the status "${cells[1]}"`);
+  });
+  const totals = { rows: count['☑'] + count['◐'] + count['☐'], done: count['☑'], partly: count['◐'], todo: count['☐'] };
+  const want = [totals.rows, totals.done, totals.partly, totals.todo].join(', ');
+  // The records of past days state older totals; the last sentence of each form is the one about today.
+  for (const form of [/The tracker has (\d+) rows: (\d+) done, (\d+) partly done and (\d+) not done/g, /The tracker now has (\d+) rows: (\d+) done, (\d+) partly done and (\d+) not done/g]) {
+    const last = [...text.matchAll(form)].at(-1);
+    if (last && last.slice(1, 5).map(Number).join(', ') !== want) problems.push(`tracker.md  "${last[0]}" says ${last.slice(1, 5).join(', ')}; the rows are ${want}`);
+  }
+  return { ...totals, problems };
+}
+
+/** The sentence at the head of the open-items page that gives the tracker's totals. */
+export function checkOpenItemsTotals(text, totals) {
+  const m = /it has (\d+) rows\. (\d+) are done, (\d+) are done in part and (\d+) are not done/.exec(text);
+  if (!m) return [];
+  const want = [totals.rows, totals.done, totals.partly, totals.todo].join(', ');
+  return m.slice(1, 5).map(Number).join(', ') === want ? [] : [`docs/handover/5-reference/open-items.md  "${m[0]}" says ${m.slice(1, 5).join(', ')}; the tracker has ${want}`];
+}
+
 export function checkFacts(root) {
   const facts = gatherFacts(root);
   const problems = [];
@@ -422,13 +499,21 @@ export function checkFacts(root) {
     const { problems: found } = checkCallTable(readFileSync(erdDb, 'utf8'), facts.calls);
     for (const p of found) problems.push(`docs/erd/database/ERD-Database.md  the table of Zabbix calls differs from the code for ${p}`);
   }
+  const tracker = join(root, 'tracker.md');
+  if (existsSync(tracker)) {
+    tables++;
+    const found = checkTracker(readFileSync(tracker, 'utf8'));
+    problems.push(...found.problems);
+    const items = join(root, 'docs/handover/5-reference/open-items.md');
+    if (existsSync(items)) problems.push(...checkOpenItemsTotals(readFileSync(items, 'utf8'), found));
+  }
   return { docs: docs.length, checked, past, tables, problems, facts };
 }
 
 // Self-test of the statements: each sample, and the rules it must trip. The facts are made up.
 const FACTS = {
   endpoints: 45, inModules: 39, get: 40, post: 5, routeModules: 22, methods: 15, readMethods: 14, writeMethods: 1, parts: 38, adrs: 13, pages: 19, behindShell: 18,
-  deps: { server: { run: 8, dev: 9 }, web: { run: 5, dev: 18 }, total: 40, shipped: 13 }, serverTestFiles: 78, webTestFiles: 81, cssParts: 18, jobs: 5, checkers: 10,
+  deps: { server: { run: 8, dev: 9 }, web: { run: 5, dev: 18 }, total: 40, shipped: 13 }, serverTestFiles: 78, webTestFiles: 81, serverTests: 2750, webTests: 1602, cssParts: 18, cardPages: [120, 177, 25], jobs: 5, checkers: 10,
   logical: { entities: 46, relationships: 54 }, conceptual: { entities: 27, associations: 34 }, tables: 45,
 };
 const samples = [
@@ -462,8 +547,14 @@ const samples = [
   ['There are 40 direct ones, 13 of them shipped', []],
   ['8 runtime + 9 dev on the server, 5 + 18 on the web: 40 in all, 13 of them shipped.', []],
   ['8 runtime + 9 dev on the server, 5 + 18 on the web: 39 in all, 13 of them shipped.', ['dependencies in full']],
-  ['1687 tests in 78 files, in jsdom', []],
-  ['1687 tests in 77 files, in jsdom', ['test files']],
+  ['Every code file of the server has one card on this page, 120 in all, grouped by folder', []],
+  ['Every code file of the server has one card on this page, 104 in all, grouped by folder', ['cards on a page']],
+  ['2,750 tests in 78 files, in node', []],
+  ['2,750 tests in 77 files, in node', ['test files']],
+  ['1,602 tests in 81 files, in jsdom', []],
+  ['2,751 tests in 78 files, in node', ['test counts']],
+  ['1,603 tests in 77 files, in jsdom', ['test files', 'test counts']],
+  ['The server had 2,061 tests in 78 files when this was written', []],
   ['The CI workflow runs five jobs: server, web, the checks', []],
   ['The CI workflow runs four jobs: server, web', ['CI jobs']],
   ['each mixed two jobs: the HTTP side and what it knew', []],
@@ -484,6 +575,36 @@ for (const [sample, expected] of samples) {
   }
 }
 
+// Self-test of the tracker rule: a sample table, and what the rule must say about it.
+{
+  const row = (mark, status, id, extra = 'x') => `| ${mark} | ${status} | ${id} | Low | S | ${extra} | y | - | no | z |`;
+  const head = '| Done | Checked | ID | Severity | Effort | What | Do | Earlier | Decision | Stands |\n|---|---|---|---|---|---|---|---|---|---|\n';
+  const cases = [
+    ['a table that holds', `${head}${row('☑', '✔ applied', 'BK-01')}\n${row('☐', '✘ not yet', 'BK-02')}\nThe tracker has 2 rows: 1 done, 0 partly done and 1 not done.\n`, 0],
+    ['rows of other tables are not read', `| ID | Question |\n|---|---|\n| IN-65 | a | b | c |\n${head}${row('◐', '◐ partly', 'BK-01')}\n`, 0],
+    ['a pipe inside a code span splits a cell', `${head}${row('☑', '✔ applied', 'BK-01', 'use `on|off|any` here')}\n`, 1],
+    ['an escaped pipe does not', `${head}${row('☑', '✔ applied', 'BK-01', 'use `on\\|off` here')}\n`, 0],
+    ['a mark that does not fit its status', `${head}${row('☑', '✘ not yet', 'BK-01')}\n`, 1],
+    ['a status of an item that was superseded', `${head}${row('☑', '✔ superseded', 'BK-01')}\n`, 0],
+    ['an id in two rows', `${head}${row('☑', '✔ applied', 'BK-01')}\n${row('☑', '✔ applied', 'BK-01')}\n`, 1],
+    ['a row with no id', `${head}${row('☑', '✔ applied', 'later')}\n`, 1],
+    ['totals that the rows contradict', `${head}${row('☑', '✔ applied', 'BK-01')}\nThe tracker now has 3 rows: 2 done, 0 partly done and 1 not done.\n`, 1],
+    ['an older total, followed by the right one', `${head}${row('☑', '✔ applied', 'BK-01')}\nThe tracker has 9 rows: 2 done, 0 partly done and 7 not done.\nThe tracker has 1 rows: 1 done, 0 partly done and 0 not done.\n`, 0],
+  ];
+  for (const [label, sample, expected] of cases) {
+    const found = checkTracker(sample).problems.length;
+    if (found !== expected) {
+      console.error(`facts.check tracker self-test failed (${label}): ${found} problems, expected ${expected}`);
+      process.exit(1);
+    }
+  }
+  const items = 'On 9 November it has 5 rows. 3 are done, 1 are done in part and 1 are not done. This page lists';
+  if (checkOpenItemsTotals(items, { rows: 5, done: 3, partly: 1, todo: 1 }).length !== 0 || checkOpenItemsTotals(items, { rows: 5, done: 2, partly: 2, todo: 1 }).length !== 1) {
+    console.error('facts.check open-items self-test failed');
+    process.exit(1);
+  }
+}
+
 // Self-test of the readers, on a small tree made for the purpose.
 {
   const scratch = mkdtempSync(join(tmpdir(), 'facts-check-'));
@@ -495,11 +616,11 @@ for (const [sample, expected] of samples) {
     put('server/src/routes/a.ts', "export async function aRoutes(app) {\n  app.get('/api/a', () => 1);\n  // app.get('/api/commented', () => 1);\n  app.post('/api/b', () => 1);\n}\n");
     put('server/src/routes/b.ts', "  app.get(\n    '/api/c',\n  () => 1);\n");
     put('server/src/__tests__/t.test.ts', "app.get('/api/in-a-test', () => 1);\n");
-    put('server/src/index.ts', 'await app.register(aRoutes);\nawait app.register(bRoutes);\nawait app.register(helmet, {});\n');
+    put('server/src/index.ts', 'await app.register(aRoutes);\nawait app.register(bRoutes);\nawait app.register(helmet, {});\nawait app.register(cRoutes, { x: 1 });\n');
     put('server/src/services/z.ts', "zbx('host.get', {});\n// zbx('item.get', {});\nawait zbxWrite('event.acknowledge', {});\nzbx<X>('history.get', {});\n");
     const e = countEndpoints(scratch);
     if (e.total !== 3 || e.get !== 2 || e.post !== 1) throw new Error(`endpoints: ${JSON.stringify(e)}`);
-    if (countRouteModules(scratch) !== 2) throw new Error('route modules');
+    if (countRouteModules(scratch) !== 3) throw new Error('route modules');
     const z = zabbixCalls(scratch);
     if (z.calls.size !== 3 || z.written.size !== 1 || !z.written.has('event.acknowledge') || z.calls.has('item.get')) throw new Error('zabbix calls');
     const table = '| Method | Called from | Tables |\n|---|---|---|\n| `host.get` | `services/z.ts:1` | `hosts` |\n| `history.get` | `services/z.ts:3`, `:9` | x |\n| `event.acknowledge` | `services/z.ts:3` | x |\n';

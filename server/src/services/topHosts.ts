@@ -1,4 +1,5 @@
 import { zbx } from '../clients/zabbix.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 import { isFresh } from '../domain/reachability.js';
 import { capacityMetricFor } from './capacity.js';
 
@@ -81,3 +82,6 @@ export async function getTopHosts(limit: number): Promise<TopHostsResponse> {
   );
   return { generatedAt: now, metrics };
 }
+
+/** The busiest hosts as the route and the warm-up read it. */
+export const topHostsView = (limit = TOP_HOSTS_ROWS) => cached(`top-hosts:${limit}`, 30_000, () => getTopHosts(limit), SLOW_VIEW);

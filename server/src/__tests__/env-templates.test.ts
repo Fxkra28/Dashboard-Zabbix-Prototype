@@ -54,7 +54,6 @@ const NOT_IN_TEMPLATE: Record<string, string> = {
 
 /** Template values that differ from compose's default on purpose, with the reason. */
 const DIFFERS_FROM_COMPOSE: Record<string, string> = {
-  ZBX_URL: 'a placeholder for the production host; compose points at the Zabbix published on this machine',
   ANTHROPIC_API_KEY: 'a placeholder, never a value',
   HOST_NAME_PATTERN: "the template spells out HCML's naming rule; compose leaves it empty and config.ts supplies it",
   AI_MODEL: 'the template names an example; compose leaves it empty so config.ts picks one for the backend in use',

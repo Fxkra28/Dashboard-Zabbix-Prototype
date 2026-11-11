@@ -1,4 +1,5 @@
 import { zbx } from '../clients/zabbix.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 
 /**
  * Services tree (HCML Goal 2). This is the portal's answer to HCML's stated core problem:
@@ -180,3 +181,6 @@ export async function getServiceTree(): Promise<ServicesResponse> {
     worst: services.reduce((w, s) => Math.max(w, Number(s.status)), -1),
   };
 }
+
+/** The service tree as its route, the Assistant and the warm-up read it. */
+export const serviceTreeView = () => cached('services:tree', 30_000, getServiceTree, SLOW_VIEW);

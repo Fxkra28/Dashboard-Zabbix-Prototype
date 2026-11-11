@@ -55,7 +55,7 @@ describe('InternetMeters', () => {
   it('says when it was updated, as the Live problems panel does', async () => {
     vi.spyOn(api, 'netMeters').mockResolvedValue(response([meter()]));
     show();
-    expect(await screen.findByText(/^Updated \d\d:\d\d:\d\d$/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Updated \d\d:\d\d:\d\d WIB$/)).toBeInTheDocument();
   });
 
   it('asks the BFF once, for the meters, and nothing else', async () => {

@@ -19,7 +19,13 @@ const NOT_PASSED: Record<string, string> = {
   ZBX_TOKEN: 'a deprecated alias; passing it beside ZABBIX_API_TOKEN would trip the startup warning',
   ANTHROPIC_API_KEY: 'hcml-portal-ollama passes no Anthropic key on purpose (tracker IN-03)',
   ALLOW_WRITE_WITHOUT_AUTH: 'a local-dev opt-in; the container always signs in, so it must never reach it (tracker SC-07)',
+  ALLOW_EMAIL_WITHOUT_AUTH: 'a local-dev opt-in; the container always signs in, so it must never reach it (tracker SC-43)',
 };
+
+/** The report email's settings: hcml-portal passes them, hcml-portal-ollama holds them back so that nothing leaves the machine. */
+const MAIL_VARS = ['MAIL_PROVIDER', 'MAIL_HOST', 'MAIL_PORT', 'MAIL_SECURITY', 'MAIL_USER', 'MAIL_PASS', 'MAIL_FROM', 'MAIL_FROM_NAME', 'MAIL_TO', 'MAIL_ALLOWED_DOMAINS', 'MAIL_SCHEDULE'];
+for (const v of MAIL_VARS) NOT_PASSED[v] = 'hcml-portal-ollama passes no mail settings on purpose: nothing leaves the machine there (tracker FR-26)';
+NOT_PASSED.PORTAL_STATE_DIR = 'hcml-portal-ollama has no state volume: it sends no email, so it has nothing to keep (tracker IN-59)';
 
 /** Every variable named in the non-test sources under src/: process.env.X, process.env['X'] and envNum('X'). */
 function variablesRead(dir = SRC): Set<string> {
@@ -65,7 +71,6 @@ function passed(): Map<string, Passed> {
 /** Defaults compose gives that config.ts must give too: how to read each one off `config`. */
 type Config = typeof import('../core/config.js').config;
 const SAME_AS_CONFIG: Record<string, (c: Config) => unknown> = {
-  ZABBIX_TIMEOUT_MS: (c) => c.zbxTimeoutMs,
   RATE_LIMIT_PER_MINUTE: (c) => c.rateLimitPerMinute,
   STREAM_MAX_CLIENTS: (c) => c.stream.maxClients,
   STREAM_MAX_PER_USER: (c) => c.stream.maxPerUser,
@@ -104,7 +109,8 @@ const SAME_AS_CONFIG: Record<string, (c: Config) => unknown> = {
 
 /** Defaults that are meant to differ from config.ts's (a container is not a dev machine), or between the copies. */
 const DIFFERS_BY_DESIGN = new Set([
-  'ZBX_URL', // the host's published Zabbix port, as seen from a container
+  'ZBX_URL', // HCML's Zabbix; config.ts keeps a local address for dev runs
+  'ZABBIX_TIMEOUT_MS', // HCML's Zabbix is slow (256 s for one page); config.ts keeps 10 s for dev runs
   'WEB_ORIGIN', // the nginx port, which is 8081 or 8082 by copy
   'TRUST_PROXY', // nginx is always in front in Docker
   'SESSION_COOKIE', // each copy has its own, as cookies ignore ports
@@ -123,6 +129,22 @@ describe('docker-compose.yml and the BFF (tracker IN-04)', () => {
     const have = passed();
     const missing = [...read].filter((v) => !have.has(v) && !(v in NOT_PASSED)).sort();
     expect(missing, 'read by the BFF, but compose never passes them: ignored in Docker').toEqual([]);
+  });
+
+  it('passes the mail settings in hcml-portal and holds them back in hcml-portal-ollama, which exists so that nothing leaves the machine', () => {
+    const local = /^name: hcml-portal-ollama\s*$/m.test(readFileSync(root('docker-compose.yml'), 'utf8'));
+    const have = passed();
+    for (const v of MAIL_VARS) expect(have.has(v), `${v} in ${local ? 'hcml-portal-ollama' : 'hcml-portal'}`).toBe(!local);
+  });
+
+  it('gives hcml-portal a folder for its state, the one its volume is mounted at, and gives hcml-portal-ollama none', () => {
+    const text = readFileSync(root('docker-compose.yml'), 'utf8');
+    const local = /^name: hcml-portal-ollama\s*$/m.test(text);
+    const line = /^ {6}PORTAL_STATE_DIR: (.*)$/m.exec(text)?.[1];
+    expect(passed().has('PORTAL_STATE_DIR'), local ? 'hcml-portal-ollama' : 'hcml-portal').toBe(!local);
+    if (!local) expect(line).toBe('/data');
+    const mounted = /^ {6}- portal-state:(\/\S+)$/m.exec(text)?.[1];
+    expect(mounted, 'the volume the state folder is').toBe(local ? undefined : line);
   });
 
   it('holds back only variables the BFF still reads', () => {

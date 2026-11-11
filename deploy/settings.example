@@ -11,8 +11,11 @@
 # The meaning of each setting is in the Configuration table of README.md.
 
 # Zabbix
-ZBX_URL=http://host.docker.internal:8080/api_jsonrpc.php
-ZABBIX_TIMEOUT_MS=10000
+ZBX_URL=https://zabbix.hcml.co.id/zabbix/api_jsonrpc.php
+ZABBIX_TIMEOUT_MS=300000
+# Only while Zabbix's certificate has expired: its SHA-256 fingerprint and the last day, WIB (docs/operations/tls.md).
+# ZBX_TLS_PIN_SHA256=
+# ZBX_TLS_PIN_UNTIL=
 
 # Where the portal listens. Cookies ignore ports, so the two copies need different cookie names.
 # WEB_PORT=8081 (hcml-portal) or 8082 (hcml-portal-ollama)
@@ -30,6 +33,7 @@ STREAM_MAX_PER_USER=5
 # Sign-in. true unless this is a local development run.
 AUTH_ENABLED=true
 # How long one sign-in lasts, in hours (2 to 24), and the number that ends every session when raised.
+# The server refuses to start on a length it cannot use.
 SESSION_HOURS=12
 SESSION_EPOCH=1
 
@@ -44,7 +48,7 @@ HOST_NAME_PATTERN=
 # Links, alert noise and the availability report
 LINK_LOSS_WARN=2
 LINK_LOSS_CRIT=10
-# The Zabbix dashboard whose gauge widgets are the internet traffic meters (Dashboard, operator and admin).
+# The Zabbix dashboard whose gauge widgets are the internet traffic meters (Dashboard, for the wall, operator and admin roles).
 INTERNET_METERS_DASHBOARD=Global view
 NOISE_SHORT_SECONDS=300
 NOISE_MIN_COUNT=5
@@ -83,6 +87,20 @@ AI_MAX_CONCURRENT=4
 AI_DAILY_TOKENS_PER_USER=500000
 AI_DAILY_TOKENS_TOTAL=2000000
 
+# Emailing the SLA report: hcml-portal only. Its compose file passes these, all blank by default, and blank means email
+# is off and the button is not offered. hcml-portal-ollama passes none of them, so that nothing leaves the machine.
+# The password, MAIL_PASS, is a secret and goes in `.env`. MAIL_PROVIDER is gmail, yahoo, zoho, icloud or smtp (README.md).
+# MAIL_PROVIDER=
+# MAIL_HOST=
+# MAIL_PORT=
+# MAIL_SECURITY=
+# MAIL_USER=
+# MAIL_FROM=
+# MAIL_FROM_NAME=
+# MAIL_TO=
+# MAIL_ALLOWED_DOMAINS=
+# MAIL_SCHEDULE=
+
 # Secrets, by name only. They go in `.env` and never in this file, and the encrypted backup
 # is what protects them: JWT_SECRET, ZABBIX_API_TOKEN, ZABBIX_WRITE_TOKEN, PORTAL_PASS,
-# PORTAL_USERS, PORTAL_USER, ANTHROPIC_API_KEY and AI_API_KEY.
+# PORTAL_USERS, PORTAL_USER, ANTHROPIC_API_KEY, AI_API_KEY and MAIL_PASS.

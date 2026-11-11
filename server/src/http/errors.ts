@@ -6,7 +6,9 @@ import {
   ZabbixWriteDisabledError,
 } from '../clients/zabbix.js';
 import { AiBusyError, AiDisabledError, AiUpstreamError } from '../clients/ai.js';
-import { BadRequestError } from '../core/validate.js';
+import { MailDisabledError, MailError } from '../clients/mail.js';
+import { StateWriteError } from '../core/state.js';
+import { BadRequestError, ScheduleUnavailableError } from '../core/validate.js';
 import { validationProblem } from '../core/schemas.js';
 
 /**
@@ -70,6 +72,24 @@ export function registerErrorHandler(app: FastifyInstance): void {
       // `detail` names the model address and what it sent back: the log gets it, the response never does.
       app.log.error({ detail: err.detail }, err.message);
       return reply.code(502).send({ error: 'ai_error', message: err.message });
+    }
+
+    if (err instanceof MailDisabledError) {
+      req.log.warn('a report email was asked for, but email is not set up');
+      return reply.code(503).send({ error: 'mail_disabled', message: err.message });
+    }
+    if (err instanceof MailError) {
+      // `detail` is what the mail server said: the log gets it, the response never does.
+      req.log.error({ detail: err.detail, kind: err.kind }, 'the mail server did not take the report');
+      return reply.code(502).send({ error: 'mail_error', message: err.message });
+    }
+    if (err instanceof ScheduleUnavailableError) {
+      return reply.code(503).send({ error: 'schedule_unavailable', message: err.message });
+    }
+    if (err instanceof StateWriteError) {
+      // `detail` is the system's code for the failure: the log gets it, the response never does.
+      req.log.error({ detail: err.detail }, 'the portal could not save its state');
+      return reply.code(500).send({ error: 'state_error', message: err.message });
     }
 
     // Fastify's own client errors (malformed JSON, wrong content type, body too

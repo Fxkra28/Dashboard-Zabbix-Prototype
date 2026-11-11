@@ -1,6 +1,6 @@
 import { cached } from '../core/cache.js';
 import { config } from '../core/config.js';
-import { getProblems, openProblems, getHostsWithMeta, type ZHostMeta } from '../domain/queries.js';
+import { cachedProblems, openProblems, getHostsWithMeta, type ZHostMeta } from '../domain/queries.js';
 import { siteFromHostName } from '../domain/naming.js';
 import {
   getIcmpByHost,
@@ -108,7 +108,7 @@ export async function getSites(): Promise<SitesResponse> {
   // `problems` with every other problem reader.
   const [hosts, problems, icmp] = await Promise.all([
     cached('hosts:meta', 30_000, getHostsWithMeta),
-    cached('problems', 5_000, getProblems).then(openProblems),
+    cachedProblems().then(openProblems),
     getIcmpByHost(),
   ]);
 
@@ -193,3 +193,6 @@ export async function getSites(): Promise<SitesResponse> {
 
   return { sites: ordered, coverage };
 }
+
+/** The Sites board as its route, the Assistant and the warm-up read it; quick since the ping values are read in bulk. */
+export const sitesView = () => cached('sites', 15_000, getSites);

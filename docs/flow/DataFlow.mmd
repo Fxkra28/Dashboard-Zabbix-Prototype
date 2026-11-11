@@ -9,16 +9,23 @@ flowchart TB
     %%  write.
 
     %%  Blue    Zabbix owns it and stores it.
-    %%  Green   the portal derives it. No table exists anywhere: it is
-    %%          built per request, cached for seconds, gone on restart.
+    %%  Green   the portal derives it. No table of it exists anywhere:
+    %%          it is built per request, cached for seconds, gone on
+    %%          restart.
     %%  Amber   lives in the browser.
     %%  Purple  the portal's single write back to Zabbix.
     %%  Red     it leaves this machine.
+    %%  Grey    the portal keeps it: one small file on its own volume,
+    %%          lane 6 only.
 
     %%  The write path (lane 5) ends in its own terminal box rather than
     %%  looping back to lane 1. That arrow would be a cycle, and one
     %%  cycle is enough to make the layout engine scramble the reading
     %%  order of every other lane. It is the same Zabbix API.
+
+    %%  Lane 6 is the report by email, off until the MAIL_ settings are
+    %%  usable. It also ends in a terminal box: the send writes a record
+    %%  to the state file, and an arrow back there would be a cycle.
 
     %%  Laid out with the default engine, not elk: lanes stack downwards
     %%  and each lane reads left to right, which needs per-subgraph
@@ -29,7 +36,8 @@ flowchart TB
     %%  Anthropic API, so the red box is real: a problem's host name,
     %%  trigger name and tags cross the network when someone clicks
     %%  Explain. The local-model copy is hcml-portal-ollama, where the
-    %%  same box is green. Nothing else on this diagram differs.
+    %%  same box is green, and which has no lane 6: it passes no MAIL_
+    %%  settings and declares no volume. Nothing else differs.
 
     %%  Careful when editing: the subgraph IDs do not match the lane
     %%  numbers. Lane 3 "Plain language" is `subgraph D4` and lane 4
@@ -91,14 +99,23 @@ flowchart TB
         NGINX --> SCREEN
     end
 
-    subgraph D5["5 &middot; The one write"]
+    subgraph D5["5 &middot; The one write to Zabbix"]
         direction LR
         WTOK["<b>write token</b><br>separate, write-capable<br>blank &rArr; the portal cannot write"]
-        ZWRITE["<b>event.acknowledge</b><br>back to the same Zabbix API,<br>the only write in the portal"]
+        ZWRITE["<b>event.acknowledge</b><br>back to the same Zabbix API,<br>the only write to Zabbix"]
         INVAL["<b>invalidate + push</b><br>drop the cached list, then push<br>the new one to every open screen"]
 
         WTOK --> ZWRITE
         WTOK --> INVAL
+    end
+
+    subgraph D6["6 &middot; The report by email: optional"]
+        direction LR
+        STATE[("<b>portal-state volume</b><br>portal-state.json:<br>saved recipients,<br>the monthly schedule,<br>a record of each send<br><i>no figure, no report,<br>no password</i>")]
+        SEND["<b>the send</b><br>by an administrator, or by<br>the scheduler on its day:<br>the month's SLA, both<br>methods, as files"]
+        MAILOUT["<b>LEAVES THIS MACHINE</b><br>the month's figures and<br>files, and the addresses,<br>go to the mail server<br>over SMTP"]
+
+        STATE --> SEND --> MAILOUT
     end
 
     ZAPI ==>|"JSON-RPC, read"| RTOK
@@ -107,6 +124,8 @@ flowchart TB
     DERIVE -.->|"host, trigger, severity, opdata,<br>plus tags on the Explain path only"| SNAP
     ANSWER -.-> SCREEN
     SCREEN -->|"acknowledge / close<br>operator role"| WTOK
+    SCREEN -->|"Email report, Schedule<br>administrator role"| SEND
+    DERIVE -.->|"the month's SLA"| SEND
 
     %% Frames must stay unfilled or they paint over the relationship lines.
 
@@ -115,16 +134,19 @@ flowchart TB
     classDef browser  fill:#fef3c7,stroke:#d97706,color:#451a03
     classDef written  fill:#ede9fe,stroke:#7c3aed,color:#2e1065
     classDef external fill:#fee2e2,stroke:#dc2626,color:#450a0a
+    classDef kept     fill:#e2e8f0,stroke:#475569,color:#0f172a
 
     style D1 fill:none,stroke:#94a3b8
     style D2 fill:none,stroke:#94a3b8
     style D3 fill:none,stroke:#94a3b8
     style D4 fill:none,stroke:#94a3b8
     style D5 fill:none,stroke:#94a3b8
+    style D6 fill:none,stroke:#94a3b8
 
     class DEV,ZSRV,ZDB,ZAPI zbx
-    class RTOK,CACHE,DERIVE,SHAPE,SNAP,ANSWER,INVAL derived
+    class RTOK,CACHE,DERIVE,SHAPE,SNAP,ANSWER,INVAL,SEND derived
     class NGINX,SCREEN,LIVE browser
     class WTOK,ZWRITE written
-    class MODEL,LEAVES external
-%% source-hash: a5477a411e9d
+    class MODEL,LEAVES,MAILOUT external
+    class STATE kept
+%% source-hash: 09c8c21ad8e4

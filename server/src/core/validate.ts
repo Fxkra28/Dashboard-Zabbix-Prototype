@@ -17,9 +17,22 @@ export class BadRequestError extends Error {
   readonly code = 'bad_request';
 }
 
+/** The monthly schedule cannot run on this portal. Mapped to 503 `schedule_unavailable`; the message says what to change. */
+export class ScheduleUnavailableError extends Error {
+  readonly code = 'schedule_unavailable';
+}
+
+/** The largest id Zabbix stores, an unsigned 64-bit number. */
+const MAX_ZABBIX_ID = 18_446_744_073_709_551_615n;
+
+/** Digits only, and no larger than Zabbix stores: anything else only comes back from Zabbix as a failed read. */
+export function isZabbixId(value: string): boolean {
+  return /^\d{1,20}$/.test(value) && BigInt(value) <= MAX_ZABBIX_ID;
+}
+
 /** A Zabbix object id: required, digits only. */
 export function requireId(value: unknown, name: string): string {
-  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+  if (typeof value !== 'string' || !isZabbixId(value)) {
     throw new BadRequestError(`${name} is required and must be a numeric Zabbix id.`);
   }
   return value;

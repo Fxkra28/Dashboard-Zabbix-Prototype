@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentMonth, monthBounds, monthOf, parseMonth, previousMonth } from '../sli/time.js';
+import { checkPeriodStart, currentMonth, monthBounds, monthOf, parseMonth, previousMonth } from '../sli/time.js';
 import { BadRequestError } from '../core/validate.js';
 
 /**
@@ -51,5 +51,24 @@ describe('month helpers', () => {
   it('steps back a month, across a year', () => {
     expect(previousMonth('2026-08')).toBe('2026-07');
     expect(previousMonth('2026-01')).toBe('2025-12');
+  });
+});
+
+describe('checkPeriodStart', () => {
+  const now = 1_790_000_000;
+  const DAY = 86400;
+
+  it('accepts a period that has started, from one second ago back to 400 days ago', () => {
+    expect(() => checkPeriodStart(now - 1, now)).not.toThrow();
+    expect(() => checkPeriodStart(now - 400 * DAY, now)).not.toThrow();
+  });
+
+  it('refuses a period that has not started yet, or starts this very second, in a sentence', () => {
+    expect(() => checkPeriodStart(now, now)).toThrow(new BadRequestError('That period has not started yet.'));
+    expect(() => checkPeriodStart(now + 1, now)).toThrow(new BadRequestError('That period has not started yet.'));
+  });
+
+  it('refuses a period that began more than 400 days ago, in a sentence', () => {
+    expect(() => checkPeriodStart(now - 400 * DAY - 1, now)).toThrow(new BadRequestError('Zabbix keeps events for about a year; pick a later period.'));
   });
 });

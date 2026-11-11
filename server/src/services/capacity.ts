@@ -4,13 +4,16 @@ import { zbx } from '../clients/zabbix.js';
 import { cached } from '../core/cache.js';
 import { config } from '../core/config.js';
 import { fetchTrendsSliced } from '../sli/events.js';
-import { CAPACITY_TTL, heavy, staleReport } from './reportPolicy.js';
+import { CAPACITY_STALE_MS, CAPACITY_TTL, heavy, staleReport } from './reportPolicy.js';
 
 /**
  * Cap on the raw-history fallback in the capacity report. Small on purpose: this path only runs on
  * an instance too young to have trends, where there is little history to read in the first place.
  */
 const HISTORY_FALLBACK_LIMIT = 10_000;
+
+/** How long the ports' link speeds are kept, and then shown while new ones are read. */
+const SPEEDS_TTL_MS = 24 * 60 * 60_000;
 
 /**
  * Key matchers. The Linux-agent forms (`system.cpu.util`, `vm.memory.util`) are the plain ones;
@@ -248,7 +251,9 @@ async function interfaceUtilisation(
       monitored: true,
       selectHosts: ['hostid', 'name'],
     });
-  const [ins, outs, speeds] = await Promise.all([read('net.if.in['), read('net.if.out['), read('net.if.speed[')]);
+  // A port's speed changes only when the port does, and its 3,048 values cost minutes a run on HCML's Zabbix.
+  const speedsHeld = cached('capacity:speeds', SPEEDS_TTL_MS, () => read('net.if.speed['), { staleMs: SPEEDS_TTL_MS, staleIfError: true, pin: true });
+  const [ins, outs, speeds] = await Promise.all([read('net.if.in['), read('net.if.out['), speedsHeld]);
 
   const index = (k: string) => /\.(\d+)\]$/.exec(k)?.[1];
   const hostOf = (i: ZIf) => i.hosts?.[0]?.hostid ?? '';
@@ -322,12 +327,15 @@ async function interfaceUtilisation(
   return { key: 'ifutil', label, rows };
 }
 
+/** What the report covers when the page does not say: the days, and the hosts listed for each metric. */
+export const CAPACITY_DAYS = 7;
+export const CAPACITY_TOP = 10;
+
 /** The busiest hosts by CPU, memory and so on over `days`. */
 export function getCapacityReport(days: number, top: number) {
-  return cached(
-    `capacity:${days}:${top}`,
-    CAPACITY_TTL,
-    () => heavy.run(() => getCapacity(days, top)),
-    staleReport(CAPACITY_TTL),
-  );
+  return cached(`capacity:${days}:${top}`, CAPACITY_TTL, () => heavy.run(() => getCapacity(days, top)), {
+    ...staleReport(CAPACITY_TTL),
+    staleMs: CAPACITY_STALE_MS,
+    pin: true,
+  });
 }

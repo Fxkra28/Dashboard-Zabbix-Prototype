@@ -115,8 +115,16 @@ export async function zabbixAnswer(method: string, params: Record<string, unknow
         (i) => (!search || i.key_.startsWith(search)) && (!wanted || wanted.includes(i.itemid)) && (!hostids || hostids.includes(i.hostid)),
       );
     }
-    case 'history.get':
-      return (ids('itemids') ?? ['4001']).map((itemid) => ({ itemid, clock: String(now() - 60), value: '1200000', ns: '0' }));
+    case 'history.get': {
+      // A ping item answers with its own value, as the bulk ping read (reachability.ts) expects.
+      const pings = new Map(ITEMS().filter((i) => i.key_.startsWith('icmpping')).map((i) => [i.itemid, i]));
+      return (ids('itemids') ?? ['4001']).map((itemid) => {
+        const ping = pings.get(itemid);
+        return ping
+          ? { itemid, clock: ping.lastclock, value: ping.lastvalue, ns: '0' }
+          : { itemid, clock: String(now() - 60), value: '1200000', ns: '0' };
+      });
+    }
     case 'trend.get':
       return (ids('itemids') ?? ['3000']).map((itemid) => ({
         itemid,

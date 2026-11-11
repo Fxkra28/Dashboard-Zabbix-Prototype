@@ -5,8 +5,8 @@ import { counts, flag, guard, listOf, num, orNull, shape, text } from './shape';
 
 const stats = shape<Stats>({
   hosts: num,
-  items: num,
-  triggers: num,
+  items: orNull(num),
+  triggers: orNull(num),
   groups: num,
   problems: num,
   unacknowledged: num,

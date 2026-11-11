@@ -4,7 +4,8 @@ import { buildFocus, cleanAnswer, getSnapshot, streamAnswer, systemText } from '
 import { claimWarmSlot, noteModelRead, parseTurns, publicMessage, warmAndPrefill } from '../services/chat.js';
 import { AiUpstreamError, type OllamaStats } from '../clients/ai.js';
 import { ZabbixApiError, ZabbixTimeoutError } from '../clients/zabbix.js';
-import { aiGuard, chargeTo } from '../clients/limits.js';
+import { aiGuard } from '../clients/limits.js';
+import { aiUse } from '../security/audit.js';
 import { chatBody } from '../core/schemas.js';
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
@@ -65,6 +66,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       ac.abort();
     });
 
+    const use = aiUse(req, 'chat');
     try {
       const snapStarted = Date.now();
       const { text, meta, sizes, frozen } = await getSnapshot();
@@ -77,7 +79,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       let firstTokenMs: number | null = null;
       let stats: OllamaStats = {};
       let answer = '';
-      const options = { focus: focus?.text, onStats: (s: OllamaStats) => (stats = s), onUsage: chargeTo(req) };
+      const options = { focus: focus?.text, onStats: (s: OllamaStats) => (stats = s), onUsage: use.onUsage };
       for await (const piece of streamAnswer(turns, text, ac.signal, options)) {
         if (firstTokenMs === null) {
           firstTokenMs = Date.now() - started;
@@ -88,6 +90,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         send('token', { t: piece });
       }
       const ms = Date.now() - started;
+      use.done('answered');
       send('done', { ms, text: cleanAnswer(answer), firstTokenMs });
       req.log.info(
         {
@@ -103,6 +106,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         'chat answered',
       );
     } catch (err) {
+      use.done(ac.signal.aborted ? 'aborted' : 'failed');
       if (!ac.signal.aborted) {
         const detail =
           err instanceof AiUpstreamError || err instanceof ZabbixApiError || err instanceof ZabbixTimeoutError

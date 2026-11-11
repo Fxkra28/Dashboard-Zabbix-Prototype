@@ -33,11 +33,17 @@ sequenceDiagram
     %%  ride along as selectHostGroups on host.get. hostgroup.get
     %%  belongs to /api/hosts and /api/reports.
 
+    %%  The last block, the report by email, runs only when the MAIL_
+    %%  settings are usable. This file is byte-identical in both repos
+    %%  and the local-model copy passes none, so there it never runs.
+
     participant B as Browser
     participant N as nginx<br/>portal-web
     participant F as Fastify<br/>portal-bff
     participant C as TTL cache<br/>in memory
     participant Z as Zabbix API<br/>JSON-RPC 2.0
+    participant M as Mail server<br/>SMTP, optional
+    participant S as portal-state<br/>volume
 
     B->>N: GET /bff/api/sites<br/>Cookie: hcml_session=<jwt>
     N->>F: GET /api/sites<br/>Host with its port, X-Forwarded-For preserved
@@ -105,10 +111,22 @@ sequenceDiagram
     end
 
     rect rgb(237, 233, 254)
-        Note over B,Z: The one write, for comparison
+        Note over B,Z: The one write to Zabbix, for comparison
         B->>F: POST /api/problems/acknowledge, operator only<br/>the cookie plus X-HCML-CSRF: 1
         F->>Z: event.acknowledge, on the SEPARATE write token
         F->>C: invalidate("problems", holdMs)
         F->>B: push the new list to every open screen at once
     end
-%% source-hash: f30351ca2b1f
+
+    rect rgb(226, 232, 240)
+        Note over B,S: The report by email: administrators only, and off until MAIL_ is set
+        B->>F: POST /api/sli/email<br/>the cookie plus X-HCML-CSRF: 1
+        F->>F: month, files and addresses checked: one to ten,<br/>inside MAIL_ALLOWED_DOMAINS, five sends an hour each
+        F->>M: log in first, so a wrong password<br/>fails in a second
+        F->>C: the month's SLA, both methods<br/>from the cache, or from Zabbix on a miss
+        F->>M: one message: the figures in the text,<br/>the files attached
+        F->>S: the record of the send: counts and a word,<br/>never an address
+        F-->>B: how many addresses the mail server took
+        Note over F,S: On the chosen day the scheduler does the same without a browser,<br/>and saves each step to the state file before the next
+    end
+%% source-hash: 526379aafdcb

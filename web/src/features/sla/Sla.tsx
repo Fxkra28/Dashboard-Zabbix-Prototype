@@ -10,6 +10,7 @@ import { FieldSpacer } from '../../shared/components/Field';
 import { SlaExplainPanel, type DerivedSlaScope } from '../assistant/ExplainPanel';
 import KpiCard from '../../shared/components/KpiCard';
 import { NoData } from '../../shared/components/NoData';
+import EmailReport from './EmailReport';
 import ReportDownload from './ReportDownload';
 import {
   CoverageText,
@@ -640,7 +641,7 @@ function HcmlStaleNote({ strict, hcml }: { strict: SliReport; hcml: SliReport | 
   if (!copy) return null;
   const above = staleCopyOf(strict);
   if (above && staleWhen(above.asOf) === staleWhen(copy.asOf)) return null;
-  return <StaleCopy asOf={copy.asOf} what="the HCML report method figure" />;
+  return <StaleCopy asOf={copy.asOf} refreshing={copy.refreshing} what="the HCML report method figure" />;
 }
 
 const PROFILES: SliProfile[] = ['availability', 'hcml-report'];
@@ -696,6 +697,7 @@ function DerivedSla() {
           </FieldSpacer>
         )}
         <ReportDownload month={month} disabled={!shown} />
+        <EmailReport month={month} disabled={!shown} />
       </div>
 
       <Async

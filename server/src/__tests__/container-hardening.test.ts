@@ -97,10 +97,61 @@ describe('the images (SC-21)', () => {
     for (const l of froms) expect(l, l).toMatch(/^FROM \S+?:[^@\s]+@sha256:[0-9a-f]{64}(?: AS \S+)?$/);
   });
 
+  it('builds on a Node that is not older than the one the project\'s own tests need (IN-54)', () => {
+    // The tests need 24.15 at the oldest (jsdom); an image frozen on an older minor would run something the tests never saw.
+    const minors = [...serverDockerfile, ...webDockerfile]
+      .filter((l) => /^FROM node:/.test(l))
+      .map((l) => Number(/^FROM node:24\.(\d+)/.exec(l)?.[1]));
+    expect(minors.length).toBe(3);
+    for (const minor of minors) expect(minor).toBeGreaterThanOrEqual(15);
+  });
+
+  it('serves from an nginx line that still gets images: 1.30 or later (IN-66)', () => {
+    // 1.28-alpine of this image has not moved since 23 February 2026 and stands behind 21 advisories; 1.30 and 1.31 move.
+    const tag = /^FROM nginxinc\/nginx-unprivileged:(\d+)\.(\d+)/.exec(finalStage(webDockerfile)[0]!);
+    expect(tag, 'an nginx-unprivileged tag with a major and a minor').not.toBeNull();
+    const [major, minor] = [Number(tag![1]), Number(tag![2])];
+    expect(major * 100 + minor).toBeGreaterThanOrEqual(130);
+  });
+
+  it('dates the pin in its comment by the day it was taken, not an earlier one (IN-66)', () => {
+    const comment = readFileSync(root('server/Dockerfile'), 'utf8').split('\n').slice(0, 4).join(' ');
+    expect(comment).toContain('11 November 2026');
+    expect(comment).not.toContain('12 October');
+  });
+
   it('builds on one Node version in both images', () => {
     const node = [...serverDockerfile, ...webDockerfile].filter((l) => /^FROM node:/.test(l)).map((l) => /^FROM (\S+)/.exec(l)?.[1]);
     expect(node.length).toBe(3);
     expect(new Set(node).size).toBe(1);
+  });
+});
+
+describe('what the BFF image carries (IN-71)', () => {
+  const stage = finalStage(serverDockerfile).join('\n');
+
+  it('does not keep npm, npx, yarn or corepack, so nothing in a running container can install code', () => {
+    expect(stage).toMatch(/rm -rf[^\n]*\/usr\/local\/lib\/node_modules\/npm\b/);
+    expect(stage).toMatch(/rm -rf[^\n]*\/usr\/local\/lib\/node_modules\/corepack\b/);
+    for (const name of ['npm', 'npx', 'yarn', 'yarnpkg', 'corepack']) expect(stage, name).toContain(`/usr/local/bin/${name}`);
+    expect(stage).toContain('/opt/yarn-');
+  });
+
+  it('removes them after the step that needs npm, in the same layer, so the layer does not keep them', () => {
+    const install = finalStage(serverDockerfile).findIndex((l) => l.startsWith('RUN npm ci --omit=dev'));
+    expect(install).toBeGreaterThanOrEqual(0);
+    const run = finalStage(serverDockerfile).slice(install).join('\n').split(/\n(?=[A-Z]+ )/)[0]!;
+    expect(run).toMatch(/npm ci --omit=dev[\s\S]*&&[\s\S]*rm -rf/);
+  });
+
+  it('starts the server with node itself, which the image keeps', () => {
+    expect(finalStage(serverDockerfile).find((l) => l.startsWith('CMD '))).toBe('CMD ["node", "dist/index.js"]');
+  });
+
+  it('is built without source maps, which nothing in the image reads', () => {
+    expect(serverDockerfile.some((l) => /^RUN npm run build -- --sourceMap false$/.test(l))).toBe(true);
+    expect(stage).not.toMatch(/enable-source-maps/);
+    expect(compose.join('\n')).not.toMatch(/enable-source-maps/);
   });
 });
 
@@ -114,6 +165,21 @@ describe('what docker-compose.yml hands each container (SC-21)', () => {
     expect(items(block, 'tmpfs').map((t) => t.split(':')[0])).toContain('/tmp');
   });
 
+  it('lets the BFF write in one place besides /tmp, a named volume at /data that the image makes for the node user, and no other container writes anywhere', () => {
+    const bff = service('portal-bff');
+    const mounts = items(bff, 'volumes');
+    // hcml-portal-ollama sends no email and keeps nothing, so it has no volume at all.
+    expect([[], ['portal-state:/data']]).toContainEqual(mounts);
+    const makes = serverDockerfile.findIndex((l) => l === 'RUN mkdir -p /data && chown node:node /data');
+    const user = serverDockerfile.findIndex((l) => l === 'USER node');
+    if (mounts.length > 0) {
+      expect(makes, 'the image makes /data for the node user').toBeGreaterThanOrEqual(0);
+      expect(makes, 'before it drops to that user').toBeLessThan(user);
+      expect(compose.join('\n')).toMatch(/^volumes:\n {2}portal-state:\s*$/m);
+    }
+    expect(items(service('portal-web'), 'volumes')).toEqual([]);
+  });
+
   it.each(SERVICES)('%s: a memory and CPU limit, with room above what its in-memory /tmp can take', (name) => {
     const block = service(name);
     const memory = bytes(scalar(block, 'mem_limit'));
@@ -122,6 +188,20 @@ describe('what docker-compose.yml hands each container (SC-21)', () => {
     // A tmpfs is memory: its size counts against the container's limit.
     const scratch = items(block, 'tmpfs').reduce((sum, t) => sum + (bytes(/size=(\d+[mg])/.exec(t)?.[1]) || 0), 0);
     expect(memory).toBeGreaterThan(scratch * 2);
+  });
+
+  it.each(SERVICES)('%s: a swap limit equal to the memory limit, so the container cannot use swap on top of it (IN-71)', (name) => {
+    const block = service(name);
+    expect(scalar(block, 'memswap_limit')).toBeDefined();
+    expect(bytes(scalar(block, 'memswap_limit'))).toBe(bytes(scalar(block, 'mem_limit')));
+  });
+
+  it.each(SERVICES)('%s: a limit on processes, so a runaway fork stops there (IN-71)', (name) => {
+    const limit = Number(scalar(service(name), 'pids_limit'));
+    expect(Number.isInteger(limit)).toBe(true);
+    // Node and nginx hold a few dozen between them at most; the limit is well above that and well below a fork bomb.
+    expect(limit).toBeGreaterThanOrEqual(64);
+    expect(limit).toBeLessThanOrEqual(1024);
   });
 
   it('gives the BFF at least 1 GiB, which an SLA month and the 64 MiB response cache fit in many times over', () => {

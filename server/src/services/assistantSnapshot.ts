@@ -6,10 +6,10 @@
 import { createHash } from 'node:crypto';
 import { config } from '../core/config.js';
 import { cached, invalidate } from '../core/cache.js';
-import { getProblems, openProblems, type ZbxProblem } from '../domain/queries.js';
-import { getSites, type Site } from './sites.js';
-import { getSlas, getSli, type SlaSli, type ZbxSla } from './sla.js';
-import { getServiceTree, type ServiceNode } from './services.js';
+import { cachedProblems, openProblems, withOpdata, type ZbxProblem } from '../domain/queries.js';
+import { sitesView, type Site } from './sites.js';
+import { slasView, sliView, type SlaSli, type ZbxSla } from './sla.js';
+import { serviceTreeView, type ServiceNode } from './services.js';
 import { siteFromHostName, naturalCompare } from '../domain/naming.js';
 import { derivedServiceLines, derivedSlaLines } from '../sli/summary.js';
 import { percentText } from '../export/slaReport.js';
@@ -182,13 +182,23 @@ export async function buildSnapshot(): Promise<Snapshot> {
   // valuable but optional: a Zabbix without Services configured must not
   // leave the assistant unable to say what is down.
   const [problems, sitesRes] = await Promise.all([
-    cached('problems', 5_000, getProblems).then(openProblems),
-    cached('sites', 15_000, getSites),
+    cachedProblems().then(openProblems),
+    sitesView(),
   ]);
-  const [slaRes, svcRes] = await Promise.allSettled([
-    cached('sla', 60_000, getSlas),
-    cached('services:tree', 30_000, getServiceTree),
+  // The list carries no operational data (queries.ts), so it is read for the problems listed below only.
+  const recentTop = problems
+    .filter((p) => now - Number(p.clock) <= 86_400)
+    .sort((a, b) => Number(b.clock) - Number(a.clock))
+    .slice(0, RECENT_CAP);
+  const worstTop = [...problems].sort(worstFirst).slice(0, PROBLEM_CAP);
+  const shown = [...new Map([...recentTop, ...worstTop].map((p) => [p.eventid, p])).values()];
+  const [slaRes, svcRes, withData] = await Promise.allSettled([
+    slasView(),
+    serviceTreeView(),
+    withOpdata(shown),
   ]);
+  const opdataOf = new Map((withData.status === 'fulfilled' ? withData.value : []).map((p) => [p.eventid, p.opdata]));
+  const line = (p: ZbxProblem) => problemLine({ ...p, opdata: opdataOf.get(p.eventid) }, now);
 
   const sections: Record<string, { text: string; truncated: boolean }> = {};
   const since = availabilitySince(problems);
@@ -235,7 +245,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
     } else {
       const enabled = slaRes.value.filter((s) => s.status !== '0');
       const slis = await Promise.all(
-        enabled.map((s) => cached(`sli:${s.slaid}:all`, 60_000, () => getSli(s.slaid)).catch(() => [])),
+        enabled.map((s) => sliView(s.slaid).catch(() => [])),
       );
       if (!enabled.length) slaOut.push('- no SLAs defined in Zabbix');
       enabled.forEach((s, i) => slaOut.push(...slaLines(s, slis[i])));
@@ -304,7 +314,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
   const recent = problems
     .filter((p) => now - Number(p.clock) <= 86_400)
     .sort((a, b) => Number(b.clock) - Number(a.clock));
-  const recentShown = recent.slice(0, RECENT_CAP).map((p) => problemLine(p, now));
+  const recentShown = recent.slice(0, RECENT_CAP).map(line);
   sections.recent = section(
     `NEW IN LAST 24 H: ${recent.length} problems opened` +
       (recent.length ? ` (${severityList(severityCounts(recent), true)}), newest first:` : '.'),
@@ -356,7 +366,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
   const ordered = [...problems].sort(worstFirst);
   const used = Object.values(sections).reduce((n, s) => n + s.text.length + 2, 0);
   const problemBudget = Math.min(BUDGET.problems, SNAPSHOT_CHAR_CAP - used);
-  const listed = ordered.slice(0, PROBLEM_CAP).map((p) => problemLine(p, now));
+  const listed = ordered.slice(0, PROBLEM_CAP).map(line);
   const restCounts = (shown: number) => severityList(severityCounts(ordered.slice(shown)), true);
   // The title says how many are listed, or a model takes the list for all of them.
   const problemSection = (lines: string[], shown: number) =>
@@ -447,8 +457,8 @@ class IncompleteSnapshot extends Error {
  */
 export async function getSnapshot(): Promise<Snapshot & { frozen: boolean }> {
   const [problems, sitesRes] = await Promise.all([
-    cached('problems', 5_000, getProblems).then(openProblems),
-    cached('sites', 15_000, getSites),
+    cachedProblems().then(openProblems),
+    sitesView(),
   ]);
   const fingerprint = snapshotFingerprint(problems, sitesRes.sites);
   let built = false;

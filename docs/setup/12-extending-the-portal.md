@@ -20,6 +20,6 @@ To add a new Zabbix-backed view:
    and a line in the table of `web/src/__tests__/layering.test.ts`), with its test beside it. Build it with
    `useAsync` + `<Async>`, and reuse what is in `shared/`: `SeverityBadge`, `SeverityCounts`, `KpiCard`, the tables. A
    feature that needs another feature's code imports it only where that table allows.
-6. Wire: add a `<Route>` in `App.tsx`, a link in `Sidebar.tsx`, and a title in `Layout.tsx`.
+6. Wire: add a `<Route>` in `App.tsx` and a link in `Sidebar.tsx`; the link's label is also the page title (`PAGE_TITLES` in `Sidebar.tsx`, read by `Layout.tsx`).
 
 That's the whole pattern: every existing page is an instance of it.

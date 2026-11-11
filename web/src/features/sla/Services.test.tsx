@@ -80,6 +80,27 @@ describe('the Services tree from Zabbix (FR-12)', () => {
     expect(screen.queryByText('Trunk')).toBeNull();
   });
 
+  it('offers "Expand all" when a branch is folded, even if as many are open as there are branches (FR-24)', async () => {
+    const branch = (name: string) => node(name, { children: [node(`${name} leaf`)] });
+    services
+      .mockResolvedValueOnce({ ...tree(), tree: [branch('A'), branch('B'), branch('C')], total: 6 })
+      .mockResolvedValue({ ...tree(), tree: [branch('A'), branch('B'), branch('D')], total: 6 });
+    render(<Services />, { wrapper: BrowserRouter });
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(screen.getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+
+    // The next answer has no C and a new D, folded: the open set still holds C, so it is as big as before.
+    await minute();
+    await settle();
+    expect(screen.queryByText('D leaf')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(screen.getByText('D leaf')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+  });
+
   it('stays on the Zabbix tree when a later answer has no services: the first answer decided', async () => {
     services.mockResolvedValueOnce(tree('Voice path')).mockResolvedValue(tree());
     render(<Services />, { wrapper: BrowserRouter });

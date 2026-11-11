@@ -45,6 +45,13 @@ type Sent = {
 };
 
 const isResolved = (p: Problem) => Boolean(p.r_eventid && p.r_eventid !== '0');
+
+/** The tags after the fourth, as the table prints the first four: "tag5: v5, tag6". */
+const moreTags = (tags: { tag: string; value: string }[]) =>
+  tags
+    .slice(4)
+    .map((t) => `${t.tag}${t.value ? `: ${t.value}` : ''}`)
+    .join(', ');
 /** The refreshed list shows everything that was asked. */
 const applied = (p: Problem, sent: Sent) =>
   (!sent.acknowledge || p.acknowledged === '1') && (!sent.close || isResolved(p));
@@ -326,6 +333,12 @@ export default function Problems() {
                                   {t.value ? `: ${t.value}` : ''}
                                 </span>
                               ))}
+                              {(p.tags ?? []).length > 4 && (
+                                <span className="tag tag-more" title={moreTags(p.tags ?? [])}>
+                                  +{(p.tags ?? []).length - 4} more
+                                  <span className="sr-only">: {moreTags(p.tags ?? [])}</span>
+                                </span>
+                              )}
                             </span>
                           </td>
                           {(caps.ai || canAck) && (

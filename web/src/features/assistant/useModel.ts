@@ -6,8 +6,8 @@ import { api } from '../../api';
  * carries (the BFF checks it at most every 15 s). Asked when the Explain panel or the Assistant
  * opens rather than once per session: the shared capabilities call runs before sign-in and never
  * holds it, and a model can stop or start at any hour. Only `down` counts. `ok`, `off`,
- * `not_checked` (the hosted model, which a probe would bill), a BFF that predates the field and a
- * failed call all read as "no notice".
+ * `not_checked` (the hosted model, which a probe would bill), a plain boolean (all an anonymous
+ * caller gets), a BFF that predates the field and a failed call all read as "no notice".
  */
 export function useModelDown(): boolean {
   const [down, setDown] = useState(false);
@@ -16,7 +16,7 @@ export function useModelDown(): boolean {
     api
       .health()
       .then((h) => {
-        if (alive) setDown(h.ready?.model === 'down');
+        if (alive) setDown(typeof h.ready === 'object' && h.ready?.model === 'down');
       })
       .catch(() => undefined);
     return () => {

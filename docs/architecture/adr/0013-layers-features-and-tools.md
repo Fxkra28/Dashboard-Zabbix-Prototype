@@ -31,7 +31,7 @@ changing what the portal does?
 * Logic should be reachable without Fastify, and a feature without the rest of the app.
 * A rule that is only written in a document is broken within a month. Every rule here has to be a test that
   fails.
-* No behaviour changes. The 45 endpoints stay as they are, the built stylesheet stays byte for byte the same, and
+* No behaviour changes. The 45 endpoints (when this was written) stay as they are, the built stylesheet stays byte for byte the same, and
   every test that passed before passes after.
 * The zero-dependency rule: no workspace tool, no monorepo manager, no new package.
 * The two copies stay separate ([ADR-0005](0005-provider-neutral-ai-layer.md)). The same layout goes into both

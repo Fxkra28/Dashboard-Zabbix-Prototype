@@ -1,7 +1,8 @@
 import { zbx } from '../clients/zabbix.js';
+import { cached } from '../core/cache.js';
 import { config } from '../core/config.js';
 import { wanPairKey } from '../domain/naming.js';
-import { isFresh } from '../domain/reachability.js';
+import { getIcmpValues, ICMP_CATALOG_STALE_MS, ICMP_CATALOG_TTL_MS, isFresh } from '../domain/reachability.js';
 
 /**
  * Link & WAN health (HCML Goal 3).
@@ -65,6 +66,7 @@ interface ZItem {
   /** Update interval ("1m", "30s"); how old a value may be and still count. */
   delay?: string;
   units?: string;
+  value_type?: string;
   hosts?: { hostid: string; name: string }[];
   tags?: { tag: string; value: string }[];
 }
@@ -102,20 +104,33 @@ function classify(up: boolean | undefined, loss: number | undefined): LinkState 
 
 const RANK: Record<LinkState, number> = { down: 3, degraded: 2, unknown: 1, up: 0 };
 
+/** The ping items with their hosts and tags, without values: read as rarely as reachability.ts reads its own list. */
+function linkItems(): Promise<ZItem[]> {
+  return cached(
+    'links:catalog',
+    ICMP_CATALOG_TTL_MS,
+    () =>
+      zbx<ZItem[]>('item.get', {
+        output: ['itemid', 'name', 'key_', 'units', 'state', 'delay', 'value_type'],
+        search: { key_: 'icmpping' },
+        // A key prefix, not a substring: parseKey() below still checks.
+        startSearch: true,
+        // Without it Zabbix also returns template items: hundreds of identical unassigned prototypes.
+        monitored: true,
+        selectHosts: ['hostid', 'name'],
+        selectTags: 'extend',
+        ...(config.netGroupIds.length ? { groupids: config.netGroupIds } : {}),
+      }),
+    { staleMs: ICMP_CATALOG_STALE_MS, staleIfError: true, pin: true },
+  );
+}
+
 export async function getLinks(): Promise<LinksResponse> {
-  // `monitored: true` matters: without it Zabbix also returns template items,
-  // and the page fills with hundreds of identical unassigned prototypes.
-  const items = await zbx<ZItem[]>('item.get', {
-    output: ['itemid', 'name', 'key_', 'lastvalue', 'lastclock', 'units', 'state', 'delay'],
-    search: { key_: 'icmpping' },
-    // A key prefix, not a substring: without startSearch Zabbix runs
-    // LIKE '%icmpping%' and scans every item (~52k on HCML, ~105 ms a call);
-    // with it the items key index applies. parseKey() below still checks.
-    startSearch: true,
-    monitored: true,
-    selectHosts: ['hostid', 'name'],
-    selectTags: 'extend',
-    ...(config.netGroupIds.length ? { groupids: config.netGroupIds } : {}),
+  // The values come from the ping readings the host states share, not from Zabbix's slow `lastvalue`.
+  const [catalog, values] = await Promise.all([linkItems(), getIcmpValues()]);
+  const items: ZItem[] = catalog.map((i) => {
+    const v = values.get(i.itemid);
+    return { ...i, lastvalue: v?.value ?? '', lastclock: v?.clock ?? '0' };
   });
 
   // One link = one (host, ping target) pair; its three metrics arrive as
@@ -236,3 +251,6 @@ export async function getLinks(): Promise<LinksResponse> {
 
   return { links, paths, summary, thresholds: config.links };
 }
+
+/** Links as the route and the warm-up read them. */
+export const linksView = () => cached('links', 20_000, getLinks);

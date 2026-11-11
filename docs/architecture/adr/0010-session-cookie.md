@@ -105,7 +105,12 @@ to `/login?next=%2Fhosts`.
 * Plain-HTTP deployments stay readable on the wire. A portal reached over plain HTTP from a
   network sends the cookie in clear on every request, as it did the header. A TLS proxy is still
   required before exposing the portal beyond 127.0.0.1.
-* **Still no revocation.** Sign-out clears the cookie in that browser, but a copied token keeps
+* **Revocation, since 3 November 2026.** Sign-out used to clear the cookie in that browser only, and a copied token
+  kept working until it expired. Every token now carries a session id that renewals pass on, and sign-out puts it on a list in
+  memory, so the whole chain is refused, and the live streams of the session are closed. What stays: a copy that someone
+  keeps renewing after the owner only closed the tab lives until the user is removed, `SESSION_EPOCH` is raised or
+  `JWT_SECRET` changes. The text below is the decision as it was written.
+* **Still no revocation (as written in October).** Sign-out clears the cookie in that browser, but a copied token keeps
   working until it expires, up to 12 hours (the `SESSION_HOURS` default). Taking the user out of
   `PORTAL_USERS` and restarting the BFF stops its renewal (ADR-0009); a new `JWT_SECRET`, or since
   12 October 2026 a higher `SESSION_EPOCH`, ends every session at once (SC-14). An open live stream used to be the exception: it

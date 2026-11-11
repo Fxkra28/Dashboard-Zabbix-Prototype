@@ -21,10 +21,18 @@ vi.mock('../clients/ai.js', async (importOriginal) => ({
   warmModel: vi.fn(async () => undefined),
   prefillModel: vi.fn(async () => true),
 }));
-vi.mock('../domain/queries.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../domain/queries.js')>()),
-  getProblems: vi.fn(),
-}));
+// The real list cache over the stand-in, and the opdata a problem already has kept as it is.
+vi.mock('../domain/queries.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../domain/queries.js')>();
+  const { cached } = await import('../core/cache.js');
+  const getProblems = vi.fn();
+  return {
+    ...actual,
+    getProblems,
+    cachedProblems: () => cached('problems', actual.PROBLEMS_TTL_MS, getProblems),
+    withOpdata: async (problems: unknown[]) => problems,
+  };
+});
 
 const BASE_ENV = {
   AUTH_ENABLED: 'true',

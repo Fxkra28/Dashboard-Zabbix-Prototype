@@ -1,5 +1,5 @@
 import { zbx } from '../clients/zabbix.js';
-import { cached } from '../core/cache.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 import { config } from '../core/config.js';
 import { createGate } from '../core/gate.js';
 import { isFresh } from '../domain/reachability.js';
@@ -7,7 +7,7 @@ import { parseIfKey } from './net.js';
 
 /**
  * Internet traffic meters: reads the gauge widgets of the Zabbix dashboard HCML already keeps (dashboard.get), so nobody keeps a second list of links and capacities.
- * Read-only; the dashboard and the widgets' neighbour items are kept two minutes. Operator and admin only (auth.ts's `/api/net` rule).
+ * Read-only; the dashboard and the widgets' neighbour items are kept two minutes. Wall, operator and admin only (auth.ts's `/api/net` rule).
  */
 
 // The pure parts come first: reading the widgets and deciding what a reading means. The calls to Zabbix follow (getMeters).
@@ -563,3 +563,6 @@ export async function getMeters(): Promise<MetersResponse> {
   });
   return { dashboard: name, found: true, generatedAt: now, meters, summary: summarise(meters) };
 }
+
+/** The Internet traffic meters as their route and the warm-up read them. */
+export const metersView = () => cached('net:meters', 30_000, getMeters, SLOW_VIEW);

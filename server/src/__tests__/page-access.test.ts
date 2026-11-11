@@ -57,10 +57,10 @@ describe('GET /api/auth/me: pages', () => {
     }
   });
 
-  it('marks the engineering pages operator and the scorecard admin, and the rest viewer', async () => {
+  it('marks the engineering pages wall, which a wall screen and an operator both pass, the scorecard admin, and the rest viewer', async () => {
     const { pages } = await me('viewer');
-    expect(pages['/network']).toBe('operator');
-    expect(pages['/links']).toBe('operator');
+    expect(pages['/network']).toBe('wall');
+    expect(pages['/links']).toBe('wall');
     expect(pages['/reports/inventory']).toBe('admin');
     expect(pages['/problems']).toBe('viewer');
     expect(pages['/sla']).toBe('viewer');

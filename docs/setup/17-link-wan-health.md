@@ -30,9 +30,9 @@ Two details that are easy to get wrong:
 
 A main + standby pair is only *truly* down when every leg is: that distinction is why the
 redundancy is paid for. Pairing comes from the item tag `link_group` (with `link_role` naming the
-leg), and a path rolls up as: any leg up ⇒ `up`, all legs up ⇒ `up`, mixed ⇒ `degraded`,
-none up ⇒ `down`.
+leg); HCML tags no item with it, so the pairs are made from the host names (`wanPairKey`). A path rolls up as: all legs up ⇒ `up`;
+some up ⇒ `degraded`; none up ⇒ `degraded` if any leg is degraded, `unknown` if all are unknown, otherwise `down`.
 
 State per link is from `LINK_LOSS_WARN` (default 2%) and `LINK_LOSS_CRIT` (default 10%):
-down if the ping fails or loss ≥ crit, degraded at ≥ warn, otherwise up. Operator role
+down if the ping fails or loss ≥ crit, degraded at ≥ warn, otherwise up. Wall role or above
 ([§19](19-authentication-rbac.md#19-authentication--rbac)).

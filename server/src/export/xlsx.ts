@@ -1,5 +1,5 @@
 import { PALETTE, TONES } from './theme.js';
-import type { Cell, ColumnKind, ReportDoc, Table, Tone } from './types.js';
+import { NOTHING_TO_LIST, type Cell, type ColumnKind, type ReportDoc, type Table, type Tone } from './types.js';
 import { zip } from './zip.js';
 
 /**
@@ -331,14 +331,17 @@ function usable(kind: ColumnKind, n: number | null | undefined): n is number {
   return typeof n === 'number' && Number.isFinite(n) && (kind === 'percent' || n >= 0);
 }
 
-/** The decimals a percent cell shows: the text's own, at least four, so a figure never reads as the target it missed (percentText). */
-const percentDecimals = (text: string) =>
-  Math.min(MAX_DECIMALS, Math.max(MIN_DECIMALS, /\.(\d+)/.exec(text)?.[1]?.length ?? 0));
+/** The decimals a percent cell shows: the text's own, at least four, and more while a figure below 100 would still round up to 100. */
+function percentDecimals(text: string, n: number): number {
+  let d = Math.min(MAX_DECIMALS, Math.max(MIN_DECIMALS, /[.,](\d+)/.exec(text)?.[1]?.length ?? 0));
+  while (n < 100 && Number(n.toFixed(d)) >= 100 && d < MAX_DECIMALS) d++;
+  return d;
+}
 
 /** What a numeric cell stores, or null when it falls back to its text. */
 function stored(kind: ColumnKind, cell: Cell): { n: number; decimals: number } | null {
   if (!isNumeric(kind) || !usable(kind, cell.n)) return null;
-  return { n: cell.n, decimals: kind === 'percent' ? percentDecimals(cell.text) : 0 };
+  return { n: cell.n, decimals: kind === 'percent' ? percentDecimals(cell.text, cell.n) : 0 };
 }
 
 class Sheet {
@@ -610,7 +613,7 @@ function tableSheet(book: Book, t: Table): { sheet: Sheet; filter?: string } {
       wrap: true,
       indent: 1,
     });
-    const msg = t.empty ?? 'Nothing to list.';
+    const msg = t.empty ?? NOTHING_TO_LIST;
     sheet.span(HEADER_ROW + 1, n, empty, msg, rowHeight(wrapLines(cellText(msg), sheet.width - GUTTER)));
     return { sheet };
   }

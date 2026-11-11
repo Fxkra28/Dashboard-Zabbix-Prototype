@@ -30,7 +30,11 @@ const BY_CODE = new Map(SITES.map((s) => [s.code, s]));
 /** Numeric-aware ordering: `1.2.2` before `1.2.10`, `Gi1/0/2` before `Gi1/0/10`. */
 export const naturalCompare = new Intl.Collator('en', { numeric: true, sensitivity: 'base' }).compare;
 
+/** A host named by its address (10.20.30.40) has no site code: HCML's codes are two or three numbers, never four. */
+const ADDRESS_NAME = /^\s*\d{1,3}(?:\.\d{1,3}){3}(?!\d)/;
+
 export function siteFromHostName(name: string): SiteRef | null {
+  if (ADDRESS_NAME.test(name)) return null;
   const coded = /^\s*(\d{1,2})\./.exec(name);
   if (coded) {
     const site = BY_CODE.get(Number(coded[1]));

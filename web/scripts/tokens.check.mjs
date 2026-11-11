@@ -137,7 +137,7 @@ export function resolve(name, theme, base) {
  * Every pair the interface actually renders. `min` is 4.5 for text, 3 for a
  * component boundary or large text.
  */
-const PAIRS = [
+export const PAIRS = [
   ['--text', '--bg', 4.5],
   ['--text', '--surface', 4.5],
   ['--text', '--surface-2', 4.5],
@@ -166,6 +166,19 @@ const PAIRS = [
   // late "data as of" stamp on the page background.
   ['--muted', '--tint', 4.5],
   ['--warn-text', '--bg', 4.5],
+  // Status words on the hover and selected planes of a table row, and on the page plane the cards share (UX-39).
+  ['--good-text', '--bg', 4.5],
+  ['--danger-text', '--bg', 4.5],
+  ['--good-text', '--surface-2', 4.5],
+  ['--warn-text', '--surface-2', 4.5],
+  ['--danger-text', '--surface-2', 4.5],
+  ['--good-text', '--tint', 4.5],
+  ['--warn-text', '--tint', 4.5],
+  ['--danger-text', '--tint', 4.5],
+  // The target beside a service's figure ('/ 99%'), on the chip of each verdict.
+  ['--muted', '--good-bg', 4.5],
+  ['--muted', '--warn-bg', 4.5],
+  ['--muted', '--danger-bg', 4.5],
   // The logo monogram (BrandMark's fallback) on its fixed white plate.
   ['--logo-ink', '--logo-plate', 4.5],
   // Boundaries and marks, not text. DESIGN.md R-3 keeps --mid off text.

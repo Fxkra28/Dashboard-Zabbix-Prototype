@@ -20,7 +20,15 @@ import { MAX_QUIET_MS, TICK_MS, connectedClients, endStreamOf, endStreams, finge
  * shutdown.
  */
 const { getProblemsMock } = vi.hoisted(() => ({ getProblemsMock: vi.fn() }));
-vi.mock('../domain/queries.js', () => ({ getProblems: getProblemsMock }));
+// The real list cache over the stand-in, as queries.ts builds it.
+vi.mock('../domain/queries.js', async () => {
+  const { cached } = await import('../core/cache.js');
+  return {
+    getProblems: getProblemsMock,
+    cachedProblems: (opts?: { maxAgeMs?: number }) => cached('problems', 15_000, getProblemsMock, opts),
+    PROBLEMS_TTL_MS: 15_000,
+  };
+});
 
 const problem = (over: Partial<ZbxProblem> = {}): ZbxProblem => ({
   eventid: '109',
@@ -74,7 +82,7 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
-async function tick(ms = 5_000): Promise<void> {
+async function tick(ms = TICK_MS): Promise<void> {
   await vi.advanceTimersByTimeAsync(ms);
   await settle();
 }
@@ -211,32 +219,28 @@ describe('shared ticker', () => {
     await settle();
     expect(a.res.frames()).toHaveLength(1);
 
-    // Unchanged for 10 s: read again, nothing sent.
+    // Unchanged for two ticks: read again each time, no frame, and a keep-alive that says how old the list is.
     await tick();
     await tick();
     expect(getProblemsMock).toHaveBeenCalledTimes(3);
-    expect(a.res.written).toHaveLength(1);
-
-    // 15 s since the last write: a keep-alive that says the list is 5 s old, still no frame.
-    await tick();
-    expect(a.res.written.at(-1)).toBe('event: ping\ndata: {"ageMs":5000}\n\n');
     expect(a.res.frames()).toHaveLength(1);
+    expect(a.res.written.at(-1)).toBe(`event: ping\ndata: {"ageMs":${TICK_MS}}\n\n`);
 
     // A second screen gets the current list at once, without another read.
     const b = screen();
     expect(b.res.frames()).toHaveLength(1);
-    expect(getProblemsMock).toHaveBeenCalledTimes(4);
+    expect(getProblemsMock).toHaveBeenCalledTimes(3);
 
     // Acknowledged: both screens get it on the next tick, from one read.
     getProblemsMock.mockResolvedValue([problem({ acknowledged: '1' })]);
     await tick();
-    expect(getProblemsMock).toHaveBeenCalledTimes(5);
+    expect(getProblemsMock).toHaveBeenCalledTimes(4);
     expect(a.res.lastList()[0].acknowledged).toBe('1');
     expect(b.res.lastList()[0].acknowledged).toBe('1');
 
-    // Only the name moves: held back until the list is 30 s old.
+    // Only the name moves: held back until the list sent is 30 s old.
     getProblemsMock.mockResolvedValue([problem({ acknowledged: '1', name: 'High ICMP ping loss (renamed)' })]);
-    await tick(25_000);
+    await tick();
     expect(a.res.frames()).toHaveLength(2);
     await tick();
     expect(a.res.frames()).toHaveLength(3);
@@ -244,6 +248,41 @@ describe('shared ticker', () => {
 
     a.close();
     b.close();
+  });
+
+  it('pings on every tick even for a screen that joined a millisecond after the ticker, so none is silent for 30 s', async () => {
+    useClock();
+    getProblemsMock.mockResolvedValue([problem()]);
+    const a = screen();
+    await settle();
+    await tick(1);
+    const b = screen(); // its last write is 1 ms after the ticker started, so at the first tick it is 14,999 ms old
+    await tick(TICK_MS - 1);
+    expect(b.res.written.filter((w) => w.startsWith('event: ping'))).toHaveLength(1);
+    await tick();
+    expect(b.res.written.filter((w) => w.startsWith('event: ping'))).toHaveLength(2);
+    a.close();
+    b.close();
+  });
+
+  // What a screen is given when it connects is never an old list passed off as a new one (FR-24): the page stamps the first frame
+  // with its arrival time, which is right because the server only keeps a list that a read has confirmed in the last tick.
+  it('gives a screen that joins during an outage the error and not the last list, and a screen that joins a quiet estate the list the last tick confirmed', async () => {
+    useClock();
+    getProblemsMock.mockResolvedValue([problem()]);
+    const first = screen();
+    await settle();
+    for (let i = 0; i < 4; i++) await tick(); // an hour could pass the same way: the list does not change and every tick reads it
+    const quiet = screen();
+    expect(quiet.res.written.map((w) => w.split('\n')[0])).toEqual(['event: problems']);
+
+    getProblemsMock.mockRejectedValue(new Error('Zabbix is down'));
+    await tick();
+    const during = screen();
+    expect(during.res.written.map((w) => w.split('\n')[0])).toEqual(['event: error']);
+    first.close();
+    quiet.close();
+    during.close();
   });
 
   it('never resends an unchanged list, only keep-alives that say how old it is (IN-11)', async () => {
@@ -256,12 +295,13 @@ describe('shared ticker', () => {
     const first = a.res.frames()[0];
 
     // Two minutes: the old 30 s resend would have sent four more frames.
-    for (let i = 0; i < 24; i++) await tick();
-    expect(getProblemsMock).toHaveBeenCalledTimes(25); // still read every tick
+    const ticks = 120_000 / TICK_MS;
+    for (let i = 0; i < ticks; i++) await tick();
+    expect(getProblemsMock).toHaveBeenCalledTimes(ticks + 1); // still read every tick
     expect(a.res.frames()).toEqual([first]);
 
     const pings = a.res.written.filter((w) => w.startsWith('event: ping'));
-    expect(pings.length).toBeGreaterThanOrEqual(7); // one per 15 s of quiet
+    expect(pings.length).toBeGreaterThanOrEqual(ticks - 1); // one per 15 s of quiet
     for (const ping of pings) {
       const { ageMs } = JSON.parse(ping.slice(ping.indexOf('data: ') + 6)) as { ageMs: number };
       expect(ageMs).toBeLessThanOrEqual(TICK_MS);
@@ -275,6 +315,45 @@ describe('shared ticker', () => {
     b.close();
   });
 
+  // The cache dates a list from the end of its read, so a read of d seconds leaves it 15 - d seconds old at the next tick.
+  it.each([1_000, 8_000, 14_000])('reads the list at every tick when a read takes %i ms, not at every second one', async (readMs) => {
+    useClock();
+    getProblemsMock.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, readMs));
+      return [problem()];
+    });
+    const a = screen();
+    await tick(readMs);
+    for (let i = 0; i < 8; i++) await tick();
+    expect(getProblemsMock).toHaveBeenCalledTimes(9);
+
+    // The keep-alive never claims a list older than the line has been quiet.
+    const pings = a.res.written.filter((w) => w.startsWith('event: ping'));
+    expect(pings.length).toBeGreaterThanOrEqual(7);
+    for (const ping of pings) {
+      const { ageMs } = JSON.parse(ping.slice(ping.indexOf('data: ') + 6)) as { ageMs: number };
+      expect(ageMs).toBeLessThanOrEqual(TICK_MS);
+    }
+    a.close();
+  });
+
+  it('does not stack reads when one is slower than the tick: the next tick waits for it, then reads again', async () => {
+    useClock();
+    getProblemsMock.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20_000));
+      return [problem()];
+    });
+    const a = screen();
+    await tick(20_000); // the first read lands at 20 s
+    await tick(10_000); // 30 s: the tick starts the second, which runs to 50 s
+    await tick(15_000); // 45 s: its tick finds that read still running
+    expect(getProblemsMock).toHaveBeenCalledTimes(2);
+    await tick(15_000); // 60 s: the tick after it lands starts the third
+    expect(getProblemsMock).toHaveBeenCalledTimes(3);
+    await tick(20_000); // let it land before the screen leaves, or the ticker stays marked as busy for the next test
+    a.close();
+  });
+
   it('sends a name-only change after 30 s, once and no more', async () => {
     useClock();
     getProblemsMock.mockResolvedValue([problem()]);
@@ -282,8 +361,8 @@ describe('shared ticker', () => {
     await settle();
 
     getProblemsMock.mockResolvedValue([problem({ name: 'Renamed trigger' })]);
-    for (let i = 0; i < 5; i++) await tick();
-    expect(a.res.frames()).toHaveLength(1); // 25 s: held back
+    await tick();
+    expect(a.res.frames()).toHaveLength(1); // 15 s: held back
     await tick();
     expect(a.res.frames()).toHaveLength(2); // 30 s: sent
     for (let i = 0; i < 12; i++) await tick();
@@ -303,8 +382,9 @@ describe('shared ticker', () => {
     });
     const a = screen();
     await settle();
-    for (let i = 0; i < 720; i++) await tick();
-    expect(getProblemsMock).toHaveBeenCalledTimes(721); // still read every tick
+    const hour = 3_600_000 / TICK_MS;
+    for (let i = 0; i < hour; i++) await tick();
+    expect(getProblemsMock).toHaveBeenCalledTimes(hour + 1); // still read every tick
     expect(a.res.frames()).toHaveLength(1); // the old 30 s resend would have made 121
     expect(a.res.frames()[0]).not.toContain('opdata');
 
@@ -318,11 +398,14 @@ describe('shared ticker', () => {
     await settle();
     const fast = screen();
 
+    // Pushed as a write pushes them, not on a tick, whose keep-alive would be the write that fills the buffer.
     slow.res.full = true;
     getProblemsMock.mockResolvedValue([problem({ severity: '4' })]);
-    await tick(); // written, but the buffer is now full
+    invalidate('problems');
+    await notifyProblemsChanged(); // written, but the buffer is now full
     getProblemsMock.mockResolvedValue([problem({ severity: '5' })]);
-    await tick(); // skipped for the slow screen
+    invalidate('problems');
+    await notifyProblemsChanged(); // skipped for the slow screen
     expect(slow.res.frames()).toHaveLength(2);
     expect(fast.res.frames()).toHaveLength(3);
 

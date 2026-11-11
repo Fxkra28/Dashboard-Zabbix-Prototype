@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import Fastify from 'fastify';
 import { config } from '../core/config.js';
 import { registerErrorHandler } from '../http/errors.js';
-import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError, zbx } from '../clients/zabbix.js';
+import { ZabbixApiError, ZabbixAuthError, ZabbixRefusedError, ZabbixTimeoutError, zbx } from '../clients/zabbix.js';
 
 /**
  * The JSON-RPC client against a throwaway local HTTP server standing in for
@@ -96,6 +96,25 @@ describe('zbx()', () => {
     expect(err.message).not.toContain('127.0.0.1');
   });
 
+  it('lets one read wait longer than ZABBIX_TIMEOUT_MS when it asks to', async () => {
+    zabbixAnswers((res) => {
+      setTimeout(() => res.end('{"jsonrpc":"2.0","result":"33227","id":1}'), 300);
+    });
+    config.zbxTimeoutMs = 100;
+    await expect(zbx('item.get', { countOutput: true }, { timeoutMs: 2_000 })).resolves.toBe('33227');
+    expect((await failure('item.get')).message).toContain('within 100 ms');
+  });
+
+  it('names the limit the read asked for when that one runs out', async () => {
+    zabbixAnswers((res) => {
+      setTimeout(() => res.end('{"jsonrpc":"2.0","result":"1","id":1}'), 300);
+    });
+    config.zbxTimeoutMs = 2_000;
+    const err = await zbx('item.get', {}, { timeoutMs: 100 }).catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(ZabbixTimeoutError);
+    expect((err as Error).message).toContain('within 100 ms');
+  });
+
   it('names the system error code but not the address when nothing answers', async () => {
     const closed = http.createServer();
     await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
@@ -122,6 +141,36 @@ describe('zbx()', () => {
       res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32602, data: 'Not authorized.' }, id: 1 })),
     );
     expect(await failure()).toBeInstanceOf(ZabbixAuthError);
+  });
+
+  it('marks an error Zabbix itself answered with as a refusal, which is still an API error (BK-43)', async () => {
+    zabbixAnswers((res) =>
+      res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32500, data: 'Cannot close problem: the trigger does not allow it.' }, id: 1 })),
+    );
+    const err = await failure();
+    expect(err).toBeInstanceOf(ZabbixRefusedError);
+    expect(err).toBeInstanceOf(ZabbixApiError);
+    expect(err.message).toContain('Cannot close problem');
+  });
+
+  it('does not call a Zabbix that could not be reached, an HTTP error or a body that is not JSON a refusal (BK-43)', async () => {
+    zabbixAnswers((res) => res.end('<html>login</html>'));
+    expect(await failure()).not.toBeInstanceOf(ZabbixRefusedError);
+
+    zabbixAnswers((res) => {
+      res.statusCode = 503;
+      res.end('busy');
+    });
+    const http503 = await failure();
+    expect(http503).toBeInstanceOf(ZabbixApiError);
+    expect(http503).not.toBeInstanceOf(ZabbixRefusedError);
+
+    const closed = http.createServer();
+    await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
+    const port = (closed.address() as AddressInfo).port;
+    await new Promise((resolve) => closed.close(resolve));
+    config.zbxUrl = `http://127.0.0.1:${port}/api_jsonrpc.php`;
+    expect(await failure()).not.toBeInstanceOf(ZabbixRefusedError);
   });
 
   it('maps both failures to typed responses whose bodies do not carry ZBX_URL', async () => {

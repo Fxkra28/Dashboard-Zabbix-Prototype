@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { GraphRange } from '../../types';
 import { useSearchPatch } from '../../shared/hooks/useUrlState';
-import { isMonth, monthBounds, monthLabel, monthOf, recentMonths } from '../../shared/lib/time';
+import { fromZonedInput, isMonth, monthBounds, monthLabel, monthOf, recentMonths, toZonedInput, zoneLabel } from '../../shared/lib/time';
 import { useReportTimeZone } from '../../shared/hooks/useReportTimeZone';
 
 export const PRESETS: { label: string; hours: number }[] = [
@@ -65,13 +65,6 @@ export function useUrlRange(defaultHours = 24): [GraphRange, (r: GraphRange) => 
   return [range, setRange];
 }
 
-const toLocalInput = (epoch: number) => {
-  const d = new Date(epoch * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-const fromLocalInput = (s: string) => Math.floor(new Date(s).getTime() / 1000);
-
 /** Presets ending now, a calendar month (in the report zone), or a custom from/to. */
 export default function RangePicker({ value, onChange }: { value: GraphRange; onChange: (r: GraphRange) => void }) {
   const zone = useReportTimeZone();
@@ -83,12 +76,18 @@ export default function RangePicker({ value, onChange }: { value: GraphRange; on
       : value.kind === 'month'
         ? monthBounds(value.month)
         : { from: Math.floor(Date.now() / 1000) - value.hours * 3600, to: Math.floor(Date.now() / 1000) };
-  const [fromText, setFromText] = useState(toLocalInput(initial.from));
-  const [toText, setToText] = useState(toLocalInput(initial.to));
+  const [fromText, setFromText] = useState(toZonedInput(initial.from, zone));
+  const [toText, setToText] = useState(toZonedInput(initial.to, zone));
+  // The fields read in the report zone: when the server names another one, they are rewritten in it.
+  useEffect(() => {
+    setFromText(toZonedInput(initial.from, zone));
+    setToText(toZonedInput(initial.to, zone));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of zone rewrites what the person typed
+  }, [zone]);
 
   const customValid = (() => {
-    const f = fromLocalInput(fromText);
-    const t = fromLocalInput(toText);
+    const f = fromZonedInput(fromText, zone);
+    const t = fromZonedInput(toText, zone);
     return Number.isFinite(f) && Number.isFinite(t) && f < t && t - f <= 400 * 86400;
   })();
 
@@ -154,10 +153,11 @@ export default function RangePicker({ value, onChange }: { value: GraphRange; on
             type="button"
             className="btn sm"
             disabled={!customValid}
-            onClick={() => onChange({ kind: 'custom', from: fromLocalInput(fromText), to: fromLocalInput(toText) })}
+            onClick={() => onChange({ kind: 'custom', from: fromZonedInput(fromText, zone), to: fromZonedInput(toText, zone) })}
           >
             Apply
           </button>
+          <span className="muted">Times in {zoneLabel(Date.now(), zone)}</span>
         </div>
       )}
     </div>

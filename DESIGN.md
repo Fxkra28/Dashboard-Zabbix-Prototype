@@ -1,7 +1,7 @@
 # Design direction
 
 The brief below is the portal owner's, given 23 September 2026. It is the source of direction.
-`antislop.md` is the filter that checks work against it; this file is what the filter checks
+The antislop rules (not kept in this repository) are the filter that checks work against it; this file is what the filter checks
 against. The two are not interchangeable: a filter rejects slop, it does not supply taste.
 
 Sections 1 to 6 are the owner's words. Section 7 is measurement, added by verification, and every
@@ -392,13 +392,17 @@ stay at 2/5 and MOTION moves from 1/5 to about 3/5.
 | Body text | 15.17 | 12.42 | 4.5 |
 | Muted text | 5.96 | 4.88 | 4.5 |
 | Muted text on a selected row | 5.14 | 4.55 | 4.5 |
-| Green status text | 5.38 | 4.64 | 4.5 |
-| Red status text | 5.43 | 4.68 | 4.5 |
+| Green status text | 5.38 | 4.90 (hover plane 4.58, selected row 4.57) | 4.5 |
+| Amber status text | not listed | 4.90 (hover plane 4.59, selected row 4.57) | 4.5 |
+| Red status text | 5.43 | 4.93 (hover plane 4.61, selected row 4.60) | 4.5 |
 | The edge of a control | 3.31 | 3.14 (dark 3.12) | 3.0 |
 
 Three colours moved to keep 4.5:1 on the soft plane: `--tint` to `#D8E2EE` (the preview's `#D3DEEB` gave muted
 text 4.38), `--good-text` to `#217548` (4.41 before) and `--danger-text` to `#BA372E` (4.45 before).
-`tokens.check.mjs` derives every pair in both themes from the token values.
+On 11 November 2026 the three status texts went one step darker again (`--good-text` `#207146`, `--warn-text`
+`#875A17`, `--danger-text` `#B4352D`), because on the hover and selected planes of a table row they measured 4.33
+to 4.44:1 (UX-39). `tokens.check.mjs` derives every pair in both themes from the token values, those planes and
+the muted text on the chip of each verdict included.
 
 ### What it supersedes
 
@@ -412,7 +416,7 @@ text 4.38), `--good-text` to `#217548` (4.41 before) and `--danger-text` to `#BA
 A design system audit of the same day (kept outside the repository, beside the reference palette) listed twelve
 gaps. The owner's answer: "Audit: which audit numbers to fix. all of it". Where a fix needed a choice the audit
 left open, the choice below is a proposal made at that word, and each is undone by changing one token or one rule.
-Both copies were backed up first, outside the repositories, in `myown/ui-backup-26oct-2/`.
+Both copies were backed up first, outside the repositories, in `myown/backups/ui-backup-26oct-2/`.
 
 ### What changed
 

@@ -35,6 +35,10 @@ flowchart TB
     %%  sign-out in another tab, or to a page Back restores after one, so
     %%  an unauthenticated visitor sees the chrome for one round trip.
 
+    %%  The Email report and Schedule dialogs sit on the two SLA pages.
+    %%  An administrator sees them only when GET /api/sli/email says
+    %%  email is on; for everyone else the buttons are not drawn.
+
     subgraph W1["1 &middot; Boot"]
         HTML["<b>index.html</b><br>served by nginx from the static build<br>Cache-Control: no-cache"]
         MAIN["<b>main.tsx</b><br>React 18 root"]
@@ -84,7 +88,8 @@ flowchart TB
         EXPLAIN["<b>ExplainPanel</b><br>GET /api/explain/problem<br>never called on page load<br>renders plain paragraphs, not markdown"]
         CHATP["<b>Assistant</b><br>POST /api/chat<br>body read as a stream, frame by frame"]
         MD["<b>features/assistant/parseMarkdown.ts</b><br>141 lines, hand-rolled: the Assistant's<br>answers are the only markdown here"]
-        ACK["<b>AckDialog</b><br>POST /api/problems/acknowledge<br>operator role &middot; the only write"]
+        ACK["<b>AckDialog</b><br>POST /api/problems/acknowledge<br>operator role<br>the only write to Zabbix"]
+        MAILD["<b>Email report, Schedule</b><br>POST /api/sli/email<br>PUT /api/sli/schedule<br>administrator role<br>drawn only when the server<br>says email is on"]
 
         CHATP --> MD
     end
@@ -106,12 +111,14 @@ flowchart TB
     PAGE -->|"Dashboard only"| SSE
     PAGE --> EXPLAIN
     PAGE --> ACK
+    PAGE -->|"SLA pages only"| MAILD
     PAGE --> BOUNDARY
     APICALL --> R401
     APICALL -.-> BFF
     SSE -.-> BFF
     CHATP -.-> BFF
     ACK -.-> BFF
+    MAILD -.-> BFF
 
     %% Frames must stay unfilled or they paint over the relationship lines.
 
@@ -130,10 +137,10 @@ flowchart TB
     class HTML,MAIN,APP,CHUNK browser
     class ME,LOGIN,COOKIE,LAYOUT browser
     class PAGE,ASYNC,POLL,APICALL browser
-    class SSE,FRAMES,EXPLAIN,CHATP,MD browser
+    class SSE,FRAMES,EXPLAIN,CHATP,MD,MAILD browser
     class SIGNOUT,TYPED,BOUNDARY browser
 
     class ACK written
     class BFF server
     class HASROLE,R401,GUARD,HIDDEN choice
-%% source-hash: e7ee1e521f21
+%% source-hash: efd65b6a8449

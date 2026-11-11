@@ -180,6 +180,12 @@ table.data tr.sel td:first-child {
   line-height: var(--lh-solid);
   font-variant-numeric: tabular-nums;
 }
+.wall-zone {
+  margin-left: var(--s-2);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  color: var(--muted);
+}
 .wall-stamp.late .wall-time,
 .wall-stamp.late .wall-label {
   color: var(--warn-text);

@@ -61,21 +61,21 @@ The line numbers are where each method is called in the code on 20 October 2026,
 
 | Method | Called from `server/src/` | Tables |
 |---|---|---|
-| `host.get` | `domain/queries.ts:118`, `http/health.ts:43`, `services/devices.ts:28`, `services/hosts.ts:52`, `:82`, `services/maps.ts:86`, `:119`, `services/net.ts:172`, `services/reports.ts:65`, `sli/engine.ts:443`, `:575` | `hosts`; `interface`, `hosts_groups` → `hstgrp`, `host_tag`, `host_inventory` for the matching `select*` |
-| `hostgroup.get` | `services/hosts.ts:94`, `services/reports.ts:69`, `:99`, `sli/maintenance.ts:137` | `hstgrp` (host groups only), `hosts_groups` |
-| `item.get` | `domain/reachability.ts:126`, `security/viewerPolicy.ts:38`, `services/capacity.ts:119`, `:244`, `services/history.ts:244`, `services/hosts.ts:112`, `:162`, `:179`, `:196`, `services/links.ts:108`, `services/meters.ts:457`, `:529`, `:542`, `services/net.ts:207`, `services/reports.ts:66`, `services/topHosts.ts:57`, `services/webMonitoring.ts:57`, `sli/engine.ts:448`, `:584` | `items`, `item_rtdata`, `item_tag`, `hosts`; the history tables for `lastvalue`, `lastclock`, `prevvalue` |
-| `history.get` | `services/capacity.ts:166`, `services/history.ts:71`, `services/meters.ts:505`, `sli/engine.ts:391`, `:483` | one of `history`, `history_str`, `history_log`, `history_uint`, `history_text`, chosen by the `history` parameter |
+| `host.get` | `domain/queries.ts:206`, `http/health.ts:44`, `services/devices.ts:28`, `services/hosts.ts:52`, `:82`, `services/maps.ts:86`, `:119`, `services/net.ts:172`, `services/reports.ts:119`, `sli/engine.ts:471`, `:602` | `hosts`; `interface`, `hosts_groups` → `hstgrp`, `host_tag`, `host_inventory` for the matching `select*` |
+| `hostgroup.get` | `services/hosts.ts:94`, `services/reports.ts:123`, `:153`, `sli/maintenance.ts:137` | `hstgrp` (host groups only), `hosts_groups` |
+| `item.get` | `domain/reachability.ts:147`, `:276`, `security/viewerPolicy.ts:40`, `services/capacity.ts:122`, `:247`, `services/history.ts:244`, `services/hosts.ts:115`, `:164`, `:183`, `:201`, `services/links.ts:113`, `services/meters.ts:457`, `:529`, `:542`, `services/net.ts:210`, `services/reports.ts:74`, `services/topHosts.ts:58`, `services/webMonitoring.ts:58`, `sli/engine.ts:476`, `:611` | `items`, `item_rtdata`, `item_tag`, `hosts`; the history tables for `lastvalue`, `lastclock`, `prevvalue` |
+| `history.get` | `domain/recentValues.ts:27`, `services/capacity.ts:169`, `services/history.ts:71`, `services/meters.ts:505`, `sli/engine.ts:419`, `:511` | one of `history`, `history_str`, `history_log`, `history_uint`, `history_text`, chosen by the `history` parameter |
 | `trend.get` | `sli/events.ts:139` | `trends` for float items, `trends_uint` for unsigned ones |
-| `trigger.get` | `domain/queries.ts:57`, `services/incidents.ts:178`, `services/reports.ts:67`, `sli/engine.ts:556` | `triggers`; `functions` → `items` → `hosts` for `selectHosts` |
-| `problem.get` | `domain/queries.ts:38`, `services/incidents.ts:137` | `problem`, `problem_tag`; `event_suppress` (not drawn) for `suppressed`; `triggers` for `opdata` |
-| `event.get` | `services/incidents.ts:146`, `:184`, `:245`, `services/reports.ts:24`, `sli/events.ts:35` | `events`, `event_recovery`; `functions` → `items` → `hosts` for `selectHosts` |
-| `service.get` | `services/services.ts:109`, `services/sla.ts:57`, `:95` | `services`, `services_links`, `service_tag`, `service_problem`, then `events` for problem names |
-| `sla.get` | `services/services.ts:69`, `services/sla.ts:32` | `sla` |
-| `sla.getsli` | `services/services.ts:81`, `services/sla.ts:49` | `sla`, `sla_schedule`, `sla_excluded_downtime`; services matched through `sla_service_tag`, with their status history from `service_alarms` |
+| `trigger.get` | `domain/queries.ts:87`, `services/incidents.ts:174`, `services/reports.ts:74`, `sli/engine.ts:583` | `triggers`; `functions` → `items` → `hosts` for `selectHosts` |
+| `problem.get` | `domain/queries.ts:131`, `:157`, `services/incidents.ts:133` | `problem`, `problem_tag`; `event_suppress` (not drawn) for `suppressed`; `triggers` for `opdata` |
+| `event.get` | `services/incidents.ts:142`, `:180`, `:241`, `services/reports.ts:24`, `sli/engine.ts:343`, `sli/events.ts:35` | `events`, `event_recovery`; `functions` → `items` → `hosts` for `selectHosts` |
+| `service.get` | `services/services.ts:110`, `services/sla.ts:57`, `:95` | `services`, `services_links`, `service_tag`, `service_problem`, then `events` for problem names |
+| `sla.get` | `services/services.ts:70`, `services/sla.ts:32` | `sla` |
+| `sla.getsli` | `services/services.ts:82`, `services/sla.ts:49` | `sla`, `sla_schedule`, `sla_excluded_downtime`; services matched through `sla_service_tag`, with their status history from `service_alarms` |
 | `map.get` | `services/maps.ts:97`, `:158` | `sysmaps`, `sysmaps_elements`, `sysmaps_links`, plus `sysmap_element_trigger` and `sysmaps_link_triggers` (not drawn) |
 | `maintenance.get` | `sli/maintenance.ts:126` | `maintenances`; `timeperiods` through `maintenances_windows`, `maintenances_hosts` and `maintenances_groups` for `selectTimeperiods`, `selectHosts` and `selectHostGroups` (none of them drawn) |
 | `dashboard.get` | `services/meters.ts:476` | `dashboard`; `dashboard_page`, `widget` and `widget_field` through `selectPages` (none of them drawn) |
-| `event.acknowledge` | `routes/actions.ts:106` | writes `acknowledges`; updates `acknowledged` on `events` and `problem`; adds `task` with `task_close_problem` to close, or with `task_acknowledge` for the server to act on |
+| `event.acknowledge` | `routes/actions.ts:114` | writes `acknowledges`; updates `acknowledged` on `events` and `problem`; adds `task` with `task_close_problem` to close, or with `task_acknowledge` for the server to act on |
 
 ---
 
@@ -438,7 +438,7 @@ erDiagram
 
 ## Acknowledge writes
 
-The only writes the portal can cause, all from one `event.acknowledge` call (`routes/actions.ts:106`). The `acknowledges` row and the `acknowledged` flag on `events` and `problem` change at once (`CEvent.php:1165-1203`). Closing does not: it queues `task` and `task_close_problem` (`:1228`), and the Zabbix server's task manager generates the recovery afterwards, so a closed problem can stay on the portal's list for a few seconds.
+The only writes the portal can cause, all from one `event.acknowledge` call (`routes/actions.ts:108`). The `acknowledges` row and the `acknowledged` flag on `events` and `problem` change at once (`CEvent.php:1165-1203`). Closing does not: it queues `task` and `task_close_problem` (`:1228`), and the Zabbix server's task manager generates the recovery afterwards, so a closed problem can stay on the portal's list for a few seconds.
 
 ```mermaid
 ---

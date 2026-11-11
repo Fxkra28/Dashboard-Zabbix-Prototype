@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { acceptsGzip } from '../core/acceptEncoding.js';
+import { onSignOut, sessionIdOf } from '../security/auth.js';
 import { useLogger, refusalFor, subscribe, endStreams, endStreamOf, ownerOf, msUntilExpiry } from '../services/stream.js';
 
 export async function streamRoutes(app: FastifyInstance): Promise<void> {
@@ -33,8 +34,12 @@ export async function streamRoutes(app: FastifyInstance): Promise<void> {
     const left = msUntilExpiry(req);
     const expiry = left === null ? null : setTimeout(() => endStreamOf(reply.raw), left);
     expiry?.unref?.();
+    // Signing out ends the session's streams at once, or a screen that was open would keep its frames.
+    const session = sessionIdOf(req.user);
+    const stopWatching = session ? onSignOut((signedOut) => signedOut === session && endStreamOf(reply.raw)) : undefined;
     const gone = () => {
       if (expiry) clearTimeout(expiry);
+      stopWatching?.();
       unsubscribe();
     };
     req.raw.on('close', gone);

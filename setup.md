@@ -4,7 +4,7 @@ A deep-dive into the architecture, data flow, and the Zabbix-native features thi
 re-implements. Read [README.md](README.md) first for installation and configuration; this document
 explains *how it all fits together* and *why*.
 
-It is the reference you grep, not the one you read front to back: 39 parts, one per subsystem and, from §30, one for each day of changes, each a file in [`docs/setup/`](docs/setup/).
+It is the reference you grep, not the one you read front to back: 40 parts, one per subsystem and, from §30, one for each day of changes, each a file in [`docs/setup/`](docs/setup/).
 Sections 14 to 26 are the only written record of why the derived figures are calculated the way they
 are, so they matter most when a number has to be defended.
 
@@ -30,7 +30,7 @@ the code; for *why* the system is shaped this way go to
 | 2 | [Request lifecycle (a concrete example)](docs/setup/02-request-lifecycle.md) |
 | 3 | [Zabbix-native feature mapping](docs/setup/03-zabbix-native-feature-mapping.md) |
 | 4 | [The "logics" that match Zabbix](docs/setup/04-the-logics-that-match-zabbix.md) |
-| 5 | [Backend (BFF): file by file](docs/setup/05-backend-file-by-file.md) |
+| 5 | [Backend (BFF): layers and endpoints](docs/setup/05-backend-file-by-file.md) |
 | 6 | [Frontend: structure](docs/setup/06-frontend-structure.md) |
 | 7 | [Live updates (SSE)](docs/setup/07-live-updates.md) |
 | 8 | [Authentication (mechanics)](docs/setup/08-authentication.md) |
@@ -65,3 +65,4 @@ the code; for *why* the system is shaped this way go to
 | 37 | [What changed on 19 October 2026, the check and six rows](docs/setup/37-what-changed-on-19-october-2026-the-check-and-six-rows.md) |
 | 38 | [What changed on 19 and 20 October 2026, the splits, the linter and the screenshots](docs/setup/38-what-changed-on-19-and-20-october-2026-the-splits-the-linter-and-the-screenshots.md) |
 | 39 | [What changed on 22 October 2026, the answers, the restart policies and the rebuild](docs/setup/39-what-changed-on-22-october-2026-the-answers-the-restart-policies-and-the-rebuild.md) |
+| 40 | [What changed from 26 to 30 October 2026, the new look, option B, the speed fix and the checks that followed](docs/setup/40-what-changed-from-26-to-30-october-2026-the-new-look-option-b-the-speed-fix-and-the-checks.md) |

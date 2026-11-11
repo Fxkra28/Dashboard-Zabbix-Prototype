@@ -30,13 +30,18 @@ function offsetSeconds(utcSeconds: number, tz: string): number {
   return asUtc - utcSeconds;
 }
 
-/** Midnight on `day` of `month` (1 to 12) of `year` in `tz`, as Unix seconds. */
-export function zonedDayStart(year: number, month: number, day: number, tz: string): number {
-  const guess = Date.UTC(year, month - 1, day) / 1000;
+/** The instant the wall clock in `tz` reads `hour`:`minute` on `day` of `month` (1 to 12) of `year`, as Unix seconds. */
+export function zonedTime(year: number, month: number, day: number, hour: number, minute: number, tz: string): number {
+  const guess = Date.UTC(year, month - 1, day, hour, minute) / 1000;
   const first = guess - offsetSeconds(guess, tz);
   // Re-check at the corrected instant: across a DST change the offset differs.
   const second = guess - offsetSeconds(first, tz);
   return second;
+}
+
+/** Midnight on `day` of `month` (1 to 12) of `year` in `tz`, as Unix seconds. */
+export function zonedDayStart(year: number, month: number, day: number, tz: string): number {
+  return zonedTime(year, month, day, 0, 0, tz);
 }
 
 /** Midnight on day 1 of `month` (1 to 12) of `year` in `tz`, as Unix seconds. */
@@ -62,6 +67,15 @@ export function parseMonth(raw: unknown): string {
     throw new BadRequestError('month must be YYYY-MM, e.g. 2026-08.');
   }
   return raw;
+}
+
+/**
+ * A period must have started and lie within the year Zabbix keeps events. The email route makes these two refusals before it
+ * logs in to a mail server, and the engine makes the same ones, so a month nobody can report costs a login and a send of the allowance (BK-40).
+ */
+export function checkPeriodStart(from: number, now: number): void {
+  if (from >= now) throw new BadRequestError('That period has not started yet.');
+  if (from < now - 400 * 86400) throw new BadRequestError('Zabbix keeps events for about a year; pick a later period.');
 }
 
 export function monthBounds(month: string, tz: string): { from: number; to: number } {

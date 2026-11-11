@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { cached, invalidate } from '../core/cache.js';
+import { cached, invalidate, REFRESH_RETRY_MS } from '../core/cache.js';
 import { registerCompression } from '../http/compress.js';
 import { registerErrorHandler } from '../http/errors.js';
 import { AGE_HEADER, STALE_HEADER, noteStale, registerStaleHeaders } from '../core/staleness.js';
@@ -67,8 +67,15 @@ describe('stale headers on a real report route', () => {
     expect(stale.json()).toEqual({ marker: 'august' });
     expect(stale.json()).toEqual(live.json());
 
-    // Zabbix back: a live answer carries no header again.
+    // The minute after the failure: the old copy again, marked, without asking Zabbix (BK-31).
     computeMock.mockResolvedValueOnce({ marker: 'august again' });
+    const inside = await app.inject({ url: '/api/sli?month=2026-08' });
+    expect(inside.json()).toEqual({ marker: 'august' });
+    expect(inside.headers[STALE_HEADER.toLowerCase()]).toBe('true');
+    expect(computeMock).toHaveBeenCalledTimes(2);
+
+    // Zabbix back, once that minute is over: a live answer carries no header again.
+    later(3 * DAY + REFRESH_RETRY_MS);
     const back = await app.inject({ url: '/api/sli?month=2026-08' });
     expect(back.json()).toEqual({ marker: 'august again' });
     expect(back.headers[STALE_HEADER.toLowerCase()]).toBeUndefined();

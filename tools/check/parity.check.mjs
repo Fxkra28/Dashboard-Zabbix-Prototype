@@ -21,8 +21,8 @@
  * the root one: a folder called pic anywhere else is code, and is compared.
  *
  * Read-only. `.env*` files are skipped without being opened: they hold secrets, and they
- * differ by design. node_modules, dist, .git, .DS_Store and *.tsbuildinfo are skipped as
- * contributing.md's `diff` command skips them.
+ * differ by design. node_modules, dist, .git, .DS_Store, *.tsbuildinfo and .test-counts.json (what the last
+ * test run of each copy wrote, so it differs by time) are skipped as contributing.md's `diff` command skips them.
  */
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git']);
 /** Folders skipped only when they sit at the root: each copy's own screenshots, which show real host names and are not committed. */
 export const OWN_ROOT_DIRS = new Set(['pic']);
-const skipFile = (name) => name === '.DS_Store' || name.endsWith('.tsbuildinfo') || name.startsWith('.env');
+const skipFile = (name) => name === '.DS_Store' || name === '.test-counts.json' || name.endsWith('.tsbuildinfo') || name.startsWith('.env');
 
 /** Files meant to differ between the copies, each in both: the copy's own configuration and perspective. */
 export const PER_COPY_FILES = [
@@ -173,8 +173,8 @@ export function selfTest() {
 
     check(
       'skipped',
-      { ...code, '.env': 'a', 'server/.env.example': 'a', 'node_modules/p/i.js': 'a', 'web/dist/i.js': 'a', '.DS_Store': 'a', 'x.tsbuildinfo': 'a' },
-      { ...code, '.env': 'b', 'server/.env.example': 'b', 'node_modules/p/i.js': 'b', 'web/dist/i.js': 'b', '.DS_Store': 'b', 'x.tsbuildinfo': 'b' },
+      { ...code, '.env': 'a', 'server/.env.example': 'a', 'node_modules/p/i.js': 'a', 'web/dist/i.js': 'a', '.DS_Store': 'a', 'x.tsbuildinfo': 'a', 'server/.test-counts.json': 'a' },
+      { ...code, '.env': 'b', 'server/.env.example': 'b', 'node_modules/p/i.js': 'b', 'web/dist/i.js': 'b', '.DS_Store': 'b', 'x.tsbuildinfo': 'b', 'web/.test-counts.json': 'b' },
       [],
     );
     // pic/ at the root holds each copy's own screenshots: they may differ, or exist in one copy only.

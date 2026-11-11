@@ -10,6 +10,7 @@ import { Field } from '../../shared/components/Field';
 import KpiCard from '../../shared/components/KpiCard';
 import { dur } from '../../shared/lib/units';
 import { downloadCsv } from '../../shared/lib/csv';
+import { dayInZone } from '../../shared/lib/time';
 import { NoData } from '../../shared/components/NoData';
 import { count } from '../../shared/lib/plural';
 import { TableWrap } from '../../shared/components/TableWrap';
@@ -79,7 +80,7 @@ export default function AlertNoise() {
   // The rows on screen, so a filtered file says so in its name and is not mistaken for the full list.
   const download = () => {
     const shown = flag === 'all' ? '' : `-${flag}`;
-    const day = new Date().toISOString().slice(0, 10);
+    const day = dayInZone(Date.now());
     downloadCsv(`hcml-alert-noise-${days}d${shown}-${day}.csv`, csvRows(rows));
   };
 

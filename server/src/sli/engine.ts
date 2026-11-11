@@ -13,7 +13,7 @@ import {
 } from '../domain/naming.js';
 import { chunk, fetchEventsSliced, fetchTrendsSliced, mapLimit } from './events.js';
 import { maintenanceByHost } from './maintenance.js';
-import { hourFloor, monthBounds } from './time.js';
+import { checkPeriodStart, hourFloor, monthBounds } from './time.js';
 import {
   clipIntervals,
   complementIntervals,
@@ -195,6 +195,9 @@ export function intervalsFor(
 /**
  * The state a trigger was in when the window opened.
  *   - its first event inside the window says it (an OK first = it was in problem);
+ *   - a first PROBLEM says it was OK, except for a trigger set to multiple PROBLEM
+ *     events, which repeats PROBLEM while in problem: there the last event before
+ *     the window decides (`lastBefore`, 1 = PROBLEM, 0 = OK, none = not given);
  *   - with no events inside, a trigger unchanged since before the window is in
  *     its current state;
  *   - one that changed only after the window: the first later event says what
@@ -205,8 +208,9 @@ export function initialState(
   trigger: { value: string; lastchange: string },
   end: number,
   firstLater?: number,
+  lastBefore?: number,
 ): boolean {
-  if (eventsInWindow.length) return eventsInWindow[0].value === 0;
+  if (eventsInWindow.length) return eventsInWindow[0].value === 1 && lastBefore !== undefined ? lastBefore === 1 : eventsInWindow[0].value === 0;
   if (Number(trigger.lastchange) < end || firstLater === undefined) return trigger.value === '1';
   return firstLater === 0;
 }
@@ -272,6 +276,8 @@ interface ZTrigger {
   value: string;
   lastchange: string;
   status: string;
+  /** 1 = the trigger makes a PROBLEM event at every evaluation that is still true, 0 = only when it turns on. */
+  type?: string;
   hosts?: { hostid: string; name: string; status: string }[];
 }
 
@@ -330,6 +336,26 @@ async function firstEventsAfter(
   return found;
 }
 
+/** The value of each trigger's last event before `from`; one with none is left out. One call each, since the limit counts rows and not triggers. */
+async function lastEventsBefore(counter: Counter, triggerids: string[], from: number): Promise<Map<string, number>> {
+  const found = new Map<string, number>();
+  await mapLimit(triggerids, config.sla.maxParallel, async (id) => {
+    const [last] = await counted<ZEvent[]>(counter, 'event.get', {
+      source: 0,
+      object: 0,
+      objectids: [id],
+      value: [0, 1],
+      time_till: from - 1,
+      sortfield: ['clock', 'eventid'],
+      sortorder: 'DESC',
+      limit: 1,
+      output: ['eventid', 'objectid', 'clock', 'value'],
+    });
+    if (last) found.set(id, Number(last.value));
+  });
+  return found;
+}
+
 /** Collected-time intervals per host from its ICMP `icmpping` item, inside `outside` (the window less its declared spans). */
 async function icmpCoverage(
   counter: Counter,
@@ -384,8 +410,10 @@ async function icmpCoverage(
   // Trends for an hour are written when the hour ends, so the latest hour or
   // two only exist as raw history. Fill that tail from history, bounded, so a
   // long outage of trend writing can never turn into a huge history read.
-  const tailFrom = Number.isFinite(lastTrendHour) ? lastTrendHour + 3600 : hourFloor(end);
-  if (tailFrom < end && end - tailFrom <= 6 * 3600 && tailFrom >= from) {
+  const afterTrends = Number.isFinite(lastTrendHour) ? lastTrendHour + 3600 : hourFloor(end);
+  // Past six hours the tail would be a large read, so only the hour in progress is read, which would otherwise count as no data.
+  const tailFrom = end - afterTrends <= 6 * 3600 ? afterTrends : hourFloor(end);
+  if (tailFrom < end && tailFrom >= from) {
     const counts = new Map<string, Map<number, number>>();
     await mapLimit(chunk(itemids, 35), config.sla.maxParallel, async (ids) => {
       const rows = await counted<{ itemid: string; clock: string }[]>(counter, 'history.get', {
@@ -536,8 +564,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
   if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) {
     throw new BadRequestError('A month (YYYY-MM) or a from/to window is required.');
   }
-  if (from > now) throw new BadRequestError('That period has not started yet.');
-  if (from < now - 400 * 86400) throw new BadRequestError('Zabbix keeps events for about a year; pick a later period.');
+  checkPeriodStart(from, now);
 
   const end = Math.min(to, now);
   const closed = to <= now;
@@ -554,7 +581,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
   // Every host carrying one of the triggers, including disabled hosts, which
   // HCML's report lists too.
   const triggers = await counted<ZTrigger[]>(counter, 'trigger.get', {
-    output: ['triggerid', 'description', 'value', 'lastchange', 'status'],
+    output: ['triggerid', 'description', 'value', 'lastchange', 'status', 'type'],
     filter: { description: triggerNames },
     templated: false,
     selectHosts: ['hostid', 'name', 'status'],
@@ -626,6 +653,12 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
     ? await firstEventsAfter(counter, quietChangedLater, end, now)
     : new Map<string, number>();
 
+  // A first PROBLEM in the window can be a repeat for a trigger set to multiple PROBLEM events; the event before the window tells.
+  const repeating = triggers
+    .filter((t) => t.type === '1' && eventsByTrigger.get(t.triggerid)?.[0]?.value === 1)
+    .map((t) => t.triggerid);
+  const lastBefore = repeating.length ? await lastEventsBefore(counter, repeating, from) : new Map<string, number>();
+
   const icmpByHost = new Map<string, ZIcmpItem[]>();
   for (const i of icmpItems) {
     const list = icmpByHost.get(i.hostid) ?? [];
@@ -647,7 +680,7 @@ export async function computeSli(req: SliRequest): Promise<SliReport> {
     let incidents = 0;
     for (const t of meta.triggers) {
       const evs = eventsByTrigger.get(t.triggerid) ?? [];
-      const initial = initialState(evs, t, end, firstLater.get(t.triggerid));
+      const initial = initialState(evs, t, end, firstLater.get(t.triggerid), lastBefore.get(t.triggerid));
       const r = intervalsFor(evs, initial, from, endClip);
       all.push(...r.intervals);
       incidents += r.incidents;

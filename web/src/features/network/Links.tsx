@@ -44,7 +44,7 @@ const STATE_TEXT: Record<LinkState, string> = {
 /** Table and path order: trouble first, healthy next, "no data" last (neutral, not an alarm). */
 const ORDER: Record<LinkState, number> = { down: 0, degraded: 1, up: 2, unknown: 3 };
 
-/** WAN legs are whole `INET :` hosts: their role ("WAN 1 (ARTHATEL)") names them better than the item. */
+/** WAN legs are whole `INET :` hosts: their role ("WAN 1 (EXAMPLENET)") names them better than the item. */
 const legName = (l: Link) => (/^\s*INET\s*:/i.test(l.host) ? l.role ?? l.host.replace(/^\s*INET\s*:\s*/i, '') : l.label);
 
 function StatePill({ state }: { state: LinkState }) {

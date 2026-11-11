@@ -48,12 +48,40 @@ describe('percentText', () => {
   });
 });
 
+describe('a figure below 100 never reads as 100 (BK-46)', () => {
+  it('is cut to the digits the text shows, in the guarded text', () => {
+    expect(percentText(99.9951, 99)).toBe('99.99%');
+    expect(percentText(99.995, 99)).toBe('99.99%');
+    expect(percentText(99.99999, 99)).toBe('99.99%');
+    expect(percentText(99.994, 99)).toBe('99.99%');
+    expect(percentText(99.996, 100)).toBe('99.99%');
+    expect(percentText(99.99996, 99, 4)).toBe('99.9999%');
+  });
+
+  it('leaves 100 and the figures that round to something else as they were', () => {
+    expect(percentText(100, 99)).toBe('100.00%');
+    expect(percentText(100, 100)).toBe('100.00%');
+    expect(percentText(99.989, 99)).toBe('99.99%');
+    expect(percentText(99.985, 99)).toBe('99.98%');
+  });
+
+  it('holds for every figure from 99.99 up to 100, as the report does', () => {
+    for (let v = 99.99; v < 100; v += 0.0000037) expect(percentText(v, 99), String(v)).toBe('99.99%');
+  });
+});
+
 describe('fmtPct', () => {
   it('is the plain figure without a target, and the guarded one with it', () => {
     expect(fmtPct(98.996)).toBe('99.00%');
     expect(fmtPct(98.996, 2, 99)).toBe('98.996%');
     expect(fmtPct(99.5, 2, 99)).toBe('99.50%');
     expect(fmtPct(99.5, 3, 99)).toBe('99.500%');
+  });
+
+  it('does not round a figure below 100 up to 100 without a target either (BK-46)', () => {
+    expect(fmtPct(99.9951)).toBe('99.99%');
+    expect(fmtPct(100)).toBe('100.00%');
+    expect(fmtPct(99.9951, 3)).toBe('99.995%');
   });
 
   it('shows a dash for a missing figure', () => {

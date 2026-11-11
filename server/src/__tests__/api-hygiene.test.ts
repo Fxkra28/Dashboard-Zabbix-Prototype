@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pingZabbix } from './helpers/pingZabbix.js';
 import { buildTestApp } from './helpers/app.js';
 import { sampleSliReports } from './helpers/sliReportFixture.js';
 
@@ -21,6 +22,11 @@ afterEach(() => {
 });
 
 describe('grouping stays linear', () => {
+  // Links keeps its list of ping items an hour (links.ts), so each test starts from an empty cache.
+  beforeEach(async () => {
+    (await import('../core/cache.js')).invalidate('');
+  });
+
   // Copying the list on every add took 4.6 s for 50,000 links and 6.2 s for 40,000 tree hosts,
   // and blocked every other request meanwhile; with push it is a fraction of a second. The
   // sizes and ceilings leave room for a machine busy with other tests: with push, twelve
@@ -55,20 +61,21 @@ describe('grouping stays linear', () => {
     const now = Math.floor(Date.now() / 1000);
     // Arrives in an order that is neither the sorted one nor its reverse.
     const hosts: [string, '0' | '1'][] = [['ALPHA', '1'], ['ZULU', '0'], ['MIKE', '1'], ['BRAVO', '0']];
-    zbxMock.mockImplementation(async (method: string) =>
-      method === 'item.get'
-        ? hosts.map(([name, up], i) => ({
-            itemid: String(i),
-            name: `ICMP ${name}`,
-            key_: 'icmpping',
-            lastvalue: up,
-            lastclock: String(now - 5),
-            state: '0',
-            delay: '1m',
-            hosts: [{ hostid: String(i), name }],
-            tags: [{ tag: 'link_group', value: 'ONE PATH' }],
-          }))
-        : [],
+    zbxMock.mockImplementation(
+      pingZabbix(
+        hosts.map(([name, up], i) => ({
+          itemid: String(i),
+          name: `ICMP ${name}`,
+          key_: 'icmpping',
+          lastvalue: up,
+          lastclock: String(now - 5),
+          state: '0',
+          delay: '1m',
+          value_type: '3',
+          hosts: [{ hostid: String(i), name }],
+          tags: [{ tag: 'link_group', value: 'ONE PATH' }],
+        })),
+      ),
     );
     const { getLinks } = await import('../services/links.js');
     const res = await getLinks();

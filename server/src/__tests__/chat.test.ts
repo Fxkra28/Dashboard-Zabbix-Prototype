@@ -38,13 +38,45 @@ import { derivedServiceLines, derivedSlaLines } from '../sli/summary.js';
  * empty `content`; forwarding those would show the reader the model thinking.
  */
 
+const { opdataAsked } = vi.hoisted(() => ({ opdataAsked: [] as string[][] }));
+
+// The stand-ins sit behind the real cache entries the code reads, and a problem keeps the opdata its fixture gives.
 vi.mock('../domain/queries.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../domain/queries.js')>();
-  return { ...actual, getProblems: vi.fn(), getHostsWithMeta: vi.fn() };
+  const { cached } = await import('../core/cache.js');
+  const getProblems = vi.fn();
+  return {
+    ...actual,
+    getProblems,
+    getHostsWithMeta: vi.fn(),
+    cachedProblems: () => cached('problems', actual.PROBLEMS_TTL_MS, getProblems),
+    withOpdata: async (problems: { eventid: string }[]) => {
+      opdataAsked.push(problems.map((p) => p.eventid));
+      return problems;
+    },
+  };
 });
-vi.mock('../services/sites.js', () => ({ getSites: vi.fn() }));
-vi.mock('../services/sla.js', () => ({ getSlas: vi.fn(), getSli: vi.fn() }));
-vi.mock('../services/services.js', () => ({ getServiceTree: vi.fn() }));
+vi.mock('../services/sites.js', async () => {
+  const { cached } = await import('../core/cache.js');
+  const getSites = vi.fn();
+  return { getSites, sitesView: () => cached('sites', 15_000, getSites) };
+});
+vi.mock('../services/sla.js', async () => {
+  const { cached } = await import('../core/cache.js');
+  const getSlas = vi.fn();
+  const getSli = vi.fn();
+  return {
+    getSlas,
+    getSli,
+    slasView: () => cached('sla', 60_000, getSlas),
+    sliView: (slaid: string, serviceid?: string) => cached(`sli:${slaid}:${serviceid ?? 'all'}`, 60_000, () => getSli(slaid, serviceid)),
+  };
+});
+vi.mock('../services/services.js', async () => {
+  const { cached } = await import('../core/cache.js');
+  const getServiceTree = vi.fn();
+  return { getServiceTree, serviceTreeView: () => cached('services:tree', 30_000, getServiceTree) };
+});
 vi.mock('../sli/summary.js', () => ({ derivedSlaLines: vi.fn(), derivedServiceLines: vi.fn() }));
 
 const NOW = Math.floor(Date.now() / 1000);
@@ -320,7 +352,12 @@ describe('buildSnapshot', () => {
       Array.from({ length: 40 }, (_, i) => ({ serviceid: String(i), name: `Service ${i}`, sli: 99.5, uptime: 1, downtime: 0, error_budget: 60, period_from: 0, period_to: 0 })) as never,
     );
 
+    opdataAsked.length = 0;
     const { text, meta } = await buildSnapshot();
+    // Operational data is read for the listed problems only (at most 8 recent and the 20 worst), not all 200.
+    expect(opdataAsked).toHaveLength(1);
+    expect(opdataAsked[0].length).toBeGreaterThan(0);
+    expect(opdataAsked[0].length).toBeLessThanOrEqual(28);
     expect(text.length).toBeLessThanOrEqual(SNAPSHOT_CHAR_CAP);
     for (const h of HEADERS) expect(text).toContain(h);
     expect(text).not.toMatch(/tags:/);

@@ -49,7 +49,7 @@ describe('the Assistant conversation and the end of a session', () => {
     expect(sessionStorage.getItem(KEY)).toBe(conversation);
   });
 
-  it('is removed by signing out, before the BFF is even asked', async () => {
+  it('is removed by signing out once the BFF has answered, and not before: until then the person is still signed in', async () => {
     let seenWhenAsked: string | null = 'not asked';
     vi.stubGlobal(
       'fetch',
@@ -60,15 +60,15 @@ describe('the Assistant conversation and the end of a session', () => {
     );
     const { logout } = await loadApi();
     await logout();
-    expect(seenWhenAsked).toBeNull();
+    expect(seenWhenAsked).toBe(conversation);
     expect(sessionStorage.getItem(KEY)).toBeNull();
   });
 
-  it('is removed even when the sign-out request fails', async () => {
+  it('is kept when the sign-out request fails, since the person is still signed in (signOutFailure.test.ts goes on from there)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json(500, { error: 'boom' })));
     const { logout } = await loadApi();
     await expect(logout()).rejects.toThrow('Sign-out failed');
-    expect(sessionStorage.getItem(KEY)).toBeNull();
+    expect(sessionStorage.getItem(KEY)).toBe(conversation);
   });
 
   it('is removed when the BFF answers 401 to any request, on the way to sign-in', async () => {

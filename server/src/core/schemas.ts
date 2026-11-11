@@ -48,6 +48,64 @@ export const loginBody = {
   },
 } as const;
 
+/**
+ * Emailing the SLA report: the month, the formats, who it goes to, whether to keep that list, and the style. The handler
+ * refuses anything else, in the body and in the style. No `additionalProperties: false`: Fastify's validator would strip
+ * a stray field and the request would go through.
+ */
+export const emailReportBody = {
+  type: 'object',
+  required: ['month', 'formats'],
+  properties: {
+    month: { type: 'string', maxLength: 16 },
+    formats: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 8 } },
+    to: { type: 'array', maxItems: 40, items: { type: 'string', maxLength: 320 } },
+    remember: { type: 'boolean' },
+    style: {
+      type: 'object',
+      properties: {
+        decimal: { type: 'string', maxLength: 16 },
+        date: { type: 'string', maxLength: 16 },
+        separator: { type: 'string', maxLength: 16 },
+      },
+    },
+  },
+} as const;
+
+/**
+ * The monthly schedule: every field but the style is required. The handler checks the values and refuses any field not named
+ * here, in the body and in the style, for the reason the email body gives.
+ */
+export const scheduleBody = {
+  type: 'object',
+  required: ['enabled', 'day', 'time', 'formats', 'recipients', 'notify'],
+  properties: {
+    enabled: { type: 'boolean' },
+    day: { type: 'integer' },
+    time: { type: 'string', maxLength: 8 },
+    formats: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 8 } },
+    recipients: { type: 'array', maxItems: 40, items: { type: 'string', maxLength: 320 } },
+    notify: { type: 'array', maxItems: 10, items: { type: 'string', maxLength: 320 } },
+    style: {
+      type: 'object',
+      properties: {
+        decimal: { type: 'string', maxLength: 16 },
+        date: { type: 'string', maxLength: 16 },
+        separator: { type: 'string', maxLength: 16 },
+      },
+    },
+  },
+} as const;
+
+/** The saved list of recipients, replaced as a whole. The handler checks the addresses and refuses any other field. */
+export const recipientsBody = {
+  type: 'object',
+  required: ['recipients'],
+  properties: {
+    recipients: { type: 'array', maxItems: 40, items: { type: 'string', maxLength: 320 } },
+  },
+} as const;
+
 /** Sign-out and renewal read no body: none at all, or a JSON object that is ignored. */
 export const noBody = { type: ['object', 'null'] } as const;
 

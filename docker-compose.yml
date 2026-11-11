@@ -2,6 +2,10 @@
 # portal-web (nginx) serves the built React app and reverse-proxies /bff -> portal-bff.
 # The browser only ever talks to portal-web; the Zabbix token stays inside portal-bff.
 
+# The project name is fixed, not taken from the folder: Compose lower-cases a folder name, and deploy/rebuild.sh and
+# deploy/watch.sh build the names of the images and containers from this line.
+name: hcml-portal
+
 # Container logs are rotated so a chatty BFF cannot fill the disk.
 x-logging: &default-logging
   driver: json-file
@@ -21,25 +25,25 @@ services:
     # tini as PID 1 hands SIGTERM to node and reaps its children.
     init: true
     # Linux has no host.docker.internal of its own: host-gateway makes it the host, which
-    # is how ZBX_URL below (and a local AI_BASE_URL) reach what the host publishes. Docker
-    # Desktop already defines the name, so on a Mac or Windows this changes nothing.
+    # is how a local AI_BASE_URL reaches what the host publishes. Docker Desktop already
+    # defines the name, so on a Mac or Windows this changes nothing.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      # The Zabbix stack runs in its own compose project (Proto1/docker-compose.yml),
-      # so there is no shared network and no DNS between the two. The portal
-      # reaches Zabbix over the host's published 8080 instead, by the name above.
-      # On Linux that name is the Docker bridge, which a port published on 127.0.0.1
-      # only does not answer on: publish Zabbix's 8080 on the bridge too, or point
-      # this at the Zabbix host's real address.
-      ZBX_URL: ${ZBX_URL:-http://host.docker.internal:8080/api_jsonrpc.php}
+      # HCML's Zabbix. Where the name does not lead to its LAN address, docker-compose.override.yml
+      # maps it for this machine only, so the certificate is still checked against the name.
+      ZBX_URL: ${ZBX_URL:-https://zabbix.hcml.co.id/zabbix/api_jsonrpc.php}
       # Canonical name. ZBX_TOKEN is a deprecated alias that trips a startup
       # warning on every boot, so it is deliberately not what compose passes.
       ZABBIX_API_TOKEN: ${ZABBIX_API_TOKEN:-}
       # Without this, acknowledge/close is permanently 503 in Docker no matter
       # what .env holds: the portal silently loses its only write.
       ZABBIX_WRITE_TOKEN: ${ZABBIX_WRITE_TOKEN:-}
-      ZABBIX_TIMEOUT_MS: ${ZABBIX_TIMEOUT_MS:-10000}
+      # Several of HCML's item searches at once took up to 256 s (the Capacity report).
+      ZABBIX_TIMEOUT_MS: ${ZABBIX_TIMEOUT_MS:-300000}
+      # An exception for one expired Zabbix certificate, until a set day; blank keeps the normal check (docs/operations/tls.md).
+      ZBX_TLS_PIN_SHA256: ${ZBX_TLS_PIN_SHA256:-}
+      ZBX_TLS_PIN_UNTIL: ${ZBX_TLS_PIN_UNTIL:-}
       PORT: "4000"
       # Node sizes its default heap from the container's memory limit and takes only part of
       # it, so mem_limit alone would leave the biggest report build short of what the limit
@@ -113,6 +117,22 @@ services:
       AI_MAX_CONCURRENT: ${AI_MAX_CONCURRENT:-4}
       AI_DAILY_TOKENS_PER_USER: ${AI_DAILY_TOKENS_PER_USER:-500000}
       AI_DAILY_TOKENS_TOTAL: ${AI_DAILY_TOKENS_TOTAL:-2000000}
+      # Emailing the SLA report (server/src/core/mailConfig.ts). All blank = off, and the Email button is hidden.
+      # The login is a secret: it goes in .env, never in this file.
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-}
+      MAIL_SECURITY: ${MAIL_SECURITY:-}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASS: ${MAIL_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
+      MAIL_TO: ${MAIL_TO:-}
+      # The domains a report may go to (blank: any), and "off" to keep the monthly send from running on this machine.
+      MAIL_ALLOWED_DOMAINS: ${MAIL_ALLOWED_DOMAINS:-}
+      MAIL_SCHEDULE: ${MAIL_SCHEDULE:-}
+      # Where the portal keeps its small file of its own (core/state.ts): the volume at the bottom of this file.
+      PORTAL_STATE_DIR: /data
       # Deployed, not scaffolded: default auth ON here.
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
       # No default on purpose. The BFF refuses to start on the placeholder
@@ -135,7 +155,7 @@ services:
     expose:
       - "4000"
     # Healthy means the process answers. Whether Zabbix does too is `ready` in the
-    # reply a signed-in user gets, and a restart would not fix that, so it never fails
+    # reply, and a restart would not fix that, so it never fails
     # this check. The check sends no sign-in and reads only the status.
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
@@ -145,11 +165,13 @@ services:
       start_period: 15s
     # Least privilege. This container holds both Zabbix tokens and the AI key, so it
     # runs as the image's non-root node user, with every Linux capability dropped, a
-    # read-only root filesystem and no way to gain privileges. It writes no files; /tmp
-    # is a small in-memory scratch space.
+    # read-only root filesystem and no way to gain privileges. It writes one small file,
+    # in the volume at /data; /tmp is a small in-memory scratch space.
     read_only: true
     tmpfs:
       - /tmp:size=16m
+    volumes:
+      - portal-state:/data
     cap_drop:
       - ALL
     security_opt:
@@ -157,6 +179,10 @@ services:
     # Room for the biggest month: the cache alone may hold 64 MiB (cache.ts), and an SLA
     # build keeps a month of events and trends in memory on top of that.
     mem_limit: 2g
+    # The same as mem_limit, so the container cannot use swap on top of it: Docker's default allows twice the memory.
+    memswap_limit: 2g
+    # Node holds a few dozen processes and threads at most; a runaway fork stops here.
+    pids_limit: 256
     cpus: 2
     restart: unless-stopped
     logging: *default-logging
@@ -185,6 +211,8 @@ services:
     security_opt:
       - no-new-privileges:true
     mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 128
     cpus: 1
     # wget ships with Alpine, so the check adds nothing to the image. 127.0.0.1, not
     # localhost: nginx listens on IPv4 only. Each check is one line in nginx's access log.
@@ -197,7 +225,12 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
-  # Enable when scaling the cache / SSE fan-out (see instruct.md §2).
+  # Enable when scaling the cache / SSE fan-out.
   # redis:
   #   image: redis:7-alpine
   #   restart: unless-stopped
+
+# The portal's small file of its own (core/state.ts): the saved recipients, the monthly schedule and a record of what was
+# sent. A named volume, so it outlives a rebuild. `docker compose down -v` deletes it, and so does removing the volume by hand.
+volumes:
+  portal-state:

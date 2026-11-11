@@ -99,7 +99,7 @@ export default function Devices() {
           </label>
         </FieldGroup>
         <FieldSpacer>
-          <span className="pill">{count(filtered.length, 'device')}</span>
+          {q.data && <span className="pill">{count(filtered.length, 'device')}</span>}
         </FieldSpacer>
       </div>
 
@@ -112,8 +112,8 @@ export default function Devices() {
                 hosts={filtered}
                 showSite
                 showCategory
-                // Interface data is for operators and admins (viewerPolicy.ts), and so is the page of ports.
-                portsLink={role !== null && roleAllows(role, 'operator')}
+                // Interface data is for a wall screen, an operator and an admin (viewerPolicy.ts), and so is the page of ports.
+                portsLink={role !== null && roleAllows(role, 'wall')}
               />
             ) : (
               <div className="state">No device matches.</div>

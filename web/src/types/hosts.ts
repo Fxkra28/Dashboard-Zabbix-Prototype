@@ -69,8 +69,6 @@ export interface Item {
   key_: string;
   value_type: string; // '0' float, '1' char, '2' log, '3' uint, '4' text
   units?: string;
-  lastvalue?: string;
-  lastclock?: string;
   state?: string; // '0' normal, '1' not supported
   status?: string; // '0' enabled, '1' disabled
   delay?: string;
@@ -79,7 +77,9 @@ export interface Item {
   hosts?: { hostid: string; name: string }[];
 }
 
+/** An item with its newest value, which only /api/latest returns: Zabbix looks each one up on its own (tracker BK-25). */
 export interface LatestItem extends Item {
+  lastvalue?: string;
   lastclock?: string;
   prevvalue?: string;
   state?: string; // '0' normal, '1' not supported

@@ -188,3 +188,28 @@ describe('the Inventory gap CSV (FR-05)', () => {
     expect((await saved[1].text).split('\n')).toHaveLength(4);
   });
 });
+
+describe('the day in the name of a CSV file (FR-24)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('is the day in the report zone: at 03:00 on the 8th in Jakarta the file says the 8th, not the 7th that UTC still has', async () => {
+    vi.useFakeTimers({ now: Date.UTC(2026, 9, 7, 20, 0, 0), toFake: ['Date'] });
+    vi.spyOn(api, 'noise').mockResolvedValue(report([trigger('Disk full', 'db-1', ['chronic'])]));
+    vi.spyOn(api, 'inventory').mockResolvedValue({
+      dimensions: [{ key: 'site', label: 'Site mapping', hint: 'tag', present: 0, total: 1, pct: 0, scored: true }],
+      overall: { hosts: 1, complete: 0, pct: 0 },
+      groups: [],
+      gaps: [{ hostid: '1', name: 'sw-1', site: 'Jakarta', groups: [], missing: ['site'] }],
+    } as ScorecardResponse);
+    const user = userEvent.setup({ advanceTimers: () => undefined });
+
+    const first = render(<AlertNoise />, { wrapper: BrowserRouter });
+    await screen.findByText('Disk full');
+    await user.click(screen.getByRole('button', { name: 'Download CSV' }));
+    first.unmount();
+    render(<Inventory />, { wrapper: BrowserRouter });
+    await user.click(await screen.findByRole('button', { name: 'Download CSV' }));
+
+    expect(saved.map((s) => s.name)).toEqual(['hcml-alert-noise-7d-2026-10-08.csv', 'hcml-inventory-gaps-2026-10-08.csv']);
+  });
+});

@@ -98,6 +98,8 @@ const BODY: Record<string, object> = {
   '/api/auth/refresh': {},
   '/api/auth/logout': {},
   '/api/problems/acknowledge': { eventids: ['109'], acknowledge: true },
+  '/api/sli/email': { month: '2026-09', formats: ['pdf'] },
+  '/api/sli/schedule': { enabled: true, day: 1, time: '00:00', formats: ['pdf'], recipients: ['ana@example.org'], notify: [] },
 };
 
 /** Sign-out and renewal end the session they are sent with, so each gets one of its own. */
@@ -110,6 +112,9 @@ let app: FastifyInstance;
 let token = '';
 
 beforeAll(async () => {
+  // The month asked for is 2026-09, which the engine refuses once it is more than about 400 days back.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-09-17T03:00:00Z'));
   vi.resetModules();
   for (const [key, value] of Object.entries({
     AUTH_ENABLED: 'true',
@@ -154,6 +159,11 @@ beforeAll(async () => {
     import('../routes/chat.js').then((m) => m.chatRoutes),
     import('../routes/sli.js').then((m) => m.sliRoutes),
     import('../routes/sliExport.js').then((m) => m.sliExportRoutes),
+    import('../routes/sliMail.js').then((m) => m.sliMailRoutes),
+    // The schedule is the scheduler's to run; here it only has to answer the questions the routes ask of it.
+    import('../routes/sliSchedule.js').then((m) => async (instance: FastifyInstance) => {
+      await instance.register(m.sliScheduleRoutes, { schedule: { availability: () => ({ available: true, why: '' }), next: () => null, problem: () => '' } });
+    }),
   ]);
 
   app = Fastify({ logger: false, ajv: AJV_OPTIONS });
@@ -175,6 +185,7 @@ async function signIn(): Promise<string> {
 afterAll(async () => {
   await app?.close();
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 const operations = Object.entries(spec.paths).flatMap(([path, item]) =>

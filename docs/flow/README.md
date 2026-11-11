@@ -5,9 +5,9 @@ Three views of the same system in motion. `schema/` answers *what the data is*; 
 
 | File | Question it answers | Shape |
 |---|---|---|
-| [`WebFlow.pdf`](WebFlow.pdf) | What happens in the browser, from the first byte to data on screen? | 6 stages, 26 boxes |
-| [`ServerFlow.pdf`](ServerFlow.pdf) | What happens to one request inside the BFF, in the order it runs? | sequence, 5 participants |
-| [`DataFlow.pdf`](DataFlow.pdf) | Where does a number come from, and where does it go? | 5 lanes, end to end |
+| [`WebFlow.pdf`](WebFlow.pdf) | What happens in the browser, from the first byte to data on screen? | 6 stages, 27 boxes |
+| [`ServerFlow.pdf`](ServerFlow.pdf) | What happens to one request inside the BFF, in the order it runs? | sequence, 7 participants |
+| [`DataFlow.pdf`](DataFlow.pdf) | Where does a number come from, and where does it go? | 6 lanes, end to end |
 
 Read them in that order if you are new: the browser is what you can see, the server is what it talks
 to, and the data flow is the whole path with the trust boundary marked.
@@ -51,11 +51,11 @@ sidebar's role filter is cosmetic; the BFF returns 403 regardless. `web/src/App.
 ### 2 · Web: the live dashboard
 
 ```text
-Dashboard ──EventSource /api/stream + session cookie──► BFF ──tick 5 s──► Zabbix ──event: problems──► setState
+Dashboard ──EventSource /api/stream + session cookie──► BFF ──tick 15 s──► Zabbix ──event: problems──► setState
 ```
 
 `useSSE` has two call sites, `Overview.tsx` and `Problems.tsx`; navigating away closes the connection. The Dashboard shows the stream's list; the
-Problems page keeps polling every 30 s and reads its list again at once when a frame says the list changed. The server ticks every 5 s but only writes when the fingerprint changed
+Problems page keeps polling every 30 s and reads its list again at once when a frame says the list changed. The server ticks every 15 s, the pace the list is cached, but only writes when the fingerprint changed
 (a change in only a name or host waits up to 30 s, a list identical to the last one is never
 resent, and a frame carries only the fields the Dashboard reads: no tags, no `opdata`), and a screen that accepts gzip gets the frames compressed, flushed after each one. After 15 s of silence it sends a named `ping` event that carries the list's age in
 milliseconds: `useSSE` uses it to tell a quiet line from a dead one and to keep "Data as of" moving.
@@ -64,7 +64,7 @@ signed-in stream ends when its token expires so the browser reconnects with the 
 stream ends on SIGTERM so the server can close. No token rides in the URL: `EventSource` cannot set a header, but it sends the
 httpOnly session cookie like any same-origin request, and the BFF refuses `?token=` on every route.
 `logging.ts` still redacts one, for pages loaded before the cookie (ADR-0010).
-`server/src/services/stream.ts:28-36,303-322`, `server/src/routes/stream.ts:4-39`, `web/src/api/problems.ts:7-10`.
+`server/src/services/stream.ts:27-36,303-322`, `server/src/routes/stream.ts:4-39`, `web/src/api/problems.ts:7-10`.
 
 ### 3 · Server: one request
 
@@ -87,9 +87,10 @@ Four *outcomes*, not four checks: "already fetching" and "miss" are the same lin
 `inflight.get(key) ?? begin(key, fn, opts.pin)`. 500 entries or about 64 MB of values, whichever is
 reached first, TTLs from 5 s to 24 h, all of it gone on restart. A closed month's SLA report is pinned,
 so a run of graph keys cannot push it out.
-This is why twenty NOC screens cost one upstream read. Stale serving is never permitted for anything
-showing problem or acknowledgement state, and an answer given from an old copy because Zabbix failed
-says so in `X-Data-Stale` and `X-Data-Age-Seconds`. `server/src/core/cache.ts:80-208`.
+This is why twenty NOC screens cost one upstream read. Stale serving is never permitted for the problem
+list. A view HCML's Zabbix takes tens of seconds to build is answered from its last copy while a newer one
+is read, and says so in `X-Data-Refreshing`; an answer given from an old copy because Zabbix failed says so
+in `X-Data-Stale`; both carry `X-Data-Age-Seconds`. `server/src/core/cache.ts:87-216`.
 
 ### 5 · Auth
 
@@ -98,8 +99,8 @@ POST /api/auth/login ──► JWT, 12 h by default, in an httpOnly cookie ─�
 ```
 
 Users come from the environment, not a table: `PORTAL_USERS` as `name:password:role` triples, or
-`PORTAL_USER`/`PORTAL_PASS` as the single-admin shorthand. Three rules gate three route families:
-admin for `/api/reports/inventory`, operator for `/api/links`, `/api/net` and the acknowledge
+`PORTAL_USER`/`PORTAL_PASS` as the single-admin shorthand. Four rules set the roles above the default:
+admin for `/api/reports/inventory`, `/api/sli/email` and `/api/sli/schedule`, wall for `/api/links` and `/api/net`, and operator for the acknowledge
 write, and anything unmatched needs viewer, so a new route is protected by default rather than
 accidentally public. `/api/health`, `/api/auth/login`, `/api/auth/me` and `/api/auth/logout` are the
 only exemptions, matched exactly against the route the router matched, so an encoded path such as
@@ -153,7 +154,7 @@ cached. `HISTORY_CHAR_BUDGET` is the one hard cap in the prompt, at 3,000 charac
 Acknowledge ──POST /api/problems/acknowledge──► operator role + ZABBIX_WRITE_TOKEN ──► event.acknowledge ──► cache invalidate ──► SSE push
 ```
 
-The portal's only write, behind a token separate from the read token. Leave `ZABBIX_WRITE_TOKEN`
+The portal's only write to Zabbix, behind a token separate from the read token. Leave `ZABBIX_WRITE_TOKEN`
 unset and the portal sends no write, provided the read token's role is read-only (tracker SC-23):
 `/api/health` reports `writeBack: false` and the UI hides the control. The invalidate and the push are drawn as a parallel fork in `DataFlow` but run in
 sequence: `event.acknowledge` is awaited first.
@@ -166,7 +167,9 @@ sequence: `event.acknowledge` is awaited first.
 This is `hcml-portal`: the plain-language layer is hosted Claude over the Anthropic API. That
 is why `DataFlow` carries a red box and a second red box next to it reading *LEAVES THIS MACHINE*:
 when someone clicks *Explain*, a problem's host name, trigger name, tags and severity cross the
-network to a third party.
+network to a third party. Lane 6 ends in a third red box with the same words, for the report by
+email: the month's figures, the files and the addresses go to a mail server, and only once the
+`MAIL_` settings are usable.
 
 The two AI paths send different amounts, and Explain is the smaller one. Explain sends one problem:
 host, trigger name, opdata, severity, start time, the acknowledged/resolved flags and that problem's
@@ -178,13 +181,14 @@ summarises both.
 
 The sibling repo `hcml-portal-ollama` has the same three diagrams drawn from its own perspective:
 there the model is `qwen3:8b` on the host, the same box is green, and there is no boundary box at
-all because nothing crosses one.
+all because nothing crosses one. It has no lane 6 either: it passes no `MAIL_` settings and declares
+no volume.
 
 `WebFlow.mmd` and `ServerFlow.mmd` are byte-identical in both repos. Verify with `diff`, not by
 eye. The browser and the request pipeline do not know or care which model answers.
-Inside this folder only `DataFlow.mmd`, `DataFlow.pdf` and this README differ, and `DataFlow` differs
-in exactly three rendered lines: the `MODEL` box, the `LEAVES` box, and the `class MODEL,LEAVES`
-line that colours them. (Outside this folder the repos also differ in `README.md`,
+Inside this folder only `DataFlow.mmd`, `DataFlow.pdf` and this README differ. `DataFlow` differs in
+the `MODEL` box, the `LEAVES` box, the `class` lines that colour them, and lane 6 with the grey `kept`
+colour it needs, which only this copy has. (Outside this folder the repos also differ in `README.md`,
 `AUDIT_REPORT.md`, `docker-compose.yml`, the `.env` files and the
 `schema/` diagrams, so "the repos differ only in DataFlow" is true of *this folder*, not of the
 whole tree.)
@@ -236,14 +240,24 @@ unresponsive Zabbix both return 503, not 502/504, because they are *configuratio
 than upstream faults, and nothing in the server ever returns 504. Both are pinned by tests. Only
 `zabbix_error` is a 502.
 
-**DataFlow: five lanes, top to bottom, each read left to right.** Lane 1 is Zabbix doing the work we
+**DataFlow: six lanes, top to bottom, each read left to right.** Lane 1 is Zabbix doing the work we
 do not do. Lane 2 is the BFF. Lane 3 is the plain-language layer, reached on demand only, never
-on page load. Lane 4 is the browser. Lane 5 is the single write.
+on page load. Lane 4 is the browser. Lane 5 is the single write to Zabbix. Lane 6 is the report by
+email.
 
 Lane 5 ends in its own terminal box rather than an arrow looping back to lane 1. It is the same
 Zabbix API; the arrow is omitted because one cycle is enough to make the layout engine scramble the
 reading order of every other lane. Lane 5's two leaves are drawn as a parallel fork but run in
 sequence: `event.acknowledge` is awaited first, and only then does the invalidate + push run.
+
+Lane 6 is off until the `MAIL_` settings are usable, and it is where the portal keeps its one small
+file: `portal-state.json` on the `portal-state` volume holds the saved recipients, the monthly
+schedule and a record of each send, and no figure, no report and no password
+([ADR-0015](../architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)).
+The send takes the month's SLA from the derived layer (the dotted arrow), builds the files, and hands
+them, the figures and the addresses to the mail server, which is why its last box is red. Like lane 5
+it ends in a terminal box: the send also writes a record back to the state file, and that arrow
+would be a cycle.
 
 Two things lane 3 is easy to misread. The answer box describes two different features and neither
 has both properties: *Explain* is cached 1 h per problem-and-state and returns one buffered JSON
@@ -261,16 +275,16 @@ subgraph IDs do not match the lane numbers: lane 3 is `D4` and lane 4 is `D3`. G
 | Amber | Runs in the browser |
 | Purple | The portal's single write back to Zabbix |
 | Red | It leaves this machine |
-| Grey | A decision, a guard, or a boundary |
+| Grey | A decision, a guard, or a boundary. In `DataFlow` lane 6, the one small file the portal keeps |
 
 The same palette as [`../schema/`](../schema/), so a box means the same thing in both folders.
 
-**One exception:** `ServerFlow`'s five `rect` bands are *phase*
+**One exception:** `ServerFlow`'s six `rect` bands are *phase*
 bands, and two of them reuse a colour from this table with a different meaning. Its amber band is
 the `onRequest` forgery check and auth guard running inside the BFF, not browser code. Its red band is
 "when Zabbix does not cooperate": an upstream failure, and nothing leaves the machine there. Grey
-(guard), green (derived) and purple (the one write) do match the table. Only `DataFlow`'s red means
-"it leaves this machine".
+(guard), green (derived) and purple (the one write) do match the table. The sixth band, slate, is the
+report by email. Only `DataFlow`'s red means "it leaves this machine".
 
 ---
 
@@ -281,10 +295,12 @@ green boxes, which stop at the BFF. Sites, links, incidents, host state and the 
 table anywhere: they are computed per request, cached for seconds, and gone when the container
 restarts.
 
-There is no database to back up, no migration to run and no schema to version, and nothing survives
+There is no database to back up, no migration to run and no schema to version, and no figure survives
 a restart, so every figure has to be cheap enough to recompute on demand. The TTLs in `DataFlow` lane 2
-are where that trade-off is set. The portal's settings are the exception: they sit in its
-`.env` files, which [need a backup](../operations/backup-and-restore.md).
+are where that trade-off is set. The portal keeps two things of its own, and both
+[need a backup](../operations/backup-and-restore.md): its settings, which sit in the `.env` files,
+and, in this copy, the small state file on the `portal-state` volume (lane 6), which holds the saved
+recipients, the monthly schedule and a record of the sends.
 
 ---
 

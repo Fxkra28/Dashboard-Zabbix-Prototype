@@ -15,6 +15,7 @@ describe('shared/lib/sites.ts and server/src/domain/naming.ts', () => {
   const NAMES = [
     ...server.SITES.flatMap((s) => [`${s.code}.1 ${s.aliases[0]}01`, `${s.code}.2.3 ${s.aliases[s.aliases.length - 1].toLowerCase()}-02`, `INET : ${s.name} WAN 1`, `SERVER : CUCM ${s.aliases[0]}`]),
     '', '   ', '0.1 SAMPLE', '15.1 SAMPLE', '1', '1.', '1.1', '.5 SAMPLE', 'x 1.2 SAMPLE', 'jakarta', 'Jakarta core', 'SAMPLE-SWITCH', '3.2.4 ÄÖÜ', '14.1 TWSB OFFICE', '10.9.9 FPU ARUBA 9',
+    '10.20.30.40', ' 12.0.0.1', '10.0.0.1 CORE', '1.2.3.4', '192.168.1.10', '10.2.1 FPU-SW-01', '12.1.1. POR-C9200-01',
   ];
 
   it('list the same sites, with the same codes, names and aliases', () => {
@@ -23,6 +24,13 @@ describe('shared/lib/sites.ts and server/src/domain/naming.ts', () => {
 
   it.each(NAMES)('read the site of %j the same way', (name) => {
     expect(web.siteFromHostName(name)).toEqual(server.siteFromHostName(name));
+  });
+
+  it('read the name of a host that is an address as no site, on both sides', () => {
+    for (const name of ['10.20.30.40', ' 12.0.0.1', '10.0.0.1 CORE', '1.2.3.4']) {
+      expect(web.siteFromHostName(name), name).toBeNull();
+      expect(server.siteFromHostName(name), name).toBeNull();
+    }
   });
 
   it('read some site for most of the names, so the comparison is not two nulls', () => {

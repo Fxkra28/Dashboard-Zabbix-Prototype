@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { api } from '../../api';
 import Maps from './Maps';
 import type { MapDetail, MapSelement, ZMap } from '../../types';
+import { stylesheet } from '../../__tests__/stylesheet';
 
 const maps: ZMap[] = [
   { sysmapid: '1', name: 'Core', width: '800', height: '400' },
@@ -118,10 +119,11 @@ describe('map names that would overlap (FR-18)', () => {
     const drawn = [...container.querySelectorAll('svg g text')].map((t) => t.textContent);
     const left = crowd.filter((e) => !drawn.includes(e.label));
     expect(left.length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('img')).toHaveLength(crowd.length);
-    for (const e of left) expect(screen.getByRole('img', { name: new RegExp(`^${e.label}`) })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'HOST-3-LONG-DEVICE-NAME, 2 open problems, worst: High' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'HOST-0-LONG-DEVICE-NAME, no open problems' })).toBeInTheDocument();
+    // A host is a button now (UX-38): it names itself the same way.
+    expect(screen.getAllByRole('button', { name: /^HOST-/ })).toHaveLength(crowd.length);
+    for (const e of left) expect(screen.getByRole('button', { name: new RegExp(`^${e.label}`) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'HOST-3-LONG-DEVICE-NAME, 2 open problems, worst: High' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'HOST-0-LONG-DEVICE-NAME, no open problems' })).toBeInTheDocument();
   });
 });
 
@@ -132,3 +134,84 @@ describe('the caption', () => {
     expect(document.body.textContent).not.toContain('map.get');
   });
 });
+
+describe('a host on the map says its severity in words when chosen (UX-38)', () => {
+  const hosts = [
+    el('a', 0, 'SW-A', { problems: 3, maxSeverity: 5 }),
+    el('b', 120, 'SW-B', { problems: 1, maxSeverity: 2 }),
+    el('c', 240, 'SW-C', { problems: 0 }),
+    el('d', 360, 'Core map', { elementtype: '1', hostid: undefined }),
+  ];
+  const node = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}`) });
+  const line = () => document.querySelector('.map-selected');
+
+  it('prints the worst severity as text under the map, beside the colour', async () => {
+    const user = userEvent.setup();
+    open('/maps', hosts);
+    await user.click(await waitFor(() => node('SW-A')));
+    expect(line()).toHaveTextContent(/^SW-A: 3 open problems, worst: ● Disaster$/);
+    expect(node('SW-A')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('says so for a host with one problem and for a host with none', async () => {
+    const user = userEvent.setup();
+    open('/maps', hosts);
+    await user.click(await waitFor(() => node('SW-B')));
+    expect(line()).toHaveTextContent(/^SW-B: 1 open problem, worst: ● Warning$/);
+    await user.click(node('SW-C'));
+    expect(line()).toHaveTextContent('SW-C: no open problems');
+    expect(node('SW-B')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('works from the keyboard, and a second press clears it', async () => {
+    const user = userEvent.setup();
+    open('/maps', hosts);
+    const a = await waitFor(() => node('SW-A'));
+    a.focus();
+    await user.keyboard('{Enter}');
+    expect(line()).toHaveTextContent(/worst: ● Disaster$/);
+    await user.keyboard(' ');
+    expect(line()).toBeNull();
+  });
+
+  it('leaves an element that is not a host as a picture, with no button to press', async () => {
+    open('/maps', hosts);
+    await waitFor(() => node('SW-A'));
+    expect(screen.queryByRole('button', { name: /^Core map/ })).toBeNull();
+    expect(screen.getByRole('img', { name: /^Core map/ })).toBeInTheDocument();
+  });
+
+  it('forgets the choice when another map is shown', async () => {
+    const user = userEvent.setup();
+    open('/maps', hosts);
+    await user.click(await waitFor(() => node('SW-A')));
+    await user.selectOptions(screen.getByLabelText('Map'), '2');
+    await waitFor(() => expect(line()).toBeNull());
+  });
+});
+
+describe('a host node that is pressed, or that the keyboard is on, shows it on the node itself (UX-38)', () => {
+  // A host with problems already has a heavier outline for its problems, so only a heavier one still says "this one".
+  it('draws both with a heavier outline than a host with problems has', () => {
+    const rule = /\.map-node\[aria-pressed='true'\] rect,\s*\.map-node:focus-visible rect\s*\{([^}]*)\}/.exec(stylesheet);
+    expect(rule, 'the rule for a pressed or focused node').not.toBeNull();
+    expect(rule![1]).toMatch(/stroke-width:\s*4px/);
+  });
+});
+
+describe('a map that could not be loaded (UX-40)', () => {
+  it('is told to a screen reader, as an alert with the heading every blocking error has, and says which map failed', async () => {
+    window.history.replaceState(null, '', '/maps?map=1');
+    vi.spyOn(api, 'maps').mockResolvedValue(maps);
+    vi.spyOn(api, 'mapDetail').mockRejectedValue(new Error('The data source is not answering. Tell an administrator and quote reference abc123.'));
+    render(
+      <BrowserRouter>
+        <Maps />
+      </BrowserRouter>,
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Couldn’t load data');
+    expect(alert).toHaveTextContent('Could not load this map: The data source is not answering.');
+  });
+});
+

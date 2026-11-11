@@ -30,10 +30,10 @@ export interface paths {
          *     The route is public, so anyone gets the liveness fields (`ok`, `ts`, `ai`, `aiProvider`,
          *     `aiExternal`, `writeBack`, `defaults`) and none of them holds a URL, host name, token or error
          *     text. A caller who is signed in, by cookie or Bearer header, also gets `version`, `startedAt`,
-         *     `build`, `ready` and `streams`: an anonymous caller must not learn the build, when the portal
-         *     restarted, how many screens are open, or that the Zabbix token was revoked. A bad or missing
-         *     token is never a 401 here, it just gets the short answer, and the readiness check is only
-         *     read for a signed-in caller. With sign-in off every caller counts as signed in. The container
+         *     `build`, `ready` as the whole check and `streams`: an anonymous caller must not learn the build, when the portal
+         *     restarted, how many screens are open, or why Zabbix cannot be read (a revoked token reads as any other failure). Anyone
+         *     gets `ready` as a plain `true` or `false`, so a monitor needs no account. A bad or missing
+         *     token is never a 401 here, it just gets the short answer. With sign-in off every caller counts as signed in. The container
          *     healthcheck sends no sign-in and reads only the status.
          */
         get: operations["getHealth"];
@@ -184,10 +184,12 @@ export interface paths {
          * Sign out by clearing the session cookie
          * @description Public, so a missing or expired cookie can still be cleared: answers 200 with or without one,
          *     and with auth off. The `Set-Cookie` header empties the cookie with the attributes it was set
-         *     with. It clears the cookie in this browser only: the BFF keeps no list to cancel tokens on, so a
-         *     copied token keeps working until it expires, up to `SESSION_HOURS` (12 by default). Taking the user
-         *     out of `PORTAL_USERS` and restarting the BFF ends their access at once; a new `JWT_SECRET`, or a
-         *     higher `SESSION_EPOCH` and a restart, ends every session at once (SC-14). A live stream opened before then is ended when its token expires, and the browser reconnects (SC-15). Needs `X-HCML-CSRF: 1` like any POST that touches the cookie. It takes no body: none, or a JSON object that is ignored. Any other JSON body is a 400.
+         *     with. It also ends the session on the server: every token of that sign-in, the ones a renewal gave
+         *     too, is refused from then on (a list in memory, which a restart forgets), and the live streams of
+         *     the session are closed at once. A copy of a token that someone keeps renewing after the owner only
+         *     closed the tab, without signing out, works until the user is taken out of `PORTAL_USERS`, a new
+         *     `JWT_SECRET` is set, or a higher `SESSION_EPOCH` is set and the server restarted (SC-14); there is no
+         *     absolute age, because a wall screen must stay signed in. A live stream also ends when its token expires, and the browser reconnects (SC-15). Needs `X-HCML-CSRF: 1` like any POST that touches the cookie. It takes no body: none, or a JSON object that is ignored. Any other JSON body is a 400.
          */
         post: operations["logout"];
         delete?: never;
@@ -298,6 +300,13 @@ export interface paths {
          *
          *     `search` is passed to Zabbix with `startSearch: true` deliberately: without it Zabbix runs
          *     `LIKE '%…%'` and scans all 51,845 items at about 105 ms per call.
+         *
+         *     The items carry no `lastvalue` or `lastclock`. Zabbix looks each of them up on its own, from 30 ms to half a second an
+         *     item on HCML's, which made a host of 609 items take 20 to 32 s, and the item picker never shows them. `/api/latest` has them.
+         *
+         *     A request with a `search` of more than spaces counts against 120 searches a minute for each signed-in person (or each
+         *     client address with sign-in off), since a search with new text is a cold read of Zabbix. `/api/latest` shares that count.
+         *     The text is trimmed before it is used. Ids are digits, at most 20 of them, and not above 18446744073709551615.
          */
         get: operations["getItems"];
         put?: never;
@@ -321,6 +330,8 @@ export interface paths {
          *     pagination: paged mode searches `name` OR `key_`, un-paged searches `name` only.
          *
          *     With neither `hostid` nor `groupid` this returns an empty result with 200, not 400.
+         *
+         *     A request with a `search` of more than spaces counts against 120 searches a minute for each person, shared with `/api/items`.
          */
         get: operations["getLatest"];
         put?: never;
@@ -340,8 +351,12 @@ export interface paths {
         };
         /**
          * Open problems
-         * @description Cached 5 s, and never served stale: an operator who has just acknowledged must not be
+         * @description Cached 15 s, and never served stale: an operator who has just acknowledged must not be
          *     shown the previous list. About 664 problems at HCML, 459 kB compressing to 25 kB.
+         *
+         *     `opdata` is not in the list: Zabbix fills it from history one problem at a time, which took
+         *     HCML's Zabbix 35 to 46 s for 650 problems against 0.9 s without it. Explain reads it for its
+         *     one problem.
          *
          *     The list also carries problems Zabbix resolved moments ago (`r_eventid` other than `0`),
          *     which the Problems page marks Resolved, and problems raised inside a planned maintenance
@@ -373,7 +388,7 @@ export interface paths {
          *     `Retry-After: 30`, before any stream header. The browser's `EventSource` cannot read that body,
          *     so it falls back to polling and retries.
          *
-         *     One shared 5 s ticker serves every client. A frame is sent at once when the fingerprint over
+         *     One shared 15 s ticker serves every client, the pace the problem list is cached. A frame is sent at once when the fingerprint over
          *     `eventid:severity:acknowledged:suppressed:r_eventid` changes. A list identical to the last one
          *     sent is never sent again, and one where only a name or host changed goes after at most 30 s. A change in tags alone is not in the frame. A
          *     new client receives the current frame immediately, and an acknowledge force-pushes one.
@@ -443,7 +458,7 @@ export interface paths {
         };
         /**
          * Network devices with ICMP state
-         * @description **operator.** Cached 30 s. Narrowed to `NET_GROUP_IDS` when that is configured.
+         * @description **wall.** Cached 30 s. Narrowed to `NET_GROUP_IDS` when that is configured.
          */
         get: operations["getNetDevices"];
         put?: never;
@@ -463,7 +478,7 @@ export interface paths {
         };
         /**
          * Internet traffic meters, read from the gauge widgets of a Zabbix dashboard
-         * @description **operator.** Cached 30 s. The dashboard itself is kept for two minutes.
+         * @description **wall.** Cached 30 s. The dashboard itself is kept for two minutes.
          *
          *     Reads the dashboard named by `INTERNET_METERS_DASHBOARD` (default `Global view`, HCML's own) with
          *     `dashboard.get` and makes one meter of each gauge widget: the interface item it is bound to, the
@@ -503,7 +518,7 @@ export interface paths {
         };
         /**
          * Interfaces for one device, searched then filtered then paged
-         * @description **operator.** Cached 15 s.
+         * @description **wall.** Cached 15 s.
          *
          *     Order matters and is observable: `search` is applied first, `summary` is computed over the
          *     searched set, *then* `status` filters, *then* the page is sliced. So `summary` counts more
@@ -511,6 +526,9 @@ export interface paths {
          *
          *     **`status` fails silently.** Any value outside the enum is treated as no filter rather than
          *     rejected with 400.
+         *
+         *     **A page past the last is the last page.** `page` in the answer says which page the rows are, so an old
+         *     address, or a list that shrank, never reads as empty.
          */
         get: operations["getNetInterfaces"];
         put?: never;
@@ -607,7 +625,9 @@ export interface paths {
          * Estate counts for the dashboard tiles
          * @description Cached 30 s. Four count-only Zabbix calls in parallel plus the shared problem list. `hosts`
          *     counts enabled (monitored) hosts only, as the Dashboard's card says, and `items` counts
-         *     monitored items.
+         *     monitored items. Counting items took HCML's Zabbix about 40 s and the monitored triggers 74 s,
+         *     so those two counts are kept for an hour and read again in the background; each is null until
+         *     its first count arrives.
          */
         get: operations["getStats"];
         put?: never;
@@ -628,9 +648,11 @@ export interface paths {
         /**
          * When Zabbix last collected a value
          * @description Whether Zabbix is still collecting, for the Dashboard. A stopped `zabbix-server` leaves every
-         *     API call working and every value in place, so the newest `lastclock` of any supported ICMP item
-         *     is the only sign. It is rolled up from the same `item.get` the host states read, so asking for
-         *     both costs Zabbix one call.
+         *     API call working and every value in place, so the newest value of any supported ICMP item
+         *     is the only sign. It is rolled up from the reads the host states make, the ping items once an
+         *     hour and their values of the last 15 minutes in one `history.get` per value type, so asking for
+         *     both costs Zabbix nothing more. With no value in those 15 minutes, Zabbix's own last value of a
+         *     few items says how long ago it stopped.
          *
          *     The newest clock is cached 30 s; `ageSeconds` is worked out at each request. `stale` is true
          *     once nothing has been collected for `staleAfterSeconds`, ten minutes (the floor `isFresh` allows
@@ -761,8 +783,10 @@ export interface paths {
         };
         /**
          * Average and peak utilisation per item
-         * @description Cached 300 s with `staleIfError`, marked by `X-Data-Stale` when an old copy is served. **The
-         *     heaviest endpoint in the portal.** At `days=365` it
+         * @description Rebuilt about hourly: cached an hour, then the last report is answered with
+         *     `X-Data-Refreshing` for up to a day while the next one is built, and with `X-Data-Stale` when
+         *     a rebuild fails (`staleIfError`). The ports' link speeds are kept a day. **The heaviest
+         *     endpoint in the portal**: one run took HCML's Zabbix 256 s on 29 October 2026. At `days=365` it
          *     issues roughly 112 Zabbix calls, because `trend.get` is sliced to keep Zabbix's PHP within
          *     its memory limit, and each call costs about 20 SQL statements upstream, 10,771 in total,
          *     measured 22 Sep.
@@ -811,7 +835,7 @@ export interface paths {
         };
         /**
          * WAN links and paths, from ICMP item triplets
-         * @description **operator.** Cached 20 s.
+         * @description **wall.** Cached 20 s.
          *
          *     A "link" is not a Zabbix entity. It is synthesised from the `icmpping`, `icmppingloss` and
          *     `icmppingsec` items on a host, paired into a path by the `link_group` item tag. `jitter` is
@@ -999,11 +1023,19 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The monthly SLA report as a PDF or Excel download
+         * The monthly SLA report as a PDF, Excel or CSV download
          * @description **viewer.** The figures `/api/sli` shows for one month, both methods side by side, as one
          *     file. `format=pdf` is the printable report; `format=xlsx` is the workbook, a Summary sheet and
-         *     one sheet per table. The file states when it was generated and, for the current month, that its
-         *     figures are not final.
+         *     one sheet per table; `format=csv` is one zip holding a CSV file for the first page and for each
+         *     table, and a notes file that explains them. The file states when it was generated and, for the
+         *     current month, that its figures are not final.
+         *
+         *     `decimal`, `date` and `separator` choose how numbers and dates are written, and never what they say:
+         *     a figure, a verdict and the order of the rows are the same in every style. `decimal` is the mark in a
+         *     percentage (`dot` or `comma`), `date` is the shape of the dates in the report's text (`long` as in
+         *     `4 Nov 2026`, `numeric` as in `04/11/2026`, `iso` as in `2026-11-04`), and `separator` is what a CSV file
+         *     puts between its fields (`comma` or `semicolon`; the PDF and the workbook have none and ignore it).
+         *     All three are optional and default to `dot`, `long` and `comma`; anything else, or a value given twice, is a 400.
          *
          *     It reads the same cached reports as `/api/sli`, so a month the page has already loaded costs
          *     no further Zabbix call, and it inherits that route's `staleIfError`: while Zabbix is failing it
@@ -1011,12 +1043,12 @@ export interface paths {
          *     `X-Data-Stale` and `X-Data-Age-Seconds`. Nothing is kept for long: a
          *     built file is reused for ten seconds, then built again from the cached figures.
          *
-         *     `format` is checked before Zabbix is asked, so a bad request costs nothing. `month` and
-         *     `format` are the only parameters: any other is a 400, so a misspelt `month` is never read as
-         *     the current month. `month` is
+         *     `format` and the style are checked before Zabbix is asked, so a bad request costs nothing. `month`,
+         *     `format`, `decimal`, `date` and `separator` are the only parameters: any other is a 400, so a misspelt
+         *     `month` is never read as the current month. `month` is
          *     validated as on `/api/sli`, and a month that has not started, or is more than about 400 days
-         *     back, is a 400. The file name is made from the validated month alone, `HCML_SLA_Report_<month>.<format>`,
-         *     never from other request text.
+         *     back, is a 400. The file name is made from the validated month alone, `HCML_SLA_Report_<month>.pdf`,
+         *     `.xlsx` or `_csv.zip`, never from other request text.
          *
          *     The body is not JSON, so it is never compressed whatever `Accept-Encoding` says, and
          *     `Cache-Control: private, no-store` keeps a shared cache from holding on to it.
@@ -1025,6 +1057,88 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sli/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the SLA report can be emailed, from where, to whom by default, and how far a list may go
+         * @description **admin.** Lets the screen offer the "Email report" button only where it works, and say who a report goes to unless
+         *     the person names others. It answers `enabled: false`, with no address, until the `MAIL_` settings are present and usable.
+         *     `recipients` is the list the portal has saved; until it has saved one, it is the list in `MAIL_TO`, which may be empty.
+         *     `max` is the most addresses a list may hold, `allowedDomains` the only domains an address may be in (empty: any), and
+         *     `kept` whether the saved list survives a restart of the portal (it does when `PORTAL_STATE_DIR` names a folder that outlives the container).
+         *     The saved list is changed with `PUT` and `DELETE /api/sli/recipients`. While sign-in is off, email is off too (`enabled: false`) unless `ALLOW_EMAIL_WITHOUT_AUTH=true`.
+         */
+        get: operations["getSliEmail"];
+        put?: never;
+        /**
+         * Email one month's SLA report
+         * @description **admin.** Builds the files `/api/sli/export` gives for the month, one to three formats, and sends them as attachments
+         *     to one message, with the four figures of the report's first page in its text, through the SMTP server the `MAIL_`
+         *     settings name. `to` is who it goes to: one to ten plain addresses, each in `allowedDomains` when that list is not empty.
+         *     Left out, the saved list is used (`GET`), and with `remember: true` the list that was given is saved once the report has gone.
+         *     `style` is written as `/api/sli/export` writes it. Any other field, in the body or in `style`, is a 400: there is no subject
+         *     and no message to set, and no copy or blind copy.
+         *
+         *     Checked in this order: the shape of the body (400), whether email is set up (503 `mail_disabled`), the month, the formats, the
+         *     style and the recipients (400, each with a sentence that says what is wrong; a month that has not started, that is more than about 400 days back or that ended less than ten minutes ago, is one of them), the allowance of 5 sends an hour for each person
+         *     (429 with `Retry-After`; only a request that gets this far is counted), the mail login (502 `mail_error`, before Zabbix is
+         *     asked, so a wrong password fails in a second), and then the two reports are read and the message is sent. A month that is
+         *     not cached can take as long as the download does.
+         *
+         *     Every send and every failure is logged with the user, the month, the formats, the size, the number of recipients and the
+         *     domains they are in, and never the addresses, the subject or a file; the portal also keeps a short record of it (counts only). A send that the mail server took for only some of the addresses is logged at warning level.
+         *     A failure at the mail server is one fixed sentence for its kind (`login`, `connect`, `timeout`, `tls`, `recipients`,
+         *     `rejected`, `other`); what the server said goes to the log only. The sentence for `timeout` says that the report may or may not have gone,
+         *     because the server may have had the whole message when it stopped answering.
+         */
+        post: operations["emailSli"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sli/recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the saved list of people a report goes to
+         * @description **admin.** Saves `recipients` as the list the portal uses from now on, for a report sent by hand and for the monthly
+         *     send, with the checks every list has: one to ten plain addresses, once each (a repeat of any case is dropped), each in
+         *     `allowedDomains` when that list is not empty. A list that fails a check is a 400 with a sentence that says which address
+         *     and why, and the list the portal had is kept. An empty list is refused: delete the saved list instead. Any other field
+         *     in the body is a 400. It is refused with a 503 `mail_disabled` while sign-in is off, unless `ALLOW_EMAIL_WITHOUT_AUTH=true`.
+         *
+         *     One log line records who, from where and how many, and never an address.
+         */
+        put: operations["putSliRecipients"];
+        post?: never;
+        /**
+         * Delete the saved list of people a report goes to
+         * @description **admin.** Empties the portal's own list. The list in `MAIL_TO` applies again from then on, which may be empty. It is
+         *     refused with a 409 `schedule_uses_list` while the monthly schedule is on and `MAIL_TO` holds nobody, because the next send
+         *     would have no one to go to: turn the schedule off, or save another list, first. It is refused with a 503 `mail_disabled`
+         *     while sign-in is off, unless `ALLOW_EMAIL_WITHOUT_AUTH=true`. The answer says how many addresses were removed. It takes no body: the portal's own client sends none, and
+         *     a request that names a JSON content type with an empty body is a 400.
+         *
+         *     One log line records who, from where and how many, and never an address.
+         */
+        delete: operations["deleteSliRecipients"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1234,6 +1348,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sli/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The monthly send: whether it can run here, how it is set, when it goes next, and what was sent
+         * @description **admin.** What the Schedule dialog shows. `available` is false, with `why` in a sentence, when email is not set up (or is off while sign-in is off, unless `ALLOW_EMAIL_WITHOUT_AUTH=true`), when
+         *     `MAIL_SCHEDULE=off` switches the schedule off on this machine, or when the portal has no `PORTAL_STATE_DIR` to keep a schedule
+         *     in (a schedule that would not survive a restart must not look as if it would). `schedule` is null until one is saved. `next`
+         *     is the month the next send is for and the moment it goes (Unix seconds), `retrying` when a send has failed and is waiting to
+         *     be tried again; it is null when the schedule is off or not available. `sends` are the portal's last twelve sends, those made
+         *     by hand and those made by the schedule, newest first, with counts and never an address.
+         */
+        get: operations["getSliSchedule"];
+        /**
+         * Set the monthly send
+         * @description **admin.** Replaces the schedule in one step, and the saved recipients with it: a list that is not empty replaces the saved one, and an empty list with `enabled: false` leaves the saved one as it was. The report of a month goes on day `day` of the month
+         *     after it, at `time` in the report's time zone; Zabbix gets ten minutes after that to hold the last values, and a send that
+         *     fails is tried again after 15 minutes, an hour, and every four hours for a week. A slot that came before the schedule was
+         *     turned on, or before its day or time was changed, is never sent late. `notify` are up to three people who are told, once
+         *     after the third failed try and once when the portal stops trying. `recipients` must hold at least one address while the schedule
+         *     is on; every address, in both lists, must be in `allowedDomains` when that list is not empty. Any other field, in the body or in `style`, is a 400.
+         *
+         *     Refused with 503 `schedule_unavailable` where `GET` says `available: false`. Every change is logged with the user, what was set
+         *     and how many people, never who.
+         */
+        put: operations["putSliSchedule"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1246,6 +1397,63 @@ export interface components {
             message: string;
             /** @description The reply's `X-Request-Id`. Quote it to an admin, who finds the request in the BFF log (`reqId`) and in nginx's (`rid=`). */
             requestId?: string;
+        };
+        /** @description The monthly send as the Schedule dialog shows it. */
+        ReportScheduleView: {
+            available: boolean;
+            /** @description Empty when available; otherwise a sentence that says what to change. */
+            why: string;
+            /** @description The time zone `time` is read in; the report's own. */
+            timezone: string;
+            /** @description Null until one is saved. */
+            schedule: {
+                enabled: boolean;
+                day: number;
+                time: string;
+                formats: ("pdf" | "xlsx" | "csv")[];
+                style: {
+                    /** @enum {string} */
+                    decimal: "dot" | "comma";
+                    /** @enum {string} */
+                    date: "long" | "numeric" | "iso";
+                    /** @enum {string} */
+                    separator: "comma" | "semicolon";
+                };
+                notify: string[];
+                setBy: string;
+                /** @description Unix seconds. */
+                setAt: number;
+            } | null;
+            /** @description The saved recipients, which the button and the schedule share. */
+            recipients: string[];
+            next: {
+                /** @description The month the next report is for. */
+                month: string;
+                /** @description Unix seconds: when it goes, or when the next try is. */
+                at: number;
+                retrying: boolean;
+            } | null;
+            /** @description The last twelve, newest first. Counts only. */
+            sends: {
+                month: string;
+                /** @enum {string} */
+                trigger: "schedule" | "manual";
+                /** @description A user name, or "schedule". */
+                by: string;
+                at: number;
+                /** @enum {string} */
+                outcome: "sending" | "sent" | "failed" | "missed";
+                attempts: number;
+                formats: ("pdf" | "xlsx" | "csv")[];
+                recipients: number;
+                refused: number;
+                bytes: number;
+                /** @description A word for why it failed: a mail failure kind, `zabbix`, `recipients`, `not running` or `error`. */
+                reason?: string;
+            }[];
+            max: number;
+            maxNotify: number;
+            allowedDomains: string[];
         };
         Ready: {
             /** @description The portal can read Zabbix. The model never changes it. */
@@ -1279,7 +1487,7 @@ export interface components {
         User: {
             name: string;
             /** @enum {string} */
-            role: "viewer" | "operator" | "admin";
+            role: "viewer" | "wall" | "operator" | "admin";
         };
         /** @description What sign-in and renewal return. The token is in the `Set-Cookie` header, never here. */
         Session: {
@@ -1366,8 +1574,6 @@ export interface components {
             /** @description `0` normal, `1` not supported. */
             state?: string;
             flags?: string;
-            lastvalue?: string;
-            lastclock?: string;
             tags?: components["schemas"]["Tag"][];
             /** @description The host the item belongs to. Present when `itemids` is given, and always on the latest data. */
             hosts?: {
@@ -1378,6 +1584,10 @@ export interface components {
             [key: string]: unknown;
         };
         LatestItem: components["schemas"]["Item"] & {
+            /** @description The newest value. Zabbix looks it up item by item, so only this route returns it. */
+            lastvalue?: string;
+            /** @description When that value was collected, epoch seconds as text. */
+            lastclock?: string;
             /** @description The value before `lastvalue`. */
             prevvalue?: string;
         };
@@ -2306,7 +2516,7 @@ export interface components {
             };
         };
         /**
-         * @description `zabbix_timeout` (no answer within `ZABBIX_TIMEOUT_MS`, default 10 s) or `zabbix_auth` (Zabbix
+         * @description `zabbix_timeout` (no answer within `ZABBIX_TIMEOUT_MS`, default 300 s in Docker and 10 s in a bare run) or `zabbix_auth` (Zabbix
          *     rejected the API token). Both are configuration states rather than upstream faults, which is
          *     why they are 503 and not 504.
          */
@@ -2421,8 +2631,11 @@ export interface operations {
                             commit: string;
                             time: string;
                         };
-                        /** @description Signed-in callers only. */
-                        ready?: {
+                        /**
+                         * @description Whether the portal can read Zabbix. Anyone gets a plain boolean (the model never changes it). A signed-in caller gets
+                         *     the whole check instead, as the object below.
+                         */
+                        ready: boolean | {
                             /** @description The portal can read Zabbix. The model never changes it. */
                             ok: boolean;
                             /** @enum {string} */
@@ -2554,7 +2767,7 @@ export interface operations {
                         expiresIn: number | null;
                         /** @description The minimum role for each menu page, by path, such as `/network`. */
                         pages: {
-                            [key: string]: "viewer" | "operator" | "admin";
+                            [key: string]: "viewer" | "wall" | "operator" | "admin";
                         };
                     };
                 };
@@ -2776,6 +2989,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `rate_limited`, the person made more than 120 searches in a minute, or the 300 requests a minute of the client address. `Retry-After` says how long to wait. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             502: components["responses"]["ZabbixError"];
             503: components["responses"]["ZabbixUnavailable"];
         };
@@ -2797,8 +3019,8 @@ export interface operations {
         requestBody?: never;
         responses: {
             /**
-             * @description `total`, `page` and `pageSize` are present only in paged mode. `truncated` means the cap
-             *     was hit: 500 rows un-paged, 20,000 ids paged.
+             * @description `total`, `page` and `pageSize` are present only in paged mode. `page` is the page returned: the last one
+             *     when a later one was asked for. `truncated` means the cap was hit: 500 rows un-paged, 20,000 ids paged.
              */
             200: {
                 headers: {
@@ -2816,6 +3038,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `rate_limited`, the person made more than 120 searches in a minute, or the 300 requests a minute of the client address. `Retry-After` says how long to wait. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             502: components["responses"]["ZabbixError"];
             503: components["responses"]["ZabbixUnavailable"];
         };
@@ -2916,7 +3147,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `forbidden`, a viewer asked for a network interface item (key starting `net.if`). Operators and admins may read them. */
+            /** @description `forbidden`, a viewer asked for a network interface item (key starting `net.if`). Wall screens, operators and admins may read them. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3127,8 +3358,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         hosts: number;
-                        items: number;
-                        triggers: number;
+                        items: number | null;
+                        triggers: number | null;
                         groups: number;
                         problems: number;
                         unacknowledged: number;
@@ -3555,8 +3786,14 @@ export interface operations {
             query: {
                 /** @description Defaults to the current month in `Asia/Jakarta`. An empty value means the default. */
                 month?: string;
-                /** @description Exactly `pdf` or `xlsx`, in lower case. Missing, anything else, or given twice is a 400. */
-                format: "pdf" | "xlsx";
+                /** @description Exactly `pdf`, `xlsx` or `csv`, in lower case. Missing, anything else, or given twice is a 400. */
+                format: "pdf" | "xlsx" | "csv";
+                /** @description The mark in a percentage. Defaults to `dot`. */
+                decimal?: "dot" | "comma";
+                /** @description The shape of the dates in the report's text. Defaults to `long`. */
+                date?: "long" | "numeric" | "iso";
+                /** @description What a CSV file puts between its fields. Defaults to `comma`. Ignored for a PDF or a workbook. */
+                separator?: "comma" | "semicolon";
             };
             header?: never;
             path?: never;
@@ -3569,7 +3806,8 @@ export interface operations {
                 headers: {
                     /**
                      * @description `attachment; filename="HCML_SLA_Report_2026-08.pdf"; filename*=UTF-8''HCML_SLA_Report_2026-08.pdf`.
-                     *     Only letters, digits, underscore, hyphen and the dot of the extension can appear in it.
+                     *     Only letters, digits, underscore, hyphen and the dot of the extension can appear in it. The CSV zip is
+                     *     `HCML_SLA_Report_2026-08_csv.zip`.
                      */
                     "Content-Disposition"?: string;
                     /** @description The size of the file in bytes. */
@@ -3581,12 +3819,292 @@ export interface operations {
                 content: {
                     "application/pdf": string;
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                    "application/zip": string;
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             502: components["responses"]["ZabbixError"];
             503: components["responses"]["ZabbixUnavailable"];
+        };
+    };
+    getSliEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether email is on. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        /** @description The sender address, or an empty string while email is off. */
+                        from: string;
+                        /** @description The saved recipients, or an empty list while email is off. */
+                        recipients: string[];
+                        /** @description The most addresses a list may hold. */
+                        max: number;
+                        /** @description Lower case. Empty: an address may be in any domain. */
+                        allowedDomains: string[];
+                        /** @description Whether the saved list survives a restart of the portal. */
+                        kept: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    emailSli: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Must be `1` on sign-in, sign-out and every `POST`, `PUT`, `PATCH` or `DELETE` that
+                 *     authenticates with the session cookie. A page on another site cannot add a custom header
+                 *     without a CORS preflight, which the BFF answers only for `WEB_ORIGIN`. Not needed with a
+                 *     Bearer header, except on sign-in and sign-out.
+                 */
+                "X-HCML-CSRF"?: components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    month: string;
+                    /** @description Each once. They are attached in the order pdf, xlsx, csv whatever order is given. */
+                    formats: ("pdf" | "xlsx" | "csv")[];
+                    /** @description One to ten plain addresses. Left out: the saved list. */
+                    to?: string[];
+                    /** @description Save `to` as the list the portal uses from now on, if the report goes. */
+                    remember?: boolean;
+                    /** @description The same choices as the export route. Each left out takes its default. */
+                    style?: {
+                        /** @enum {string} */
+                        decimal?: "dot" | "comma";
+                        /** @enum {string} */
+                        date?: "long" | "numeric" | "iso";
+                        /** @enum {string} */
+                        separator?: "comma" | "semicolon";
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The mail server took the message. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description How many recipients the server took the message for. */
+                        sent: number;
+                        /** @description How many it refused. The message still went to the others. */
+                        refused: number;
+                        month: string;
+                        files: {
+                            /** @enum {string} */
+                            format: "pdf" | "xlsx" | "csv";
+                            /** @description The attached file, `HCML_SLA_Report_<month>.pdf`, `.xlsx` or `_csv.zip`. */
+                            fileName: string;
+                            bytes: number;
+                        }[];
+                        /** @description Whether the list was saved. False when it was not asked for, and when saving it failed after the report had gone. */
+                        remembered: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `forbidden`, the role is below admin, or `csrf`, a cookie request without `X-HCML-CSRF: 1` or from another site (`CsrfRefused`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description `rate_limited`. This person has sent 5 reports in the last hour; `Retry-After` says how many seconds remain. The
+             *     portal-wide limit (`RateLimited`) answers in the same shape.
+             */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `mail_error`, the mail server did not take the report, or `zabbix_error`. The message says which setting to check. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `mail_disabled`, email is not set up on this portal, or it is off while sign-in is off and `ALLOW_EMAIL_WITHOUT_AUTH` is not true, or a Zabbix state (`zabbix_timeout`, `zabbix_auth`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putSliRecipients: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Must be `1` on sign-in, sign-out and every `POST`, `PUT`, `PATCH` or `DELETE` that
+                 *     authenticates with the session cookie. A page on another site cannot add a custom header
+                 *     without a CORS preflight, which the BFF answers only for `WEB_ORIGIN`. Not needed with a
+                 *     Bearer header, except on sign-in and sign-out.
+                 */
+                "X-HCML-CSRF"?: components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description One to ten plain addresses. */
+                    recipients: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The list is saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The list that applies now. */
+                        recipients: string[];
+                        /** @description How many addresses the saved list holds. */
+                        saved: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `forbidden`, the role is below admin, or `csrf`, a cookie request without `X-HCML-CSRF: 1` or from another site (`CsrfRefused`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `state_error`, the portal could not write its data folder. The list it had is kept. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `mail_disabled`, email is off while sign-in is off and `ALLOW_EMAIL_WITHOUT_AUTH` is not true. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteSliRecipients: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Must be `1` on sign-in, sign-out and every `POST`, `PUT`, `PATCH` or `DELETE` that
+                 *     authenticates with the session cookie. A page on another site cannot add a custom header
+                 *     without a CORS preflight, which the BFF answers only for `WEB_ORIGIN`. Not needed with a
+                 *     Bearer header, except on sign-in and sign-out.
+                 */
+                "X-HCML-CSRF"?: components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The saved list is empty. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The list that applies now: the one in `MAIL_TO`, or nobody. */
+                        recipients: string[];
+                        /** @description How many addresses the saved list held. */
+                        removed: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `forbidden`, the role is below admin, or `csrf`, a cookie request without `X-HCML-CSRF: 1` or from another site (`CsrfRefused`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `schedule_uses_list`, the monthly schedule is on and nothing else says who gets the report. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `state_error`, the portal could not write its data folder. The list it had is kept. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `mail_disabled`, email is off while sign-in is off and `ALLOW_EMAIL_WITHOUT_AUTH` is not true. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getMaps: {
@@ -3912,8 +4430,126 @@ export interface operations {
                 };
             };
             413: components["responses"]["PayloadTooLarge"];
-            502: components["responses"]["ZabbixError"];
-            /** @description `zabbix_write_disabled`, `ZABBIX_WRITE_TOKEN` is not set, or sign-in is off and `ALLOW_WRITE_WITHOUT_AUTH` is not true. */
+            /**
+             * @description `zabbix_error`. When Zabbix answered with an error, the message says that Zabbix refused the change and may already have
+             *     closed the problem, or the account may not be allowed to change it; Zabbix's own words go to the log. When Zabbix
+             *     could not be reached, it says the data source is not answering.
+             */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description `zabbix_write_disabled`, `ZABBIX_WRITE_TOKEN` is not set, or sign-in is off and `ALLOW_WRITE_WITHOUT_AUTH` is not true.
+             *     Or `zabbix_timeout`: Zabbix did not answer in time, and the message says that the change may or may not have been made.
+             *     Or `zabbix_auth`, Zabbix rejected the write token.
+             */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getSliSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The schedule as it stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportScheduleView"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    putSliSchedule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Must be `1` on sign-in, sign-out and every `POST`, `PUT`, `PATCH` or `DELETE` that
+                 *     authenticates with the session cookie. A page on another site cannot add a custom header
+                 *     without a CORS preflight, which the BFF answers only for `WEB_ORIGIN`. Not needed with a
+                 *     Bearer header, except on sign-in and sign-out.
+                 */
+                "X-HCML-CSRF"?: components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                    /** @description Days 29 to 31 are left out so that every month has the day. */
+                    day: number;
+                    /** @description 24 hours, in the report time zone. */
+                    time: string;
+                    formats: ("pdf" | "xlsx" | "csv")[];
+                    /** @description One to ten plain addresses while the schedule is on; up to ten while it is off, where an empty list keeps the saved one. */
+                    recipients: string[];
+                    /** @description Up to three plain addresses. */
+                    notify: string[];
+                    style?: {
+                        /** @enum {string} */
+                        decimal?: "dot" | "comma";
+                        /** @enum {string} */
+                        date?: "long" | "numeric" | "iso";
+                        /** @enum {string} */
+                        separator?: "comma" | "semicolon";
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The schedule as it now stands, the same answer as `GET`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportScheduleView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `forbidden`, the role is below admin, or `csrf`, a cookie request without `X-HCML-CSRF: 1` or from another site (`CsrfRefused`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `state_error`, the portal could not save it (the data folder cannot be written), or `internal`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `schedule_unavailable`, the schedule cannot run on this portal. The message says what to change. */
             503: {
                 headers: {
                     [name: string]: unknown;

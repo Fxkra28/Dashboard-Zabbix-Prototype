@@ -19,7 +19,12 @@ vi.mock('../clients/zabbix.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../clients/zabbix.js')>()),
   zbx: zbxMock,
 }));
-vi.mock('../domain/queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]), openProblems: (p: unknown[]) => p }));
+vi.mock('../domain/queries.js', () => ({
+  getProblems: vi.fn().mockResolvedValue([]),
+  cachedProblems: vi.fn().mockResolvedValue([]),
+  PROBLEMS_TTL_MS: 15_000,
+  openProblems: (p: unknown[]) => p,
+}));
 
 const { config } = await import('../core/config.js');
 const { setupAuth, tokenClaims } = await import('../security/auth.js');

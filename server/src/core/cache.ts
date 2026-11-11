@@ -1,4 +1,4 @@
-import { noteStale } from './staleness.js';
+import { noteRefreshing, noteStale } from './staleness.js';
 
 /**
  * In-memory TTL cache. Every Zabbix call hits its server + DB, so we cache
@@ -13,21 +13,25 @@ import { noteStale } from './staleness.js';
  * The size of a value is an estimate (approxBytes).
  *
  * Two opt-in ways to answer with an expired value, for slow reports whose
- * figures move slowly (the derived SLA, availability, capacity). Never for
- * anything that shows problem or acknowledgement state: an operator who has
- * just acknowledged must not be shown the list from before.
+ * figures move slowly (the derived SLA, availability, capacity) and for views
+ * HCML's Zabbix takes tens of seconds to build, which then say how old they are
+ * (noteAge). Never for the problem list itself: an operator who has just
+ * acknowledged must not be shown the list from before, and a write drops every
+ * view that shows problems (actions.ts STALE_AFTER_WRITE).
  *
  *   staleMs       for this long after the TTL, answer at once with the old
- *                 value and refresh it in the background: one refresh per
- *                 stale window. A refresh that fails leaves the old value in
- *                 place; the first request after the window fetches in the
- *                 foreground again.
+ *                 value and refresh it in the background, one at a time. A
+ *                 refresh that fails leaves the old value in place, and the
+ *                 first request after REFRESH_RETRY_MS starts another. After the
+ *                 window a request fetches in the foreground, unless a fetch
+ *                 for this value failed less than REFRESH_RETRY_MS ago.
  *   staleIfError  when that foreground fetch fails, answer with the last
  *                 value this cache still holds, however old, and log it. A
  *                 report from an hour ago beats an error page while Zabbix is
  *                 struggling. Values dropped by invalidate() are gone for
  *                 good, so a write is never undone this way. The request is
- *                 told (staleness.ts: X-Data-Stale, X-Data-Age-Seconds).
+ *                 told (staleness.ts: X-Data-Stale, X-Data-Age-Seconds). Zabbix
+ *                 is not asked for that value again until REFRESH_RETRY_MS has passed.
  *
  * One opt-in way to keep a value that costs seconds to rebuild:
  *
@@ -35,6 +39,14 @@ import { noteStale } from './staleness.js';
  *                 flood of graph keys cannot push out a closed month's SLA
  *                 report. Pins share at most MAX_PINNED_BYTES; past that the
  *                 least recently used pinned entry goes too.
+ *
+ * And one for keys a caller can make as many of as they like:
+ *
+ *   typed         the key carries text, ids or a page that a caller chose (a
+ *                 search, a graph range). At most MAX_TYPED_ENTRIES of these
+ *                 are kept, and they go before any other entry, so a run of
+ *                 distinct requests cannot push out the problem list or the
+ *                 hosts.
  */
 type Entry = {
   t: number;
@@ -42,8 +54,12 @@ type Entry = {
   /** approxBytes(v), measured once when the value is stored. */
   bytes: number;
   pinned?: boolean;
-  /** Set once this value's background refresh has started: one per stale window. */
+  /** Made from what a caller chose (CacheOptions.typed). */
+  typed?: boolean;
+  /** Set while this value's background refresh runs. */
   refreshing?: boolean;
+  /** After a fetch of this value failed and it was kept: no fetch starts before this time (epoch ms). */
+  retryAt?: number;
 };
 
 /**
@@ -60,7 +76,19 @@ export interface CacheOptions {
   staleIfError?: boolean;
   /** Evict this entry only after every unpinned one: for reports that take seconds to rebuild. */
   pin?: boolean;
+  /** The key is made from what a caller chose: at most MAX_TYPED_ENTRIES such entries, and they are evicted first. */
+  typed?: boolean;
+  /** With staleMs: mark an answer served from the old value with its age (staleness.ts), so the page can say how old it is. */
+  noteAge?: boolean;
+  /**
+   * This call takes no value this old, fresh or stale, and fetches in the foreground instead: a caller on a
+   * fixed beat would otherwise meet the value a whole beat older at its next call. 0 always fetches.
+   */
+  maxAgeMs?: number;
 }
+
+/** A view HCML's Zabbix takes tens of seconds to build: past its TTL, its last copy and age for 10 minutes while one refresh runs. */
+export const SLOW_VIEW: CacheOptions = { staleMs: 10 * 60_000, staleIfError: true, noteAge: true };
 
 /** The part of Fastify's logger the cache uses. */
 export interface CacheLogger {
@@ -78,10 +106,14 @@ export interface InvalidateOptions {
 }
 
 export const MAX_ENTRIES = 500;
+/** The share of those that keys a caller can multiply at will may take. */
+export const MAX_TYPED_ENTRIES = 150;
 /** About 130 KB per entry at the entry cap: the problem list is ~450 KB (stream.ts), most values far less. */
 export const MAX_BYTES = 64 * 1024 * 1024;
 export const MAX_PINNED_BYTES = MAX_BYTES / 2;
 export const HOLD_TTL_MS = 2_000;
+/** After a fetch of a value with an old copy fails, none starts for this long, so a Zabbix that is down is asked about each value once a minute and not on every request. */
+export const REFRESH_RETRY_MS = 60_000;
 
 /**
  * A rough size in bytes: strings by length, numbers as 8, objects and arrays
@@ -126,6 +158,7 @@ const store = new Map<string, Entry>();
 /** Sum of `bytes` over `store`, and over its pinned entries. */
 let heldBytes = 0;
 let pinnedBytes = 0;
+let typedCount = 0;
 const inflight = new Map<string, Flight>();
 /** Invalidated prefix → when its hold ends (epoch ms). */
 const holds = new Map<string, number>();
@@ -134,6 +167,11 @@ let log: CacheLogger | undefined;
 /** Where stale answers and failed background refreshes are reported (index.ts passes app.log). */
 export function setCacheLogger(logger: CacheLogger | undefined): void {
   log = logger;
+}
+
+/** The same logger, for a caller that reports a failed background read of its own. */
+export function cacheLogger(): CacheLogger | undefined {
+  return log;
 }
 
 function reason(err: unknown): string {
@@ -150,29 +188,39 @@ export async function cached<T>(
   const held = isHeld(key, now);
   const ttl = held ? Math.min(ttlMs, HOLD_TTL_MS) : ttlMs;
   const staleMs = held ? 0 : Math.max(0, opts.staleMs ?? 0);
+  const maxAge = opts.maxAgeMs ?? Infinity;
 
   const hit = store.get(key);
   if (hit) {
     const age = now - hit.t;
-    if (age < ttl) {
+    if (age < ttl && age < maxAge) {
       remember(key, hit);
       return hit.v as T;
     }
-    if (age < ttl + staleMs) {
+    if (age < ttl + staleMs && age < maxAge) {
       remember(key, hit);
-      if (!hit.refreshing && !inflight.has(key)) {
+      if (opts.noteAge) noteRefreshing(age);
+      if (!hit.refreshing && !inflight.has(key) && now >= (hit.retryAt ?? 0)) {
         hit.refreshing = true;
         // Nobody awaits this promise. Left unhandled, a rejection would take
         // the whole process down; caught, the stale value simply stays.
-        begin(key, fn, opts.pin).promise.catch((err: unknown) => {
+        begin(key, fn, opts).promise.catch((err: unknown) => {
+          hit.refreshing = false;
+          hit.retryAt = Date.now() + REFRESH_RETRY_MS;
           log?.warn({ key, reason: reason(err) }, 'cache: background refresh failed; keeping the stale value');
         });
       }
       return hit.v as T;
     }
+    // Past the window, behind a fetch that failed: the old copy again until the pause is over.
+    if (opts.staleIfError && !held && age < maxAge && now < (hit.retryAt ?? 0) && !inflight.has(key)) {
+      remember(key, hit);
+      noteStale(age);
+      return hit.v as T;
+    }
   }
 
-  const flight = inflight.get(key) ?? begin(key, fn, opts.pin);
+  const flight = inflight.get(key) ?? begin(key, fn, opts);
   try {
     return (await flight.promise) as T;
   } catch (err) {
@@ -180,6 +228,8 @@ export async function cached<T>(
     const last = opts.staleIfError && !held ? store.get(key) : undefined;
     if (!last) throw err;
     remember(key, last);
+    // Only on the copy this call started from: a newer one stored while the fetch ran (an invalidate, a second fetch) is fresh.
+    if (last === hit) last.retryAt = Date.now() + REFRESH_RETRY_MS;
     const ageMs = Date.now() - last.t;
     noteStale(ageMs);
     log?.warn({ key, ageMs, reason: reason(err) }, 'cache: fetch failed; answering with the last cached value');
@@ -191,13 +241,13 @@ export async function cached<T>(
  * Start a fetch and register it as the key's in-flight one. Registered before
  * `fn` runs, so that a synchronous throw inside `fn` still gets cleaned up.
  */
-function begin(key: string, fn: () => Promise<unknown>, pin?: boolean): Flight {
+function begin(key: string, fn: () => Promise<unknown>, opts: CacheOptions): Flight {
   const flight: Flight = { promise: Promise.resolve(), cancelled: false };
   inflight.set(key, flight);
   flight.promise = (async () => {
     try {
       const v = await fn();
-      if (!flight.cancelled) keep(key, v, pin);
+      if (!flight.cancelled) keep(key, v, opts);
       return v;
     } finally {
       // Only our own record: after an invalidate a newer fetch may own the key.
@@ -208,14 +258,14 @@ function begin(key: string, fn: () => Promise<unknown>, pin?: boolean): Flight {
 }
 
 /** Store a fetched value. One bigger than the whole budget is not kept: it would only empty the cache. */
-function keep(key: string, v: unknown, pin?: boolean): void {
+function keep(key: string, v: unknown, opts: CacheOptions): void {
   const bytes = approxBytes(v);
   if (bytes > MAX_BYTES) {
     discard(key);
     log?.warn({ key, bytes }, 'cache: value is larger than the whole cache budget; not storing it');
     return;
   }
-  remember(key, { t: Date.now(), v, bytes, pinned: pin || undefined });
+  remember(key, { t: Date.now(), v, bytes, pinned: opts.pin || undefined, typed: opts.typed || undefined });
 }
 
 function discard(key: string): void {
@@ -224,6 +274,7 @@ function discard(key: string): void {
   store.delete(key);
   heldBytes -= entry.bytes;
   if (entry.pinned) pinnedBytes -= entry.bytes;
+  if (entry.typed) typedCount--;
 }
 
 /** Store (or re-store) as most recently used, then evict past the entry and byte caps. */
@@ -232,6 +283,7 @@ function remember(key: string, entry: Entry): void {
   store.set(key, entry);
   heldBytes += entry.bytes;
   if (entry.pinned) pinnedBytes += entry.bytes;
+  if (entry.typed) typedCount++;
   evict();
 }
 
@@ -242,7 +294,7 @@ function oldest(want?: (e: Entry) => boolean): string | undefined {
 }
 
 /**
- * Least recently used first, unpinned before pinned. Pins are kept only up to
+ * Least recently used first: typed before unpinned before pinned. Pins are kept only up to
  * MAX_PINNED_BYTES; after that the oldest of them is as fair a victim as any.
  */
 function evict(): void {
@@ -251,8 +303,13 @@ function evict(): void {
     if (key === undefined) break;
     discard(key);
   }
+  while (typedCount > MAX_TYPED_ENTRIES) {
+    const key = oldest((e) => e.typed === true);
+    if (key === undefined) break;
+    discard(key);
+  }
   while (store.size > MAX_ENTRIES || heldBytes > MAX_BYTES) {
-    const key = oldest((e) => !e.pinned) ?? oldest();
+    const key = oldest((e) => e.typed === true) ?? oldest((e) => !e.pinned) ?? oldest();
     if (key === undefined) break;
     discard(key);
   }

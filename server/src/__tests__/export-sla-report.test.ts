@@ -505,6 +505,22 @@ describe('percentText', () => {
     }
   });
 
+  it('never prints 100.00 for a figure below 100: it cuts to the digits it shows (BK-46)', () => {
+    expect(percentText(99.9951, 99)).toBe('99.99%');
+    expect(percentText(99.995, 99)).toBe('99.99%');
+    expect(percentText(99.99999, 99)).toBe('99.99%');
+    expect(percentText(99.994, 99)).toBe('99.99%');
+    expect(percentText(100, 99)).toBe('100.00%');
+    expect(percentText(99.996, 100)).toBe('99.99%');
+    expect(percentText(100, 100)).toBe('100.00%');
+  });
+
+  it('does that for every figure from 99.99 up to 100, and for none of the figures below', () => {
+    for (let v = 99.99; v < 100; v += 0.0000037) expect(percentText(v, 99), String(v)).toBe('99.99%');
+    expect(percentText(99.989, 99)).toBe('99.99%');
+    expect(percentText(99.985, 99)).toBe('99.98%');
+  });
+
   it('cuts instead of rounding when even eight decimals reach the target, as the SLA page does', () => {
     expect(percentText(98.999999999, 99)).toBe('98.99999999%');
     expect(percentText(98.99999999999999, 99)).toBe('98.99999999%');

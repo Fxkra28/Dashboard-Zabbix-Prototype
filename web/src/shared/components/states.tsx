@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { useAuth, roleAllows } from '../hooks/useAuth';
 import { staleCopyOf, staleWhen } from '../lib/freshness';
+import { formatClockLabeled } from '../lib/time';
+import { useReportTimeZone } from '../hooks/useReportTimeZone';
 
 export function Loading({ label = 'Loading…' }: { label?: string }) {
   return (
@@ -40,7 +42,7 @@ function hintFor(message: string, admin: boolean): string | null {
 
 /** The BFF's refusal of a page above the signed-in role (security/auth.ts, security/viewerPolicy.ts). */
 const ROLE_REFUSAL = /needs the "(\w+)" role; you are signed in as "(\w+)"/;
-const FOR_ROLE: Record<string, string> = { viewer: 'viewers', operator: 'operators', admin: 'admins' };
+const FOR_ROLE: Record<string, string> = { viewer: 'viewers', wall: 'wall screens', operator: 'operators', admin: 'admins' };
 const withArticle = (word: string) => (/^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`);
 
 export function ErrorState({ message }: { message: string }) {
@@ -70,14 +72,12 @@ export function Empty({ children }: { children: ReactNode }) {
   return <div className="state">{children}</div>;
 }
 
-const clockTime = (ms: number) =>
-  new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-
 /** A refresh failed; the last good data stays on screen, and says how old it is. */
 export function RefreshFailed({ error, updatedAt }: { error: string; updatedAt?: number | null }) {
+  useReportTimeZone();
   return (
     <div className="refresh-failed" role="status" title={error}>
-      Refresh failed: showing data from {updatedAt ? clockTime(updatedAt) : 'earlier'}
+      Refresh failed: showing data from {updatedAt ? formatClockLabeled(updatedAt) : 'earlier'}
       {/* The tooltip is for a mouse; a screen reader gets the cause as text. */}
       <span className="sr-only">. {error}</span>
     </div>
@@ -87,10 +87,17 @@ export function RefreshFailed({ error, updatedAt }: { error: string; updatedAt?:
 /**
  * The BFF could not reach Zabbix and answered with the last copy it kept
  * (X-Data-Stale, see shared/lib/freshness.ts). The page would otherwise pass it off
- * as just updated.
+ * as just updated. A refreshing copy (X-Data-Refreshing) is said calmly: nothing failed.
  */
-export function StaleCopy({ asOf, what = 'this' }: { asOf: number | null; what?: string }) {
+export function StaleCopy({ asOf, what = 'this', refreshing = false }: { asOf: number | null; what?: string; refreshing?: boolean }) {
   const when = staleWhen(asOf);
+  if (refreshing) {
+    return (
+      <div className="data-age" role="status">
+        Data {when || 'from earlier'}; a newer copy is being read from Zabbix.
+      </div>
+    );
+  }
   return (
     <div className="refresh-failed" role="status">
       Zabbix did not answer, so {what} is the last copy the portal kept
@@ -155,7 +162,7 @@ export function Async<T>({
   const copy = staleCopyOf(data);
   return (
     <Loaded stale={stale} error={error} updatedAt={updatedAt}>
-      {copy && <StaleCopy asOf={copy.asOf} />}
+      {copy && <StaleCopy asOf={copy.asOf} refreshing={copy.refreshing} />}
       {children(data)}
     </Loaded>
   );

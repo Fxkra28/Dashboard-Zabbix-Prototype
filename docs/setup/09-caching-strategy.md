@@ -3,7 +3,7 @@
 [setup.md](../../setup.md) · previous: [§8](08-authentication.md) · next: [§10](10-network-monitoring.md)
 
 - Each endpoint wraps its Zabbix call in `cached(key, ttlMs, fn)`.
-- TTLs are tuned to how fast the data moves: problems 5 s, availability/latest 15 s, hosts 30 s,
+- TTLs are tuned to how fast the data moves: problems 15 s, latest 15 s, availability 120 s, hosts 30 s,
   static-ish lists (groups, maps) 60 s.
 - In-flight coalescing: if 10 browser tabs poll `/api/problems` at once during a cache miss, only
   one `problem.get` hits Zabbix; the rest await the same promise.

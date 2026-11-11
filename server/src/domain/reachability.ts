@@ -1,5 +1,6 @@
 import { zbx } from '../clients/zabbix.js';
-import { cached } from '../core/cache.js';
+import { cached, cacheLogger } from '../core/cache.js';
+import { recentValues, type RecentValue } from './recentValues.js';
 import { parseDelay } from '../sli/engine.js';
 
 /**
@@ -43,6 +44,11 @@ export function rollUpAvailability(interfaces?: { available?: string }[]): Avail
 /** Below this, a value is never called stale: one slow poller cycle must not flip a host to "no data". */
 const MIN_FRESH_SECONDS = 600;
 
+/** How old a value of an item with this update interval may be and still be believed: three intervals, never under ten minutes. */
+export function freshWithinS(delay: string | undefined): number {
+  return Math.max(3 * parseDelay(delay), MIN_FRESH_SECONDS);
+}
+
 /**
  * A value Zabbix actually collected, from a supported item, recently enough to
  * believe: at most three update intervals old, and never less than ten minutes.
@@ -58,7 +64,7 @@ export function isFresh(
 ): boolean {
   if (it.state === '1' || !it.lastclock || it.lastclock === '0') return false;
   const age = now - Number(it.lastclock);
-  return Number.isFinite(age) && age <= Math.max(3 * parseDelay(it.delay), MIN_FRESH_SECONDS);
+  return Number.isFinite(age) && age <= freshWithinS(it.delay);
 }
 
 export interface IcmpItem {
@@ -116,25 +122,83 @@ export function foldIcmp(items: IcmpItem[], now: number): Map<string, IcmpReadin
   return out;
 }
 
-/**
- * Every monitored ICMP item, in one `item.get`. Cached briefly: the pinger
- * itself runs once a minute. Shared by the host states and the data clock, so
- * asking for both costs Zabbix one call.
- */
-function getIcmpItems(): Promise<IcmpItem[]> {
-  return cached('icmp:items', 15_000, () =>
-    zbx<IcmpItem[]>('item.get', {
-      output: ['itemid', 'hostid', 'key_', 'lastvalue', 'lastclock', 'state', 'delay'],
-      search: { key_: 'icmpping' },
-      startSearch: true,
-      monitored: true,
-    }),
+/** Finding the ping items reads Zabbix's whole item table (19 to 39 s on HCML's), and they change only with the hosts. */
+export const ICMP_CATALOG_TTL_MS = 60 * 60_000;
+/** Past that hour the held list is used for up to a day while a new one is read. */
+export const ICMP_CATALOG_STALE_MS = 24 * 60 * 60_000;
+/** How far back values are read: past the freshness rule of an item polled at least every five minutes. A slower one gets three of its own intervals. */
+export const ICMP_WINDOW_S = 900;
+
+interface IcmpCatalogItem {
+  itemid: string;
+  hostid: string;
+  key_: string;
+  state: string;
+  delay: string;
+  value_type: string;
+}
+
+/** Every monitored ICMP item, without values. */
+function getIcmpCatalog(): Promise<IcmpCatalogItem[]> {
+  return cached(
+    'icmp:catalog',
+    ICMP_CATALOG_TTL_MS,
+    () =>
+      zbx<IcmpCatalogItem[]>('item.get', {
+        output: ['itemid', 'hostid', 'key_', 'state', 'delay', 'value_type'],
+        search: { key_: 'icmpping' },
+        startSearch: true,
+        monitored: true,
+      }),
+    { staleMs: ICMP_CATALOG_STALE_MS, staleIfError: true, pin: true },
   );
+}
+
+/**
+ * The newest value of every supported ping item, in one history read per value type (2.8 s on HCML's server
+ * against 54.5 s for Zabbix's `lastvalue`). Shared by the host states, the data clock and Links. The pinger runs
+ * once a minute. Items polled so rarely that isFresh() believes a value older than the window are read in a
+ * second call over the longest of their spans, so the rest do not carry their extra rows. If that call fails,
+ * those items have no value this round and the host states of the others stand.
+ */
+export function getIcmpValues(): Promise<Map<string, RecentValue>> {
+  return cached('icmp:values', 30_000, async () => {
+    const usual: IcmpCatalogItem[] = [];
+    const rare: IcmpCatalogItem[] = [];
+    let rareWindowS = ICMP_WINDOW_S;
+    for (const item of await getIcmpCatalog()) {
+      if (item.state === '1') continue;
+      const span = freshWithinS(item.delay);
+      if (span > ICMP_WINDOW_S) {
+        rare.push(item);
+        rareWindowS = Math.max(rareWindowS, span);
+      } else usual.push(item);
+    }
+    const [recent, slower] = await Promise.all([
+      recentValues(usual, ICMP_WINDOW_S),
+      rare.length
+        ? recentValues(rare, rareWindowS).catch((err: unknown) => {
+            cacheLogger()?.warn({ items: rare.length, reason: err instanceof Error ? err.message : String(err) }, 'icmp: the read of the slowly polled ping items failed; they have no value this round');
+            return new Map<string, RecentValue>();
+          })
+        : new Map<string, RecentValue>(),
+    ]);
+    return new Map([...recent, ...slower]);
+  });
+}
+
+/** Every monitored ICMP item with its newest value in the window; none is `lastclock` '0'. */
+async function getIcmpItems(): Promise<IcmpItem[]> {
+  const [catalog, values] = await Promise.all([getIcmpCatalog(), getIcmpValues()]);
+  return catalog.map((i) => {
+    const v = values.get(i.itemid);
+    return { itemid: i.itemid, hostid: i.hostid, key_: i.key_, state: i.state, delay: i.delay, lastvalue: v?.value ?? '', lastclock: v?.clock ?? '0' };
+  });
 }
 
 /** ICMP readings for every monitored host. Hosts without an ICMP item are absent. */
 export function getIcmpByHost(): Promise<Map<string, IcmpReading>> {
-  return cached('icmp:hosts', 15_000, async () => foldIcmp(await getIcmpItems(), Math.floor(Date.now() / 1000)));
+  return cached('icmp:hosts', 30_000, async () => foldIcmp(await getIcmpItems(), Math.floor(Date.now() / 1000)));
 }
 
 /**
@@ -200,8 +264,20 @@ export function collectingStatus(
 export function getCollecting(): Promise<{ lastCollectedAt: number | null; readings: Map<string, IcmpReading> }> {
   return cached('collecting:last', 30_000, async () => {
     const items = await getIcmpItems();
-    return { lastCollectedAt: newestClock(items), readings: foldIcmp(items, Math.floor(Date.now() / 1000)) };
+    const lastCollectedAt = newestClock(items) ?? (await lastClockBeyondWindow(items));
+    return { lastCollectedAt, readings: foldIcmp(items, Math.floor(Date.now() / 1000)) };
   });
+}
+
+/** Nothing in the window: Zabbix's own last value of a few items (it looks back a day) says how long ago it stopped. */
+async function lastClockBeyondWindow(items: IcmpItem[]): Promise<number | null> {
+  const sample = items.filter((i) => i.state !== '1').slice(0, 20);
+  if (!sample.length) return null;
+  const read = await zbx<{ lastclock?: string; state?: string }[]>('item.get', {
+    itemids: sample.map((i) => i.itemid),
+    output: ['itemid', 'lastclock', 'state'],
+  });
+  return newestClock(read);
 }
 
 /**

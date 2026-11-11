@@ -114,6 +114,10 @@ export default function Network() {
   const selectedDevice = devices.find((d) => d.hostid === hostid);
   const portIds = port ? [port.itemids.in, port.itemids.out].filter((x): x is string => !!x) : [];
   const pages = portsQ.data ? Math.max(1, Math.ceil(portsQ.data.total / portsQ.data.pageSize)) : 1;
+  // A page past the end (an old address, or a list that shrank at the poll) asks for the last page there is.
+  useEffect(() => {
+    if (portsQ.data && !portsQ.loading && !portsQ.stale && portsQ.data.total > 0 && page > pages) setPage(pages);
+  }, [portsQ.data, portsQ.loading, portsQ.stale, page, pages, setPage]);
   // Rows still on screen from the previous device or filter can't be opened:
   // they would graph the wrong device's port under this one's name.
   const openPort = (r: NetInterface) => {
@@ -327,6 +331,13 @@ export default function Network() {
                     </TableWrap>
                     <Pager page={page} pages={pages} onPage={setPage}>
                       {(page - 1) * res.pageSize + 1}–{Math.min(res.total, page * res.pageSize)} of {res.total}
+                    </Pager>
+                  </>
+                ) : res.total > 0 ? (
+                  <>
+                    <div className="state">There are no interfaces on page {page}.</div>
+                    <Pager page={page} pages={pages} onPage={setPage}>
+                      {res.total} interfaces
                     </Pager>
                   </>
                 ) : (

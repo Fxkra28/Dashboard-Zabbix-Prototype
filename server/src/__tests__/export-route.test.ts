@@ -27,8 +27,10 @@ vi.mock('../services/sli.js', async (importOriginal) => {
 
 const PDF_TYPE = 'application/pdf';
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-const TYPES = { pdf: PDF_TYPE, xlsx: XLSX_TYPE } as const;
-const FORMATS = ['pdf', 'xlsx'] as const;
+const CSV_TYPE = 'application/zip';
+const TYPES = { pdf: PDF_TYPE, xlsx: XLSX_TYPE, csv: CSV_TYPE } as const;
+const FORMATS = ['pdf', 'xlsx', 'csv'] as const;
+const FILE = { pdf: 'HCML_SLA_Report_2026-08.pdf', xlsx: 'HCML_SLA_Report_2026-08.xlsx', csv: 'HCML_SLA_Report_2026-08_csv.zip' } as const;
 const NOW = new Date('2026-09-17T03:00:00Z');
 
 let reports = sampleSliReports();
@@ -152,11 +154,11 @@ describe('GET /api/sli/export', () => {
   it.each(['?month=2026-08', '?month=2026-08&format=', '?format=', ''])('answers 400 when no format is given: "%s"', async (query) => {
     const res = await get(query);
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: 'bad_request', message: expect.stringContaining('"pdf" or "xlsx"') });
+    expect(res.json()).toMatchObject({ error: 'bad_request', message: 'format must be "pdf", "xlsx" or "csv".' });
     expect(sliMock).not.toHaveBeenCalled();
   });
 
-  it.each(['csv', 'docx', 'PDF', 'Xlsx', 'pdf,xlsx', 'pdf%20', '.pdf', '../pdf'])('answers 400 for the format "%s", before touching Zabbix', async (format) => {
+  it.each(['docx', 'zip', 'CSV', 'PDF', 'Xlsx', 'pdf,xlsx', 'pdf%20', '.pdf', '../pdf', 'csv.zip'])('answers 400 for the format "%s", before touching Zabbix', async (format) => {
     const res = await get(`?month=2026-08&format=${format}`);
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ error: 'bad_request' });
@@ -189,7 +191,7 @@ describe('GET /api/sli/export', () => {
   ])('refuses %s before anything is read or sent', async (_label, query) => {
     const res = await get(query);
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: 'bad_request', message: 'Only month and format are accepted.' });
+    expect(res.json()).toMatchObject({ error: 'bad_request', message: 'Only month, format, decimal, date and separator are accepted.' });
     expect(res.headers['content-disposition']).toBeUndefined();
     expect(res.headers['x-evil']).toBeUndefined();
     expect(JSON.stringify(res.json())).not.toMatch(/evil|passwd|proto|mont\b/);
@@ -255,6 +257,176 @@ describe('GET /api/sli/export', () => {
   });
 });
 
+describe('the CSV download', () => {
+  let app: FastifyInstance;
+  beforeEach(async () => {
+    app = await buildTestApp(sliExportRoutes);
+  });
+  afterEach(() => app.close());
+
+  const get = (query: string) => app.inject({ url: `/api/sli/export?month=2026-08&format=csv${query}` });
+  const files = async (query = '') => {
+    const parts = unzip((await get(query)).rawPayload);
+    return new Map([...parts].map(([name, data]) => [name.replace('HCML_SLA_Report_2026-08_csv/', ''), data.toString('utf8')]));
+  };
+
+  it('sends a zip named for the month, with the CSV in the name so it is not taken for anything else', async () => {
+    const res = await get('');
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe(CSV_TYPE);
+    expect(res.headers['content-disposition']).toBe(disposition('HCML_SLA_Report_2026-08_csv.zip'));
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(Number(res.headers['content-length'])).toBe(res.rawPayload.length);
+    expect([...res.rawPayload.subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+  });
+
+  it('holds the first page, a file for each table in the report, and the notes, all in one folder', async () => {
+    const parts = unzip((await get('')).rawPayload);
+    expect([...parts.keys()]).toEqual(
+      [
+        '00-summary.csv',
+        '01-by-category.csv',
+        '02-by-site.csv',
+        '03-by-device.csv',
+        '04-wan-paths.csv',
+        '05-web-checks.csv',
+        '06-never-measured.csv',
+        'notes.txt',
+      ].map((n) => `HCML_SLA_Report_2026-08_csv/${n}`),
+    );
+  });
+
+  it('puts the reports’ own figures in the files', async () => {
+    const f = await files('');
+    expect(f.get('03-by-device.csv')).toContain('2.2.3 SAMPLE SWITCH 03');
+    expect(f.get('02-by-site.csv')).toContain('3 · Cedar / Quay');
+    expect(f.get('00-summary.csv')).toContain('SLA availability report');
+    expect(f.get('notes.txt')).toContain('August 2026');
+  });
+
+  it('reads both methods for the month asked for, once each', async () => {
+    await get('');
+    expect(sliMock.mock.calls.map((c) => c.slice(0, 2)).sort()).toEqual([
+      ['2026-08', 'availability'],
+      ['2026-08', 'hcml-report'],
+    ]);
+  });
+});
+
+describe('the style of a download', () => {
+  let app: FastifyInstance;
+  beforeEach(async () => {
+    app = await buildTestApp(sliExportRoutes);
+  });
+  afterEach(() => app.close());
+
+  const get = (query: string) => app.inject({ url: `/api/sli/export?month=2026-08${query}` });
+  const csv = async (query: string) => {
+    const parts = unzip((await get(`&format=csv${query}`)).rawPayload);
+    return new Map([...parts].map(([name, data]) => [name.replace('HCML_SLA_Report_2026-08_csv/', ''), data.toString('utf8')]));
+  };
+  const workbookStrings = async (query: string) => unzip((await get(`&format=xlsx${query}`)).rawPayload).get('xl/sharedStrings.xml')!.toString('utf8');
+
+  it('writes the default style when none is asked for: dots, long dates, commas', async () => {
+    const f = await csv('');
+    expect(f.get('00-summary.csv')).toMatch(/Generated 17 Sep 2026 10:00 \(Asia\/Jakarta\)/);
+    expect(f.get('02-by-site.csv')!.split('\r\n')[1]).toMatch(/^[^,]+,\d+,\d+,\d+\.\d+,/);
+    expect(f.get('notes.txt')).toContain('Fields are separated by commas.');
+  });
+
+  it('writes a decimal comma and a semicolon into the CSV when asked', async () => {
+    const f = await csv('&decimal=comma&separator=semicolon');
+    expect(f.get('02-by-site.csv')!.split('\r\n')[0]).toContain(';');
+    for (const row of f.get('02-by-site.csv')!.slice(1).split('\r\n').slice(1, -1)) expect(row).toMatch(/;\d+,\d+;/);
+    expect(f.get('notes.txt')).toContain('Fields are separated by semicolons.');
+    expect(f.get('notes.txt')).toContain('Decimals are written with a comma.');
+  });
+
+  it.each([
+    ['numeric', 'Generated 17/09/2026 10:00 (Asia/Jakarta)'],
+    ['iso', 'Generated 2026-09-17 10:00 (Asia/Jakarta)'],
+    ['long', 'Generated 17 Sep 2026 10:00 (Asia/Jakarta)'],
+  ])('writes the %s date style into the CSV, the workbook and the notes', async (date, generated) => {
+    expect((await csv(`&date=${date}`)).get('00-summary.csv')).toContain(generated);
+    expect(await workbookStrings(`&date=${date}`)).toContain(generated);
+  });
+
+  it('writes a decimal comma into the figures of the workbook’s summary, not only the CSV', async () => {
+    const dot = await workbookStrings('');
+    const comma = await workbookStrings('&decimal=comma');
+    const overall = reports.strict.overall.sli!;
+    const printed = `${overall.toFixed(2)}%`;
+    expect(dot).toContain(printed);
+    expect(comma).toContain(printed.replace('.', ','));
+    expect(comma).not.toContain(`>${printed}<`);
+  });
+
+  it('writes the PDF in the style too', async () => {
+    const dot = (await get('&format=pdf')).rawPayload;
+    const comma = (await get('&format=pdf&decimal=comma')).rawPayload;
+    expect(Buffer.compare(dot, comma)).not.toBe(0);
+  });
+
+  it('gives a PDF or a workbook the same bytes whatever the separator, since only a CSV has one', async () => {
+    for (const format of ['pdf', 'xlsx']) {
+      const plain = (await get(`&format=${format}`)).rawPayload;
+      const semi = (await get(`&format=${format}&separator=semicolon`)).rawPayload;
+      expect(Buffer.compare(plain, semi), format).toBe(0);
+    }
+  });
+
+  it('keeps a style apart from another in the short-lived file cache: the first one asked for is not served for the second', async () => {
+    const first = (await get('&format=pdf&decimal=comma')).rawPayload;
+    const second = (await get('&format=pdf&decimal=dot')).rawPayload;
+    const third = (await get('&format=pdf&decimal=comma')).rawPayload;
+    expect(Buffer.compare(first, second)).not.toBe(0);
+    expect(Buffer.compare(first, third)).toBe(0);
+    const a = (await get('&format=csv&separator=semicolon')).rawPayload;
+    const b = (await get('&format=csv&separator=comma')).rawPayload;
+    expect(Buffer.compare(a, b)).not.toBe(0);
+  });
+
+  it.each(['pdf', 'xlsx', 'csv'])('keeps a date style apart from another in the file cache, for the %s too', async (format) => {
+    const iso = (await get(`&format=${format}&date=iso`)).rawPayload;
+    const numeric = (await get(`&format=${format}&date=numeric`)).rawPayload;
+    const again = (await get(`&format=${format}&date=iso`)).rawPayload;
+    expect(Buffer.compare(iso, numeric)).not.toBe(0);
+    expect(Buffer.compare(iso, again)).toBe(0);
+  });
+
+  it('keeps the decimal mark of a CSV apart from the other in the file cache', async () => {
+    const comma = (await get('&format=csv&decimal=comma')).rawPayload;
+    const dot = (await get('&format=csv&decimal=dot')).rawPayload;
+    expect(Buffer.compare(comma, dot)).not.toBe(0);
+  });
+
+  it.each([
+    ['decimal=point', 'decimal must be "dot" or "comma".'],
+    ['decimal=', 'decimal must be "dot" or "comma".'],
+    ['date=short', 'date must be "long", "numeric" or "iso".'],
+    ['separator=tab', 'separator must be "comma" or "semicolon".'],
+  ])('answers 400 for %s, before touching Zabbix', async (query, message) => {
+    const res = await get(`&format=csv&${query}`);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'bad_request', message });
+    expect(res.headers['content-disposition']).toBeUndefined();
+    expect(sliMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['decimal=dot&decimal=comma', 'date=iso&date=long', 'separator=comma&separator=semicolon'])('answers 400 for a choice given twice: %s', async (query) => {
+    const res = await get(`&format=csv&${query}`);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'bad_request', message: expect.stringContaining('given once') });
+    expect(sliMock).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a name that is not one of the choices', async () => {
+    const res = await get('&format=csv&locale=id');
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'bad_request', message: 'Only month, format, decimal, date and separator are accepted.' });
+  });
+});
+
 describe('the file is the same every time', () => {
   let app: FastifyInstance;
   beforeEach(async () => {
@@ -304,6 +476,9 @@ describe('the file is the same every time', () => {
     expect(Buffer.compare(august, otherFormat)).not.toBe(0);
     expect(august.subarray(0, 4).toString('latin1')).toBe(format === 'pdf' ? '%PDF' : 'PK\u0003\u0004');
     expect(otherFormat.subarray(0, 4).toString('latin1')).toBe(other === 'pdf' ? '%PDF' : 'PK\u0003\u0004');
+    for (const f of FORMATS) {
+      if (f !== format) expect(Buffer.compare(august, await bytes(f)), `${format} against ${f}`).not.toBe(0);
+    }
   });
 
   it.each(FORMATS)('a %s made an hour later differs, so the check above has something to catch', async (format) => {
@@ -377,7 +552,7 @@ describe('behind the production stack (helmet, cors, compression and the error h
 
   it.each(FORMATS)('keeps the download headers next to helmet’s and cors’s for the %s', async (format) => {
     const res = await app.inject({ url: `/api/sli/export?month=2026-08&format=${format}`, headers: { origin: 'http://localhost:5173' } });
-    expect(res.headers['content-disposition']).toBe(disposition(`HCML_SLA_Report_2026-08.${format}`));
+    expect(res.headers['content-disposition']).toBe(disposition(FILE[format]));
     expect(res.headers['cache-control']).toBe('private, no-store');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173');

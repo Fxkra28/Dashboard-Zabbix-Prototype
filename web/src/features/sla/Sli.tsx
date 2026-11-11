@@ -2,7 +2,7 @@ import { useId } from 'react';
 import type { DataStatus, SliGap, SliProfile } from '../../types';
 import { reportTimeZone, monthLabel, recentMonths } from '../../shared/lib/time';
 import { useReportTimeZone } from '../../shared/hooks/useReportTimeZone';
-import { PERCENT_DP, formatDuration } from '../../shared/lib/units';
+import { PERCENT_DP, fixedBelow100, formatDuration } from '../../shared/lib/units';
 import { percentText } from './percent';
 import { NoData } from '../../shared/components/NoData';
 import { Field, FieldGroup } from '../../shared/components/Field';
@@ -29,7 +29,7 @@ export const METHOD_NOTE =
 /** Pass `target` whenever the figure is shown beside Met or Missed, so rounding cannot print it as the target. */
 export const fmtPct = (v: number | null | undefined, digits: number = PERCENT_DP.availability, target?: number) => {
   if (v === null || v === undefined) return '—';
-  return target === undefined ? `${v.toFixed(digits)}%` : percentText(v, target, digits);
+  return target === undefined ? `${fixedBelow100(v, digits)}%` : percentText(v, target, digits);
 };
 
 export const fmtDur = (seconds: number | null | undefined) =>

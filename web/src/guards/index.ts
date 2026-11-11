@@ -24,6 +24,11 @@ export { agingGuard, capacityGuard, noiseGuard, scorecardGuard, topTriggersGuard
 export {
   availabilityGuard,
   derivedServicesGuard,
+  deletedRecipientsGuard,
+  emailInfoGuard,
+  emailSentGuard,
+  savedRecipientsGuard,
+  scheduleInfoGuard,
   servicesGuard,
   slaListGuard,
   slaSliGuard,

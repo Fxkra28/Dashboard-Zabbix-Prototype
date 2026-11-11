@@ -3,9 +3,8 @@
  * a host that only has its SNMP silent; for a host it names, that host's open problems and their count.
  */
 
-import { cached } from '../core/cache.js';
-import { getProblems, openProblems, type ZbxProblem } from '../domain/queries.js';
-import { getSites, type Site, type SiteHost } from './sites.js';
+import { cachedProblems, openProblems, type ZbxProblem } from '../domain/queries.js';
+import { sitesView, type Site, type SiteHost } from './sites.js';
 import { siteFromHostName, naturalCompare, SITES, type SiteRef } from '../domain/naming.js';
 import type { HostState } from '../domain/reachability.js';
 import { availabilitySince, stateSince } from './assistantFacts.js';
@@ -191,8 +190,8 @@ export function hostFocusBlock(host: SiteHost, problems: ZbxProblem[], now: numb
 export async function buildFocus(question: string): Promise<{ sites: string[]; hosts: string[]; text: string } | null> {
   const named = sitesNamed(question).slice(0, FOCUS_SITES);
   const [problems, sitesRes] = await Promise.all([
-    cached('problems', 5_000, getProblems).then(openProblems),
-    cached('sites', 15_000, getSites),
+    cachedProblems().then(openProblems),
+    sitesView(),
   ]);
   const hosts = hostsNamed(question, sitesRes.sites.flatMap((s) => s.hosts)).slice(0, FOCUS_HOSTS);
   if (!named.length && !hosts.length) return null;

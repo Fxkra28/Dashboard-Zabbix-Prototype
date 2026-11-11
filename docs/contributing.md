@@ -8,7 +8,7 @@ in an untracked `.env`, not in code ([ADR-0005](architecture/adr/0005-provider-n
 Every change to shared code lands in both folders, in the same commit-shaped unit of work.
 
 ```bash
-diff -rq -x node_modules -x dist -x .DS_Store -x '*.tsbuildinfo' -x .git -x pic \
+diff -rq -x node_modules -x dist -x .DS_Store -x '*.tsbuildinfo' -x .test-counts.json -x .git -x pic \
   ../hcml-portal ../hcml-portal-ollama
 ```
 
@@ -16,7 +16,7 @@ That must print exactly 22 differing files, all of them configuration or per-rep
 and one more line, `Only in ../hcml-portal-ollama/docs: README_copy.md`. That file is a snapshot of
 the ollama README from 23 September, kept for reference and not maintained. It sat in that folder's
 root until 7 October 2026, where it made the count 22. Any other line means you changed something
-in one folder and not the other. The full list of the 21 is in both `README.md` files.
+in one folder and not the other. The full list of the 22 (18 files meant to differ and the four `.env*` files) is in both `README.md` files.
 
 `node tools/check/parity.check.mjs` makes the same comparison with the allowed files written down
 by name: 18 files, and the four `.env*` files, which it skips without opening. It prints one line
@@ -31,7 +31,7 @@ The exclusions are not cosmetic. Every one of them is already in `.gitignore`, s
 divergence anyone can commit, but `diff` does not read `.gitignore`. Without them the number stops meaning
 anything: the `.tsbuildinfo` files are written by whichever folder you last ran `npm run build` in,
 so they differ whenever you have worked in one and not the other. `pic/` holds each copy's own
-screenshots for the documents, one folder for each set (`pic/09`, taken on 8 October, and `pic/10`, taken on 20 October). They differ by design,
+screenshots for the documents, one folder for each set (`pic/09`, taken on 8 October, and `pic/10`, retaken on 9 November). They differ by design,
 and they show real host names, so they are never committed (the Code of Conduct below says why:
 "Never commit estate data"). `parity.check.mjs` skips that one folder, at the root only.
 `vite.config.js` is no longer
@@ -61,7 +61,7 @@ are about the data, because the data is real:
   up: with `AUTH_ENABLED=false` it refuses acknowledge and close unless `ALLOW_WRITE_WITHOUT_AUTH=true`
   is set, so leave that unset in a dev `server/.env`.
 - **Never commit estate data.** No per-host output, no Availability Report spreadsheets, no database
-  dump, no screenshots with real host names in them. A downloaded SLA report, PDF or Excel, is
+  dump, no screenshots with real host names in them. A downloaded SLA report, PDF, Excel or CSV, is
   per-host output: it names every device. The one exception is [`screenshots/`](screenshots/README.md),
   where every name is replaced and every image is looked at before it is added.
 - **Never commit a credential.** `.env` and `server/.env` are gitignored and must stay that way.
@@ -95,14 +95,14 @@ are working on the plain-language layer.
 
 ## The checks
 
-Thirteen committed checks, each one written because something specific broke. Run the ones your change
+Fourteen committed checks, each one written because something specific broke. Run the ones your change
 can affect; run all of them before you call a change finished: `npm run verify` at the repository root does
 the typechecks, the lint, both test suites, both builds and every checker below (`npm run check` is the checkers alone).
 
 | Check | Run it | What it exists to prevent |
 |---|---|---|
-| Tests | `npm test` in `server/` | 1787 tests, 80 files. The status-code semantics are pinned here: a rejected token is 503, never 502 or 504. The SLA report files are pinned here too: the tests read each PDF and workbook back, and compare the theme colours, the logo and the wording copied from the web app with their originals. Files that are not code are read as text too, because nothing else would notice them breaking: `docker-compose.yml` against the BFF's settings and the Dockerfile's build arguments, `nginx.conf`, and the CI workflow |
-| Web tests | `npm test` in `web/` | 1209 tests in 83 files, in jsdom. They pin bugs that were found once: a slow answer for an old selection overwriting the new one, and, caught in review, sign-in returning to `/LOGIN` (the sign-in page again) and the wall bringing back a row marked "Cleared" after it had left the screen. Also the 401 handling and the CSRF header, and the report download buttons: one request however often they are pressed, and a month change dropping the request still in flight. Also the notices that say data is old (Zabbix stopped collecting, or a report is the last copy kept), the CSV formula guard, and the Assistant's conversation being cleared at sign-out |
+| Tests | `npm test` in `server/` | 2976 tests, 117 files. The status-code semantics are pinned here: a rejected token is 503, never 502 or 504. The SLA report files are pinned here too: the tests read each PDF and workbook back, and compare the theme colours, the logo and the wording copied from the web app with their originals. Files that are not code are read as text too, because nothing else would notice them breaking: `docker-compose.yml` against the BFF's settings and the Dockerfile's build arguments, `nginx.conf`, and the CI workflow |
+| Web tests | `npm test` in `web/` | 1769 tests in 114 files, in jsdom. They pin bugs that were found once: a slow answer for an old selection overwriting the new one, and, caught in review, sign-in returning to `/LOGIN` (the sign-in page again) and the wall bringing back a row marked "Cleared" after it had left the screen. Also the 401 handling and the CSRF header, and the report download buttons: one request however often they are pressed, and a month change dropping the request still in flight. Also the notices that say data is old (Zabbix stopped collecting, or a report is the last copy kept), the CSV formula guard, and the Assistant's conversation being cleared at sign-out |
 | Lint | `npm run lint` in `server/` and in `web/` | The web: typescript-eslint, the two classic react-hooks rules and jsx-a11y. Three `eslint-disable` comments pointed at the hooks rule before anything ran it, and the first run found 14 form labels tied to no control. The server: the recommended rules of ESLint and typescript-eslint, no warning allowed. It had no linter until 19 October, when the first run found 22 findings; the eight `eslint-disable` lines left name their reason |
 | Types | `npm run typecheck` in `server/` and in `web/` | Both check their test config too |
 | API contract | `npm run check:api` at the root | The endpoint table drifted twice: it claimed 35 endpoints while listing all of them, and 23 of 35 line citations pointed at unrelated lines after the route files grew. A third hand-written list would drift the same way. The same check refuses a description that YAML cuts at a comma, and holds each GET route's query names (`singleValues` in `schemas.ts`) to the file's `in: query` parameters and their 400. The tests hold the answers to the file: the server's `openapi-contract.test.ts` asks for every operation against a made-up estate and checks the status and the body against the file, and the web's `openapiTypes.test.ts` holds the app's types to it (below) |
@@ -111,8 +111,9 @@ the typechecks, the lint, both test suites, both builds and every checker below 
 | Design tokens | `node scripts/tokens.check.mjs` in `web/` (the parts of `src/styles/` read as one sheet) | The sheet held 42 padding values, 16 font sizes and 14 radii against 13 tokens, and three of its colours failed WCAG unnoticed: `--muted` sat 0.07 short of AA for as long as the file existed. Contrast is computed here, not asserted, so a token edited to an illegible colour fails instead of shipping |
 | Parsers | `../server/node_modules/.bin/tsx scripts/markdown.check.ts` and `units.check.ts` in `web/` | The assistant's markdown renderer and the unit/duration formatters: standalone scripts, written before the web had a test runner |
 | Links | `node tools/check/links.check.mjs` at the root | 41 relative links per copy had broken again after the ERD folder moved, 30 of them in `docs/erd/erd.md`. macOS resolves a wrong-case path, so the check matches each segment's exact spelling, and a link out of the repo fails, because a checkout does not have it |
-| Facts | `node tools/check/facts.check.mjs` at the root | A count written once and never compared again: an endpoint table that said 35 while listing all of them, "13 read methods" in five documents when the code called 14, a glossary that said 11 ADRs beside 13 files, "18 route modules" beside 22, an endpoint table with no row for `/api/ready`, a table of Zabbix calls whose line numbers had moved. It reads the counts off the code and the sentences that state them off the documents, and leaves a line that tells of the past alone. It does not read what a sentence means, so a line citation that still exists but says something else is for a person |
+| Facts | `node tools/check/facts.check.mjs` at the root | A count written once and never compared again: an endpoint table that said 35 while listing all of them, "13 read methods" in five documents when the code called 14, a glossary that said 11 ADRs beside 13 files, "18 route modules" beside 22, an endpoint table with no row for `/api/ready`, a table of Zabbix calls whose line numbers had moved, two card pages that said 104 and 167 cards beside 120 and 177. It reads the counts off the code and the sentences that state them off the documents, and leaves a line that tells of the past alone. It also reads the tracker as a table: ten cells in every row (a pipe inside a code span splits a cell, which went unseen for five days), a mark that fits its status, one row for each id, and totals that the rows bear out. It does not read what a sentence means, so a line citation that still exists but says something else is for a person |
 | Diagrams | `node tools/check/diagrams.check.mjs` at the root | Nine renders in one copy and eight in the other were older than their sources by file date, and a file date is no use in a git checkout. Each `.mmd` now ends with a stamp holding the hash of its source, and the check fails when the source changed after it. It cannot see whether the render was redone: `node tools/check/diagrams.stamp.mjs` is where that is said, run last |
+| Handbook | `node tools/check/handover.check.mjs` at the root | The handover handbook in `docs/handover/` falling behind the code: a generated block that no longer matches, a quoted snippet whose explanation was written against other code, a folder or a file with no description, and a page that breaks its writing rules. It was written to be true, and nothing else would keep it so |
 | Copies | `node tools/check/parity.check.mjs` at the root | The two folders drifting: it lists every file that differs between them, or exists in one only, outside the short list meant to differ, which names its 18 files one by one. Until it existed the recipe above was a number someone had to remember, and `README_copy.md` had already made that number wrong once |
 
 When a response in `docs/api/openapi.yaml` changes, run `npm run gen:api` in `web/` and commit
@@ -122,8 +123,8 @@ and the file does not promise, a field the file allows to be absent or null, or 
 place, such as `/api/hosts[].status`. It is one way: a field the file lists and the app ignores is fine. A new data
 call in `web/src/api/` goes in the table at the top of `web/src/__tests__/openapiTypes.test.ts`, or that test fails.
 
-`server/scripts/validate-sli.ts` is a fourteenth, but it is not part of the routine set: it needs
-HCML's real Availability Report spreadsheets in `~/Downloads` and a running BFF. It compares the
+`server/scripts/validate-sli.ts` is a fifteenth, but it is not part of the routine set: it needs
+HCML's real Availability Report spreadsheets in `~/Downloads` (or `REPORT_DIR`) and a running BFF with sign-in off, since it sends no credentials. It compares the
 derived SLA against HCML's own published figures, and it never runs in CI.
 
 `.github/workflows/ci.yml` runs everything in the table above on push and pull request, as five jobs (server, web, checks, secret scan, images). It also
@@ -142,11 +143,11 @@ the fix. It posts no comments and uploads no findings, because on a public repos
 it found, and manual runs skip it. `.github/dependabot.yml` opens a pull request a week for the actions, the
 npm packages of `server/` and `web/` (minor and patch releases together, a major alone) and the base image of
 each Dockerfile, which the digests would otherwise freeze. `ci-workflow.test.ts` fails on an action pinned any
-other way. The SHAs, the gitleaks job and the Dependabot file have not met GitHub yet.
+other way. The SHAs and the gitleaks job have not run on GitHub yet (the account's billing lock, IN-30); the Dependabot file has, and its 15 pull requests are open.
 
 ### Writing a new checker
 
-Follow the ten that exist. The house pattern, in order of how often it has mattered:
+Follow the eleven that exist. The house pattern, in order of how often it has mattered:
 
 1. A self-test over fixtures, before it touches a real file. `openapi.check.ts`,
    `css.check.mjs` and `tokens.check.mjs` all do this. A checker that has never failed has never
@@ -162,7 +163,7 @@ Follow the ten that exist. The house pattern, in order of how often it has matte
 
 ## Zero new dependencies
 
-8 runtime + 9 dev on the server, 5 + 18 on the web: 40 in all, 13 of them shipped. Adding to either
+9 runtime + 9 dev on the server, 5 + 18 on the web: 41 in all, 14 of them shipped. Adding to either
 list needs a real argument, not a convenience one. Two were added on 19 October 2026, both dev only and never in
 an image: the server's four lint packages (`eslint`, `@eslint/js`, `typescript-eslint` and `globals`, ST-06), and the web's
 18th, `openapi-typescript` (FR-16),
@@ -170,7 +171,7 @@ a web dev dependency that never reaches the built site. It turns `docs/api/opena
 `web/src/generated/openapi.ts`, and reading OpenAPI properly is what a library is for; the hand-written YAML scan
 of `openapi.check.ts` is not up to it. The server's contract test needed a YAML parser and a validator and added
 neither: `npm run gen:api` also writes `web/src/generated/openapi.json` with the parser openapi-typescript ships,
-and the test reads that copy with the Ajv Fastify already runs on.
+and the test reads that copy with the Ajv Fastify already runs on. One runtime library has been added for a feature: `nodemailer`, the server's ninth, on 4 November 2026 ([ADR-0014](architecture/adr/0014-email-the-sla-report-through-smtp.md); the report writers stay hand-rolled).
 
 Two precedents set the bar: `validate-sli.ts` hand-wrote a
 zip reader rather than add an xlsx parser, and `openapi.check.ts` hand-wrote a YAML path extractor
@@ -183,8 +184,10 @@ PDF writer alone is roughly 800 lines.
 the project now owns two file formats, their limits and every reader's quirks. Read it before
 reaching for a library, or for a third hand-written format.
 
+The handbook tools in `tools/handover/` add nothing to either list: they read the code with the `typescript` package the server already has installed, which the CI job for the checks installs too.
+
 Deliberately absent: no ORM or database driver (the
-portal owns no data), no state-management library (server state is two small hooks), no component
+portal owns no database; the hosted copy keeps one small file of its own, ADR-0015), no state-management library (server state is two small hooks), no component
 library, no PDF or spreadsheet library, and no second HTTP client: the Zabbix client and the model
 client are both hand-rolled around native `fetch`.
 
@@ -193,7 +196,7 @@ client are both hand-rolled around native `fetch`.
 ## Design
 
 `DESIGN.md` at each repo root is the design direction: identity, palette, typography, mood. It is the
-portal owner's, and it is the input to every visual decision. `antislop.md` is the filter that checks
+portal owner's, and it is the input to every visual decision. The antislop rules (not kept in this repository) are the filter that checks
 work against it. The two are not interchangeable, and a filter never supplies taste.
 
 Colours, spacing, type sizes, radii and elevation all come from the tokens in

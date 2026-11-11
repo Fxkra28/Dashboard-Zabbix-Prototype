@@ -97,7 +97,7 @@ describe('web/nginx.conf', () => {
   });
 
   it('names no outside host in the CSP, and index.html loads from none: the fonts are served from /fonts/ (IN-22)', () => {
-    const csp = find(server.children ?? [], 'set').find((n) => n.args[0] === '$csp')?.args[1] ?? '';
+    const csp = find(find(conf, 'map').find((n) => n.args[1] === '$csp')?.children ?? [], 'default')[0]?.args[0] ?? '';
     expect(csp, 'the CSP was found').toContain("default-src 'self'");
     const origins = (text: string) => [...new Set(text.match(/https?:\/\/[a-z0-9.-]+/g) ?? [])].sort();
     expect(origins(csp), 'the CSP names a host outside this site').toEqual([]);
@@ -122,7 +122,7 @@ describe('web/nginx.conf', () => {
 
   it('enforces the CSP in every location that sends headers, and names no report-only header (SC-24)', () => {
     const sending = locations.filter((l) => find(l.children ?? [], 'add_header').length > 0);
-    expect(sending.map(place).sort()).toEqual(['/', '/assets/', '/fonts/', '~ ^/(?!bff/)(.*/)?\\.', '~* ^/logo(-mark|-icon)?\\.png$']);
+    expect(sending.map(place).sort()).toEqual(['/', '/assets/', '/fonts/', '~ ^/(?!bff/)(.*/)?\\.', '~* ^/logo(-mark|-icon|-white)?\\.png$']);
     for (const l of sending) {
       const names = find(l.children ?? [], 'add_header').map((n) => n.args[0]);
       expect(names, place(l)).toContain('Content-Security-Policy');
@@ -130,6 +130,68 @@ describe('web/nginx.conf', () => {
       const csp = find(l.children ?? [], 'add_header').find((n) => n.args[0] === 'Content-Security-Policy');
       expect(csp?.args.slice(1), place(l)).toEqual(['$csp', 'always']);
     }
+  });
+
+  describe('the security headers on nginx’s own replies (IN-69)', () => {
+    const HEADERS = ['Content-Security-Policy', 'Referrer-Policy', 'X-Content-Type-Options', 'X-Frame-Options'];
+
+    it('sets all four at the server, with always, so a reply nginx makes itself (a 502, a 413, a 414, a 405) carries them', () => {
+      const direct = find(server.children ?? [], 'add_header');
+      expect(direct.map((n) => n.args[0]).sort()).toEqual(HEADERS);
+      for (const h of direct) expect(h.args.at(-1), h.args[0]).toBe('always');
+      expect(direct.find((n) => n.args[0] === 'Content-Security-Policy')?.args.slice(1)).toEqual(['$csp', 'always']);
+      expect(direct.find((n) => n.args[0] === 'X-Frame-Options')?.args.slice(1)).toEqual(['SAMEORIGIN', 'always']);
+      expect(direct.find((n) => n.args[0] === 'X-Content-Type-Options')?.args.slice(1)).toEqual(['nosniff', 'always']);
+      expect(direct.find((n) => n.args[0] === 'Referrer-Policy')?.args.slice(1)).toEqual(['no-referrer', 'always']);
+    });
+
+    it('works out $csp with a map, not a set, so the header also exists on a reply made before any set has run (a 414, a TRACE)', () => {
+      const maps = find(conf, 'map').filter((n) => n.args[1] === '$csp');
+      expect(maps).toHaveLength(1);
+      expect(find(maps[0]!.children ?? [], 'default')).toHaveLength(1);
+      expect(find(server.children ?? [], 'set').filter((n) => n.args[0] === '$csp')).toEqual([]);
+    });
+
+    it('lets every /bff location inherit them, since none of them sets an add_header of its own, which would drop the server’s', () => {
+      expect(bff.length).toBeGreaterThan(0);
+      for (const l of bff) expect(find(l.children ?? [], 'add_header'), place(l)).toEqual([]);
+    });
+
+    it('still repeats all four in each location that sets its own, because that location drops the inherited ones', () => {
+      for (const l of locations.filter((x) => find(x.children ?? [], 'add_header').length > 0)) {
+        const names = find(l.children ?? [], 'add_header').map((n) => n.args[0]);
+        for (const h of HEADERS) expect(names, `${place(l)} has ${h}`).toContain(h);
+      }
+    });
+
+    it('hides the copies the BFF sends, so a proxied reply carries each header once', () => {
+      const hidden = find(parse(file('bff-proxy.inc')), 'proxy_hide_header').map((n) => n.args[0]);
+      for (const h of ['X-Frame-Options', 'X-Content-Type-Options', 'Referrer-Policy', 'Content-Security-Policy']) expect(hidden, h).toContain(h);
+    });
+  });
+
+  describe('the logos (IN-69)', () => {
+    const logos = locations.find((l) => /logo/.test(place(l)));
+    const pattern = () => new RegExp(place(logos as Node).replace(/^~\*\s*/, ''), 'i');
+
+    it('are one location, cached for a day, and not pinned for a year', () => {
+      expect(logos, 'a logo location').toBeDefined();
+      const cache = find(logos?.children ?? [], 'add_header').find((n) => n.args[0] === 'Cache-Control')?.args[1];
+      expect(cache).toBe('public, max-age=86400');
+    });
+
+    it('matches the three the page loads, among them the white one of the sidebar', () => {
+      for (const path of ['/logo.png', '/logo-mark.png', '/logo-icon.png', '/logo-white.png']) expect(pattern().test(path), path).toBe(true);
+    });
+
+    it('matches nothing else: a file that merely starts with logo goes to the page', () => {
+      for (const path of ['/logo.pngx', '/logos.png', '/logo-other.png', '/x/logo.png', '/logo-white.jpg']) expect(pattern().test(path), path).toBe(false);
+    });
+
+    it('names, in public/, a file for every path it caches, so none is a comment’s promise alone', () => {
+      const names = ['logo.png', 'logo-mark.png', 'logo-white.png'];
+      for (const name of names) expect(readFileSync(fileURLToPath(new URL(`../../../web/public/${name}`, import.meta.url))).length, name).toBeGreaterThan(0);
+    });
   });
 
   describe('dot-files (SC-28)', () => {
@@ -200,9 +262,10 @@ describe('web/nginx.conf', () => {
   });
 
   describe('timeouts and buffering (FR-11)', () => {
-    it('waits a minute on an ordinary read, and buffers it', () => {
+    it('waits six minutes on an ordinary read, longer than the page does, and buffers it', () => {
       const ordinary = bff.find((l) => place(l) === '/bff/') as Node;
-      expect(timeout(ordinary)).toBe(60);
+      expect(timeout(ordinary)).toBe(360);
+      expect(timeout(ordinary)).toBeGreaterThan(Number((/REQUEST_TIMEOUT_MS\s*=\s*([\d_]+)/.exec(apiSource)?.[1] ?? '').replace(/_/g, '')) / 1000);
       expect(buffering(ordinary)).toBe('on');
     });
 

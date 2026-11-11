@@ -179,6 +179,55 @@ function openDashboard() {
   );
 }
 
+describe('a page whose read is an old copy or never answers (FR-25)', () => {
+  it('says the Hosts list is the last copy the portal kept, through request() and the headers, not through a stand-in', async () => {
+    answers['/api/hosts/overview'] = () => json([host], { headers: { 'Content-Type': 'application/json', 'X-Data-Stale': 'true', 'X-Data-Age-Seconds': '4320' } });
+    render(
+      <BrowserRouter>
+        <Hosts />
+      </BrowserRouter>,
+    );
+    expect(await screen.findByText('core-1')).toBeInTheDocument();
+    expect(await screen.findByText(/last copy the portal kept, from .+ \(1 h 12 min ago\)/)).toBeInTheDocument();
+  });
+
+  it('shows no old-copy note for a list that is current', async () => {
+    render(
+      <BrowserRouter>
+        <Hosts />
+      </BrowserRouter>,
+    );
+    expect(await screen.findByText('core-1')).toBeInTheDocument();
+    expect(screen.queryByText(/last copy the portal kept/)).toBeNull();
+  });
+
+  it('turns a read that never answers into the page\'s error after the deadline, with the words request() gives it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string, init?: RequestInit) => {
+          if (url.endsWith('/api/hosts/overview')) {
+            return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+          }
+          return Promise.resolve((answers[url.replace(/^\/bff/, '')] ?? (() => json([])))());
+        }),
+      );
+      render(
+        <BrowserRouter>
+          <Hosts />
+        </BrowserRouter>,
+      );
+      await act(async () => void (await vi.advanceTimersByTimeAsync(329_000)));
+      expect(screen.queryByText(/No answer from the server/)).toBeNull();
+      await act(async () => void (await vi.advanceTimersByTimeAsync(1_500)));
+      expect(screen.getByText('No answer from the server within 330 seconds.')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('the Dashboard’s live stream', () => {
   beforeEach(() => void vi.spyOn(console, 'warn').mockImplementation(() => undefined));
   const stream = () => FakeEventSource.all[FakeEventSource.all.length - 1];

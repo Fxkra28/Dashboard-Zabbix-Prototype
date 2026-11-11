@@ -82,6 +82,23 @@ export async function hashPassword(password: string, params: ScryptParams = SCRY
   return `scrypt.${params.N}.${params.r}.${params.p}.${salt.toString('base64url')}.${key.toString('base64url')}`;
 }
 
+/** On every short list of passwords, and the one Zabbix ships with. Compared in lower case. */
+const COMMON = ['secret', 'zabbix', 'password', 'changeme', '123456'] as const;
+
+/**
+ * Whether a stored password is on that list, or is still a placeholder such as `<a long password>` pasted from the documents. Weaker than
+ * `isGuessable`: the start-up warns about it and does not refuse. A hash is tried against each word in lower case only.
+ */
+export function isCommon(stored: string): boolean {
+  const parsed = parseStoredPassword(stored);
+  if (parsed.kind === 'plain') {
+    const text = stored.trim();
+    return COMMON.includes(text.toLowerCase() as (typeof COMMON)[number]) || /^<[^<>]+>$/.test(text);
+  }
+  if (parsed.kind !== 'scrypt') return false;
+  return COMMON.some((guess) => timingSafeEqual(scryptSync(guess, parsed.salt, parsed.hash.length, options(parsed.params)), parsed.hash));
+}
+
 /**
  * Whether a stored password is one anyone can guess: empty, or the built-in "admin". A hash is
  * checked against both, once, at start, so hashing "admin" does not get round the start-up refusal.

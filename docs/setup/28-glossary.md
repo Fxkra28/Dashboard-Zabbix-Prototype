@@ -49,7 +49,7 @@ than recovered. Terms are the ones this project uses in a specific way.*
 | The two portals | `hcml-portal` (hosted model) and `hcml-portal-ollama` (local model). Byte-identical source; 22 files differ |
 | Explain | The per-problem plain-language summary. One problem, cached an hour |
 | The Assistant | The conversational page. Sends the whole estate snapshot, streamed, never cached |
-| Stale-while-revalidate | Serving an expired cached value instantly while refreshing behind it. Allowed on four report families, never on problem or acknowledgement state |
+| Stale-while-revalidate | Serving an expired cached value instantly while refreshing behind it. Allowed on the slow views (the Hosts overview, Devices, the Network and Maps pages, the internet meters, the busiest hosts, web monitoring, the SLA and the service pages), never on problem or acknowledgement state |
 | Write-back | The single acknowledge/close path. Off unless `ZABBIX_WRITE_TOKEN` is set |
 | Guard | A hand-written run-time check that an answer from the BFF has the shape a page relies on (`web/src/guards/`). A mismatch becomes the page's ordinary error message, not a blank page |
 | Generated types | `web/src/generated/openapi.ts`, made from `docs/api/openapi.yaml` by `npm run gen:api`. A test makes the typecheck fail where the file promises less than the app's own types need |

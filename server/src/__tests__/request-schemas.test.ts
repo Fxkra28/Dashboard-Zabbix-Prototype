@@ -218,6 +218,11 @@ describe('POST /api/problems/acknowledge body', () => {
     expect(letters.statusCode).toBe(400);
     expect(letters.json().message).toBe('eventids must be numeric Zabbix event ids.');
 
+    const tooLong = await ack({ eventids: ['109', '99999999999999999999999'] });
+    expect(tooLong.statusCode).toBe(400);
+    expect(tooLong.json().message).toBe('eventids must be numeric Zabbix event ids.');
+    expect(zbxWriteMock.mock.calls.every(([, params]) => !JSON.stringify(params).includes('99999999999999999999999'))).toBe(true);
+
     const mixed = await ack({ eventids: ['109', 5] });
     expect(mixed.statusCode).toBe(200);
     expect(zbxWriteMock.mock.calls.at(-1)?.[1]).toMatchObject({ eventids: ['109'] });

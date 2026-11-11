@@ -359,5 +359,5 @@ export function getGraph({ ids, from, to, points, now }: { ids: string[]; from: 
       latestClock: lastClocks.length ? Math.max(...lastClocks) : null,
       downsampled: series.some((s) => s.downsampled),
     };
-  });
+  }, { typed: true });
 }

@@ -1,9 +1,18 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { api } from '../../api';
+import { api, HttpFailure } from '../../api';
 import type { Freshness, Problem } from '../../types';
 import { SeverityBadge } from '../../shared/components/StatusBadge';
 import { useDialogFocus } from '../../shared/hooks/useDialogFocus';
 import { ageWords, momentWords } from '../../shared/lib/freshness';
+
+const MAY_HAVE_BEEN_MADE = 'The change may or may not have been made: look at the problem again before you try it again.';
+
+/** The portal's own sentence when it gave one. When only a proxy or a broken connection answered, nothing says whether the change went. */
+function whyItFailed(err: unknown): string {
+  if (err instanceof TypeError) return `The portal could not be reached, or the connection broke while it worked. ${MAY_HAVE_BEEN_MADE}`;
+  if (err instanceof HttpFailure && !err.told) return `The portal did not answer (HTTP ${err.status}). ${MAY_HAVE_BEEN_MADE}`;
+  return String((err as Error)?.message ?? err);
+}
 
 /**
  * Acknowledge / close write-back: the portal's only write.
@@ -12,6 +21,9 @@ import { ageWords, momentWords } from '../../shared/lib/freshness';
  * rather than acting on a single tap, and it never offers Close for a trigger that doesn't allow
  * manual close.
  */
+/** Zabbix keeps 2048 characters, and the portal's tag in front takes at most 74 of them (a name of 64, the brackets, the word and a space). */
+const MAX_NOTE = 2048 - 74;
+
 export default function AckDialog({
   problem,
   onClose,
@@ -32,6 +44,14 @@ export default function AckDialog({
   const form = useRef<HTMLFormElement>(null);
   const messageBox = useRef<HTMLTextAreaElement>(null);
   useDialogFocus(form, messageBox);
+  // The answer can come after the dialog was closed and the page opened another problem's: that one is not ours to close.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
 
   // Whether Zabbix is still collecting. With no zabbix-server running, a close is accepted and never
   // applied, so the user is told before sending. A failed check says nothing: it must not get in the way.
@@ -68,15 +88,14 @@ export default function AckDialog({
         close,
       });
       onDone({ acknowledge, close });
-      onClose();
+      if (open.current) onClose();
     } catch (err) {
-      // Zabbix rejects a close on a trigger without manual_close, among other
-      // things, show what it actually said rather than a generic failure.
-      setError(String((err as Error)?.message ?? err));
+      if (!open.current) return;
+      setError(whyItFailed(err));
       // Confirm was disabled while sending, which dropped focus to <body>.
       messageBox.current?.focus();
     } finally {
-      setBusy(false);
+      if (open.current) setBusy(false);
     }
   };
 
@@ -109,7 +128,7 @@ export default function AckDialog({
               </div>
             </div>
           </div>
-          <button type="button" className="drawer-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="drawer-close" onClick={onClose} aria-label="Close" disabled={busy}>
             ×
           </button>
         </header>
@@ -129,7 +148,7 @@ export default function AckDialog({
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={3}
-              maxLength={2048}
+              maxLength={MAX_NOTE}
               placeholder="What you found, or what you're doing about it…"
             />
           </div>

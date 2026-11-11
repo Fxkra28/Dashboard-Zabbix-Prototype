@@ -6,7 +6,7 @@ Server-Sent Events are the simplest live-push transport (chosen over WebSocket i
 `myown/documents/plan/instruct.md` §2; recorded as [ADR-0002](../architecture/adr/0002-react-typescript-fastify.md)).
 
 - BFF: [`routes/stream.ts`](../../server/src/routes/stream.ts) opens an `text/event-stream`, and [`services/stream.ts`](../../server/src/services/stream.ts) pushes an
-  `event: problems` frame when something shown changed, from one shared 5 s ticker. A list identical
+  `event: problems` frame when something shown changed, from one shared 15 s ticker, the pace the list is cached. A list identical
   to the last one sent is never sent again, and one where only a name or host changed goes after at
   most 30 s. A frame carries only the fields the Dashboard reads (`eventid`, `objectid`, `object`, `name`, `severity`, `clock`,
   `r_eventid`, `acknowledged`, `suppressed`, `host`, `hostid`): no tags, no `opdata`, and none of the other fields Zabbix

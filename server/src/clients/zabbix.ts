@@ -1,4 +1,5 @@
 import { config } from '../core/config.js';
+import { PinnedTlsError, pinnedAgentFor, postPinned, type Reply } from './pinnedTls.js';
 
 /**
  * One typed JSON-RPC 2.0 helper. The Zabbix API token lives here and never
@@ -65,6 +66,9 @@ export class ZabbixApiError extends Error {
   }
 }
 
+/** Zabbix answered, and its answer was an error: bad parameters, or a write it would not take. A Zabbix that could not be reached is the plain error above. */
+export class ZabbixRefusedError extends ZabbixApiError {}
+
 /** Raised when a write is attempted with no ZABBIX_WRITE_TOKEN configured. `detail` names the setting, for the log only. */
 export class ZabbixWriteDisabledError extends Error {
   readonly code = 'zabbix_write_disabled';
@@ -81,30 +85,39 @@ function snippet(body: string): string {
   return flat.length > 300 ? `${flat.slice(0, 300)}…` : flat;
 }
 
-async function call<T>(method: string, params: unknown, token: string): Promise<T> {
-  let res: Response;
-  let body: string;
+/** One POST to ZBX_URL: through the pinned agent while an expired certificate is excepted, else plain `fetch`. */
+async function send(payload: string, token: string, timeoutMs: number): Promise<Reply> {
+  const headers = { 'Content-Type': 'application/json-rpc', Authorization: `Bearer ${token}` };
+  const pin = config.zbxTlsPin;
+  if (pin && /^https:/i.test(config.zbxUrl)) {
+    return postPinned(config.zbxUrl, headers, payload, timeoutMs, pinnedAgentFor(pin));
+  }
+  const res = await fetch(config.zbxUrl, {
+    method: 'POST',
+    headers,
+    body: payload,
+    // `fetch` has no default timeout. Without this, one unresponsive Zabbix
+    // holds the request, and every page waiting on it, open indefinitely.
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  // Read the body under the same timeout. `fetch` resolves once the headers
+  // arrive, so a Zabbix that stalled while still sending a large answer used
+  // to escape the timeout here and end up as a bare 500.
+  return { ok: res.ok, status: res.status, statusText: res.statusText, body: await res.text() };
+}
+
+async function call<T>(method: string, params: unknown, token: string, timeoutMs: number): Promise<T> {
+  let res: Reply;
   try {
-    res = await fetch(config.zbxUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json-rpc',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', method, params, id: ++id }),
-      // `fetch` has no default timeout. Without this, one unresponsive Zabbix
-      // holds the request, and every page waiting on it, open indefinitely.
-      signal: AbortSignal.timeout(config.zbxTimeoutMs),
-    });
-    // Read the body under the same timeout. `fetch` resolves once the headers
-    // arrive, so a Zabbix that stalled while still sending a large answer used
-    // to escape the timeout here and end up as a bare 500.
-    body = await res.text();
+    res = await send(JSON.stringify({ jsonrpc: '2.0', method, params, id: ++id }), token, timeoutMs);
   } catch (err) {
+    if (err instanceof PinnedTlsError) {
+      throw new ZabbixApiError(`Refused Zabbix's certificate for ${method} (${err.code}). ${err.message}`, `ZBX_URL=${config.zbxUrl}`);
+    }
     const name = (err as { name?: unknown } | null)?.name;
     if (name === 'TimeoutError' || name === 'AbortError') {
       throw new ZabbixTimeoutError(
-        `Zabbix did not respond to ${method} within ${config.zbxTimeoutMs} ms. ` +
+        `Zabbix did not respond to ${method} within ${timeoutMs} ms. ` +
           'It may be overloaded or unreachable. Check ZBX_URL and the Zabbix server.',
         `ZBX_URL=${config.zbxUrl}`,
       );
@@ -123,7 +136,7 @@ async function call<T>(method: string, params: unknown, token: string): Promise<
   if (!res.ok) {
     throw new ZabbixApiError(
       `${method}: HTTP ${res.status} ${res.statusText}`,
-      `ZBX_URL=${config.zbxUrl} answered: ${snippet(body)}`,
+      `ZBX_URL=${config.zbxUrl} answered: ${snippet(res.body)}`,
     );
   }
 
@@ -132,7 +145,7 @@ async function call<T>(method: string, params: unknown, token: string): Promise<
   // running out of memory on a large trend.get prints an HTML error).
   let json: { result?: T; error?: unknown } | null;
   try {
-    json = JSON.parse(body) as { result?: T; error?: unknown } | null;
+    json = JSON.parse(res.body) as { result?: T; error?: unknown } | null;
   } catch {
     json = null;
   }
@@ -140,7 +153,7 @@ async function call<T>(method: string, params: unknown, token: string): Promise<
     throw new ZabbixApiError(
       `${method}: Zabbix returned a non-JSON response. Check that ZBX_URL points at api_jsonrpc.php ` +
         'and that the Zabbix frontend is not out of memory.',
-      `ZBX_URL=${config.zbxUrl} answered: ${snippet(body)}`,
+      `ZBX_URL=${config.zbxUrl} answered: ${snippet(res.body)}`,
     );
   }
 
@@ -151,14 +164,19 @@ async function call<T>(method: string, params: unknown, token: string): Promise<
           '(or ZABBIX_WRITE_TOKEN, for acknowledge/close) in server/.env.',
       );
     }
-    throw new ZabbixApiError(`${method}: ${JSON.stringify(json.error)}`);
+    throw new ZabbixRefusedError(`${method}: ${JSON.stringify(json.error)}`);
   }
   return json.result as T;
 }
 
+/** A read with a limit of its own, such as the background count over every item, says so here. */
+export interface ZbxOptions {
+  timeoutMs?: number;
+}
+
 /** Every portal read goes through here, using the read-only token. */
-export async function zbx<T = unknown>(method: string, params: unknown = {}): Promise<T> {
-  return call<T>(method, params, config.zbxToken);
+export async function zbx<T = unknown>(method: string, params: unknown = {}, opts: ZbxOptions = {}): Promise<T> {
+  return call<T>(method, params, config.zbxToken, opts.timeoutMs ?? config.zbxTimeoutMs);
 }
 
 /**
@@ -167,5 +185,5 @@ export async function zbx<T = unknown>(method: string, params: unknown = {}): Pr
  */
 export async function zbxWrite<T = unknown>(method: string, params: unknown = {}): Promise<T> {
   if (!config.zbxWriteToken) throw new ZabbixWriteDisabledError();
-  return call<T>(method, params, config.zbxWriteToken);
+  return call<T>(method, params, config.zbxWriteToken, config.zbxTimeoutMs);
 }

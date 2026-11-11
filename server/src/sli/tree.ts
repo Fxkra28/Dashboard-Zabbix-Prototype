@@ -1,7 +1,7 @@
-import { cached } from '../core/cache.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 import type { SliProfile } from '../core/config.js';
 import { DEVICE_CLASS_LABELS, naturalCompare, type DeviceClass } from '../domain/naming.js';
-import { getProblems, openProblems, type ZbxProblem } from '../domain/queries.js';
+import { cachedProblems, openProblems, type ZbxProblem } from '../domain/queries.js';
 import type { ServiceNode, ServiceSla, ServicesResponse } from '../services/services.js';
 import { getMonthlySli } from '../services/sli.js';
 import { aggregate, type DataStatus, type SliGroup, type SliHost, type SliReport } from './engine.js';
@@ -269,9 +269,9 @@ export async function getDerivedServices(month: string, profile: SliProfile): Pr
   return cached(`services:derived:${profile}:${month}`, 30_000, async () => {
     const [report, problems] = await Promise.all([
       getMonthlySli(month, profile),
-      cached('problems', 5_000, getProblems).then(openProblems),
+      cachedProblems().then(openProblems),
     ]);
     return buildDerivedTree(report, problems, month);
-  });
+  }, SLOW_VIEW);
 }
 

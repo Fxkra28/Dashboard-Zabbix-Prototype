@@ -5,7 +5,7 @@ import { parseMonth } from '../sli/time.js';
 import { parseProfile } from '../services/sli.js';
 import { getAgingReport } from '../services/aging.js';
 import { getAllProblemsAvailabilityReport, getDerivedAvailabilityReport } from '../services/availability.js';
-import { getCapacityReport } from '../services/capacity.js';
+import { CAPACITY_DAYS, CAPACITY_TOP, getCapacityReport } from '../services/capacity.js';
 import { getNoiseReport } from '../services/noise.js';
 import { singleValues } from '../core/schemas.js';
 
@@ -40,6 +40,6 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/reports/capacity', { schema: { querystring: singleValues('days', 'top') } }, (req) => {
     const q = req.query as { days?: string; top?: string };
-    return getCapacityReport(intParam(q.days, 7, 1, 365), intParam(q.top, 10, 1, 50));
+    return getCapacityReport(intParam(q.days, CAPACITY_DAYS, 1, 365), intParam(q.top, CAPACITY_TOP, 1, 50));
   });
 }

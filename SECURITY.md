@@ -16,8 +16,8 @@ This is a one-person project: a report is read when time allows, and no response
 
 ## Supported versions
 
-The project has no releases or tags (tracker row IN-01), so the latest commit on `main` is the only
-version that is supported. A fix is a new commit; there are no back-ports.
+The project has no releases. A rebuild of the live portals is marked with a tag such as `live-2026-10-26`, which says what ran on a
+day and is not a version, so the latest commit on `main` is the only version that is supported. A fix is a new commit; there are no back-ports.
 
 ## What is in scope
 
@@ -37,4 +37,4 @@ operating notes in [`docs/operations/`](docs/operations/). A finding that shows 
 ## Secrets
 
 No secret belongs in this repository. A `.env` file is never committed, the templates (`.env.example`) hold placeholders,
-and CI scans every push for secrets. If you find one that is real, report it as above, and do not use it.
+and the CI workflow is set to scan every push for secrets. It has not started a job yet (tracker IN-30), so until it does the maintainer scans by hand with gitleaks. If you find one that is real, report it as above, and do not use it.

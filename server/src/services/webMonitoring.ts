@@ -1,4 +1,5 @@
 import { zbx } from '../clients/zabbix.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 import { isFresh } from '../domain/reachability.js';
 
 /**
@@ -80,3 +81,6 @@ export async function getWebMonitoring(limit: number): Promise<WebMonitoringResp
   failures.sort((a, b) => a.host.localeCompare(b.host) || a.name.localeCompare(b.name));
   return { generatedAt: now, total: ok + unknown + failures.length, ok, failed: failures.length, unknown, failures: failures.slice(0, limit) };
 }
+
+/** Web monitoring as the route and the warm-up read it. */
+export const webMonitoringView = (limit = WEB_FAILURES_ROWS) => cached(`web-monitoring:${limit}`, 30_000, () => getWebMonitoring(limit), SLOW_VIEW);

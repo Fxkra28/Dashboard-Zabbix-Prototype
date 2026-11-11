@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ICON_H, ICON_W, labelBox, placeLabels, textWidth, type Box, type LabelItem } from './mapLabels';
 
-const NAME = '1.1 IDX02FW01-LONG-NAME-X'; // 25 characters
+const NAME = '1.1 ALPHA-FW01-LONG-NAME-X'; // 25 characters
 const item = (id: string, x: number, y: number, extra: Partial<LabelItem> = {}): LabelItem => ({
   id,
   x,
   y,
-  lines: [NAME, '(192.168.239.42)'],
+  lines: [NAME, '(198.18.0.42)'],
   rank: 0,
   badge: false,
   ...extra,
@@ -144,18 +144,19 @@ describe('placeLabels (FR-18)', () => {
 });
 
 // What the name lines measure when drawn: the widest of Chrome 154 with
-// system-ui, Chrome with Arial, and Inter Regular's own advance widths read from the font file.
+// system-ui, Chrome with Arial, and Inter Regular's own advance widths read from the font file. The three names and two
+// addresses were measured again, the same way, when the real ones were replaced (SC-47).
 const MEASURED: [line: string, size: number, px: number][] = [
-  ['1.1 IDX02FW01', 11, 78.3],
-  ['IDX02FW01-CORE-SWITCH-01', 11, 162.7],
-  ['1.1 IDX02FW01-LONG-NAME-X', 11, 162.7],
+  ['1.1 ALPHA-FW01', 11, 87],
+  ['ALPHA-FW01-CORE-SWITCH-01', 11, 172.6],
+  ['1.1 ALPHA-FW01-LONG-NAME-X', 11, 172.6],
   ['HCML-JKT-DC-CORE-SW-0123', 11, 166.6],
   ['0123456789012345678901234', 11, 167.4],
   ['WWWWWWWWWWWWWWWWWWWWWWWWWW', 11, 278.5],
   ['MMMMMMMMMMMMMMMMMMMMMMMMMM', 11, 254.3],
   ['abcdefghijklmnopqrstuvwxyz', 11, 153.1],
-  ['(192.168.239.42)', 10, 82.3],
-  ['(192.168.239.142)', 10, 87.1],
+  ['(198.18.0.42)', 10, 63.2],
+  ['(198.18.0.142)', 10, 68],
 ];
 
 describe('how wide a name is estimated to be (FR-18)', () => {

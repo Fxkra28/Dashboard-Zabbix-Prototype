@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { pingZabbix } from './helpers/pingZabbix.js';
 import {
   foldIcmp,
+  freshWithinS,
   hostState,
   isFresh,
   rollUpAvailability,
@@ -151,23 +153,85 @@ describe('foldIcmp', () => {
   });
 });
 
+describe('freshWithinS', () => {
+  it('is three update intervals, and never under ten minutes', () => {
+    expect(freshWithinS('1m')).toBe(600);
+    expect(freshWithinS('5m')).toBe(900);
+    expect(freshWithinS('30m')).toBe(5400);
+    expect(freshWithinS(undefined)).toBe(600);
+  });
+});
+
 describe('getIcmpByHost', () => {
-  it('reads every monitored host’s ICMP items in one call and caches the result', async () => {
+  it('reads an item polled less often than every five minutes over three of its own intervals, the others over the usual window', async () => {
     const now = Math.floor(Date.now() / 1000);
-    zbxMock.mockResolvedValue([item({ hostid: '7', lastclock: String(now - 40) })]);
+    zbxMock.mockImplementation(
+      pingZabbix([
+        { ...item({ itemid: '1', hostid: '7', delay: '1m', lastclock: String(now - 40) }), value_type: '3' },
+        // Collected 20 minutes ago by a pinger that runs every 30: believed for 90 minutes, and outside a 15-minute window.
+        { ...item({ itemid: '2', hostid: '8', delay: '30m', lastclock: String(now - 1200) }), value_type: '3' },
+      ]),
+    );
     const { invalidate } = await import('../core/cache.js');
     invalidate('');
-    const { getIcmpByHost } = await import('../domain/reachability.js');
+    const { getIcmpByHost, ICMP_WINDOW_S } = await import('../domain/reachability.js');
+
+    const hosts = await getIcmpByHost();
+    expect(hosts.get('7')).toMatchObject({ state: 'up' });
+    expect(hosts.get('8')).toMatchObject({ state: 'up' });
+
+    const reads = zbxMock.mock.calls.filter(([method]) => method === 'history.get') as [string, { itemids: string[]; time_from: number }][];
+    expect(reads.map(([, p]) => p.itemids.join()).sort()).toEqual(['1', '2']);
+    const spanOf = (id: string) => now - (reads.find(([, p]) => p.itemids.includes(id)) as [string, { time_from: number }])[1].time_from;
+    expect(Math.abs(spanOf('1') - ICMP_WINDOW_S)).toBeLessThanOrEqual(2);
+    expect(Math.abs(spanOf('2') - 5400)).toBeLessThanOrEqual(2);
+  });
+
+  it('keeps the states of the usual items when the read of the slowly polled ones fails', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const base = pingZabbix([
+      { ...item({ itemid: '1', hostid: '7', delay: '1m', lastclock: String(now - 40) }), value_type: '3' },
+      { ...item({ itemid: '2', hostid: '8', delay: '30m', lastclock: String(now - 1200) }), value_type: '3' },
+    ]);
+    zbxMock.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+      if (method === 'history.get' && (params.itemids as string[]).includes('2')) throw new Error('history.get timed out');
+      return base(method, params);
+    });
+    const { invalidate, setCacheLogger } = await import('../core/cache.js');
+    invalidate('');
+    const warn = vi.fn();
+    setCacheLogger({ warn });
+    try {
+      const { getIcmpByHost } = await import('../domain/reachability.js');
+      const hosts = await getIcmpByHost();
+      expect(hosts.get('7')).toMatchObject({ state: 'up' });
+      expect(hosts.get('8')).toMatchObject({ state: 'unknown' });
+      expect(warn).toHaveBeenCalledWith(expect.objectContaining({ items: 1, reason: 'history.get timed out' }), expect.stringContaining('slowly polled'));
+    } finally {
+      setCacheLogger(undefined);
+    }
+  });
+
+  it('finds the ping items without values, reads their values in bulk, and caches both', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    zbxMock.mockImplementation(pingZabbix([{ ...item({ hostid: '7', lastclock: String(now - 40) }), value_type: '3' }]));
+    const { invalidate } = await import('../core/cache.js');
+    invalidate('');
+    const { getIcmpByHost, ICMP_WINDOW_S } = await import('../domain/reachability.js');
 
     const first = await getIcmpByHost();
     expect(first.get('7')).toMatchObject({ state: 'up', up: true });
     await getIcmpByHost();
-    expect(zbxMock).toHaveBeenCalledTimes(1);
+    expect(zbxMock).toHaveBeenCalledTimes(2);
     expect(zbxMock).toHaveBeenCalledWith('item.get', {
-      output: ['itemid', 'hostid', 'key_', 'lastvalue', 'lastclock', 'state', 'delay'],
+      output: ['itemid', 'hostid', 'key_', 'state', 'delay', 'value_type'],
       search: { key_: 'icmpping' },
       startSearch: true,
       monitored: true,
     });
+    // Not Zabbix's `lastvalue`, which costs one query per item.
+    expect(zbxMock).toHaveBeenCalledWith('history.get', expect.objectContaining({ history: 3, time_from: expect.any(Number) }));
+    const [, history] = zbxMock.mock.calls.find(([method]) => method === 'history.get') as [string, { time_from: number }];
+    expect(now - history.time_from).toBeGreaterThanOrEqual(ICMP_WINDOW_S);
   });
 });

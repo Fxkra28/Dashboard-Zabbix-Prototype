@@ -19,6 +19,21 @@ export interface ShutdownOptions {
   exit?: (code: number) => void;
 }
 
+/** What the monthly schedule gives a close: stop its timers when the close begins, then wait for a send that is running. */
+export interface Closable {
+  pause(): void;
+  stop(): Promise<void>;
+}
+
+/**
+ * Fastify drains the requests in flight before it runs the `onClose` hooks, and the limit above counts from the signal. So the
+ * schedule is paused when the close begins (`preClose`), and its wait for a running send counts from there.
+ */
+export function closeWith(app: FastifyInstance, schedule: Closable): void {
+  app.addHook('preClose', async () => schedule.pause());
+  app.addHook('onClose', async () => schedule.stop());
+}
+
 /** Returns the function that takes the handlers off again. */
 export function installShutdown(app: FastifyInstance, opts: ShutdownOptions = {}): () => void {
   const { timeoutMs = SHUTDOWN_TIMEOUT_MS, source = process, exit = (code) => process.exit(code) } = opts;

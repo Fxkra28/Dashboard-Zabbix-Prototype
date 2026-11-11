@@ -55,7 +55,7 @@ SHAs, the gitleaks job and the Dependabot file are untested until the first push
 
 Both Dockerfiles name each base image by tag and by digest: `node:24.11-alpine@sha256:6823...` (twice in
 `server/Dockerfile`, once in `web/Dockerfile`) and `nginxinc/nginx-unprivileged:1.28-alpine@sha256:7377...`
-(`web/Dockerfile`). Docker builds from the digest, so a rebuild cannot move to other bytes unannounced. The tag
+(`web/Dockerfile`; on 11 November 2026 the web image moved to the `1.30-alpine` line, which still gets images, and both Node digests were taken again, IN-66). Docker builds from the digest, so a rebuild cannot move to other bytes unannounced. The tag
 stays for people to read.
 
 To raise one on purpose, ask the registry what the tag points at today, then change the tag and the digest
@@ -171,9 +171,9 @@ so compose sees no change and recreated nothing: the Zabbix containers ran on th
 compose stops with a message that names the missing variable instead of starting a database with an empty
 password.
 
-To undo, copy `docker-compose.yml.bak` back over `docker-compose.yml` in that folder. The `.bak` holds the old
-literals, so delete it when you are satisfied, together with `.backup-22sep/docker-compose.yml.orig` and the parked
-PostgreSQL file, which also hold literals. The passwords still reach the containers as environment variables, so
+To undo, copy `docker-compose/docker-compose.yml.bak` back over `docker-compose.yml` in that folder. The `.bak` holds the old
+literals, so delete it when you are satisfied, together with `myown/backups/.backup-22sep/docker-compose.yml.orig` and the parked
+PostgreSQL file in `docker-compose/`, which also hold literals. The passwords still reach the containers as environment variables, so
 `docker inspect` shows them to anyone who can run it. The steps and the reasoning are in
 `myown/documents/patches/in-23-README.md`.
 

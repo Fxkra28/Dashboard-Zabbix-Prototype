@@ -27,10 +27,13 @@ vi.mock('../services/sli.js', async (importOriginal) => {
 describe('requiredRole', () => {
   const cases: [string, ReturnType<typeof requiredRole>][] = [
     ['/api/reports/inventory', 'admin'],
-    ['/api/links', 'operator'],
-    ['/api/net/devices', 'operator'],
-    ['/api/net/interfaces', 'operator'],
-    ['/api/net/meters', 'operator'],
+    ['/api/links', 'wall'],
+    ['/api/net/devices', 'wall'],
+    ['/api/net/interfaces', 'wall'],
+    ['/api/net/meters', 'wall'],
+    ['/api/sli/email', 'admin'],
+    ['/api/sli/schedule', 'admin'],
+    ['/api/sli/recipients', 'admin'],
     ['/api/problems/acknowledge', 'operator'],
     ['/api/problems/close', 'operator'],
     ['/api/hosts', 'viewer'],
@@ -86,13 +89,25 @@ describe('roleAllows', () => {
     expect(roleAllows('admin', 'admin')).toBe(true);
     expect(roleAllows('operator', 'viewer')).toBe(true);
     expect(roleAllows('operator', 'operator')).toBe(true);
+    expect(roleAllows('operator', 'wall')).toBe(true);
+    expect(roleAllows('wall', 'wall')).toBe(true);
+    expect(roleAllows('wall', 'viewer')).toBe(true);
     expect(roleAllows('viewer', 'viewer')).toBe(true);
   });
 
   it('refuses to escalate', () => {
     expect(roleAllows('viewer', 'operator')).toBe(false);
+    expect(roleAllows('viewer', 'wall')).toBe(false);
     expect(roleAllows('viewer', 'admin')).toBe(false);
     expect(roleAllows('operator', 'admin')).toBe(false);
+  });
+
+  it('keeps a wall screen read-only: it reads the network pages and can never acknowledge or close (MT-06)', () => {
+    expect(roleAllows('wall', requiredRole('/api/net/meters'))).toBe(true);
+    expect(roleAllows('wall', requiredRole('/api/links'))).toBe(true);
+    expect(roleAllows('wall', requiredRole('/api/problems/acknowledge'))).toBe(false);
+    expect(roleAllows('wall', requiredRole('/api/problems/close'))).toBe(false);
+    expect(roleAllows('wall', requiredRole('/api/reports/inventory'))).toBe(false);
   });
 });
 
@@ -184,7 +199,7 @@ describe('GET /api/sli/export behind the guard', () => {
     // The guard takes the header and pays the junk no mind; the route then turns the stray parameter away.
     const stray = await app.inject({ url: `${url}&token=junk`, headers: bearer(token) });
     expect(stray.statusCode).toBe(400);
-    expect(stray.json()).toMatchObject({ message: 'Only month and format are accepted.' });
+    expect(stray.json()).toMatchObject({ message: 'Only month, format, decimal, date and separator are accepted.' });
   });
 
   it('takes the session cookie, which is how a browser download arrives', async () => {

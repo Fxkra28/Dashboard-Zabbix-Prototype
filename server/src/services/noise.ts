@@ -76,7 +76,8 @@ export async function getNoise(days: number, minSeverity: number): Promise<Noise
     const durations = list.map((i) => i.end - i.start);
     const acked = list.filter((i) => i.acknowledged).length;
     const med = median(durations);
-    const longest = Math.max(...durations);
+    // Not Math.max(...durations): a call with about 125,000 arguments throws, and one flapping trigger gets there.
+    const longest = durations.reduce((a, b) => (b > a ? b : a), 0);
     const stillOpen = list.some((i) => !i.resolved);
     // An open problem's real age, not the part inside the window: a 1 day window holds at most a day of it.
     let openAge = 0;

@@ -23,13 +23,14 @@ const WINDOW_MS = 60_000;
 /** Bounds the table when every call comes from a new address (auth off). */
 const MAX_KEYS = 5_000;
 
-/** One fixed minute per key, started by that key's first call. */
+/** One fixed window per key, started by that key's first call: a minute unless told otherwise. */
 export class MinuteLimit {
   private readonly windows = new Map<string, { count: number; resetAt: number }>();
 
   constructor(
     private readonly max: number,
     private readonly now: () => number = Date.now,
+    private readonly windowMs: number = WINDOW_MS,
   ) {}
 
   /** Count a call: null when it may go ahead, else the seconds until this key's minute is over. */
@@ -38,7 +39,7 @@ export class MinuteLimit {
     const window = this.windows.get(key);
     if (!window || window.resetAt <= now) {
       this.windows.delete(key); // re-inserted, so the oldest key is always first
-      this.windows.set(key, { count: 1, resetAt: now + WINDOW_MS });
+      this.windows.set(key, { count: 1, resetAt: now + this.windowMs });
       if (this.windows.size > MAX_KEYS) this.prune(now);
       return null;
     }
@@ -50,6 +51,13 @@ export class MinuteLimit {
   private prune(now: number): void {
     for (const [key, window] of this.windows) if (window.resetAt <= now) this.windows.delete(key);
     while (this.windows.size > MAX_KEYS) this.windows.delete(this.windows.keys().next().value as string);
+  }
+}
+
+/** The same count over an hour. */
+export class HourLimit extends MinuteLimit {
+  constructor(max: number, now: () => number = Date.now) {
+    super(max, now, 60 * WINDOW_MS);
   }
 }
 

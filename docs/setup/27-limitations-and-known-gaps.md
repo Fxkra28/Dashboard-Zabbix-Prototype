@@ -16,7 +16,7 @@ not discovered by a reader.
 |---|---|
 | **It cannot collect anything** | Zabbix polls; the portal reads items. If Zabbix does not collect it, no portal feature can invent it |
 | **It cannot change monitoring** | One write exists, `event.acknowledge`. No host, item, trigger or template can be created, edited or deleted. See [ADR-0006](../architecture/adr/0006-read-only-with-one-write.md) |
-| **It remembers nothing** | Every derived value dies on restart. The portal keeps no audit trail of its own (who acknowledged what is in the text Zabbix stores, `[portal:<user>]`, and in the BFF's log), no saved views, no user table: [ADR-0003](../architecture/adr/0003-no-database.md) |
+| **It remembers almost nothing** | Every derived value dies on restart. The portal keeps no audit trail of its own (who acknowledged what is in the text Zabbix stores, `[portal:<user>]`, and in the BFF's log), no saved views, no user table. The one thing it keeps is a small state file in the hosted copy: the saved report recipients, the monthly schedule and the last 24 sends ([ADR-0003](../architecture/adr/0003-no-database.md), amended; [ADR-0015](../architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)) |
 | **It cannot see past Zabbix's retention** | 31 days of raw history, 365 days of trends and events. A two-year question has no answer through this API |
 
 ## Goals only partly met
@@ -29,7 +29,7 @@ not discovered by a reader.
 - Goal 4: the alert-noise report and the plain-language layer are built. Cross-trigger
   correlation is not.
 - Goal 6: availability, capacity, aging and top-triggers are built, and so is an on-demand PDF
-  and Excel download of the monthly SLA report (§18). A scheduled or emailed report is not.
+  and Excel download, and a zip of CSV files, of the monthly SLA report, which an administrator can also email to people they choose, and have sent by itself every month (§18).
 
 ## Security, still open
 
@@ -59,20 +59,23 @@ not discovered by a reader.
   statements of fixed frontend overhead. [ADR-0007](../architecture/adr/0007-keep-the-zabbix-api.md).
 - `stats.zabbixCalls` under-reports. Sliced `event.get` recursion is counted once, so the true
   figure is higher whenever a window exceeds 5,000 events.
-- Nobody has measured the cache hit rate. The 24-hour SLA TTL is a ceiling, not a floor: with a
-  500-entry LRU and parameterised keys, ordinary browsing can evict a fresh report in minutes. How
+- Nobody has measured the cache hit rate. The 24-hour SLA TTL is a ceiling, not a floor, for the month in progress: with a
+  500-entry LRU and parameterised keys, ordinary browsing can evict a fresh report in minutes. A closed month is pinned and stays. How
   often the expensive path actually runs is unknown, and it is the number that decides whether any of
   the performance work matters.
 - Every performance figure in this project is single-user and single-shot. There is no p95 and no
   concurrency data anywhere.
-- The SLA report files were checked on test data. The Excel file has not been opened in
-  Microsoft Excel itself. Both files have since been downloaded from the running portal on HCML's own
-  (frozen) data, on 12 October (size, pages and sheets read) and on 15 October (a 200 in the BFF log),
-  and nobody has reported how they look in Excel. §18 lists what each was checked with.
+- The SLA report files were checked on test data. The August workbook was opened in Microsoft Excel on
+  26 October 2026 with no repair prompt and read page by page. Both files were also downloaded from the
+  running portal, on 12 October (size, pages and sheets read), on 15 October (a 200 in the BFF log) and,
+  for October's workbook, on 27 October. What Excel shows for a download from the live portal itself has
+  not been seen. §18 lists what each was checked with.
 
 ## Data and correctness
 
-- The dataset is frozen at 17 September 2026 16:59:37. [ADR-0008](../architecture/adr/0008-stop-local-polling.md).
+- Since 29 October 2026 the portals read HCML's own Zabbix and the figures are current. Until then they read a copy frozen at
+  17 September 2026 16:59:37 ([ADR-0008](../architecture/adr/0008-stop-local-polling.md)). The biggest reads are slow on HCML's Zabbix:
+  [what waits, and for how long](../operations/after-a-restart.md).
 - 42 of the 135 monitored ICMP items have no trend data at all: they are address-less
   placeholders. Availability figures cover the 93 that do.
 - Hourly averages are integer-truncated for unsigned items by Zabbix itself, in `trends_uint`.

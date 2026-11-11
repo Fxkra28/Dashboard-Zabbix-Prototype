@@ -5,6 +5,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/__tests__/**/*.test.ts'],
+    // The number of tests, for tools/check/facts.check.mjs to hold the documents' counts to: a test cannot be counted without running one.
+    // Git ignores the file. It also holds every result, which only the counts are read from.
+    reporters: ['default', 'json'],
+    outputFile: { json: '.test-counts.json' },
     // Route tests mock '../clients/zabbix.js' per file; without isolation a mock from
     // one file would leak into the next through the ESM module cache.
     isolate: true,

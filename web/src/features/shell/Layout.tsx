@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar, { PAGE_TITLES } from './Sidebar';
 import ErrorBoundary from './ErrorBoundary';
@@ -47,10 +47,20 @@ export default function Layout() {
     else wallToggle.current?.focus();
   }, [wall]);
 
-  // logout() also tells the other tabs. The sign-in page follows even when the
-  // BFF did not answer, which leaves the cookie to run out on its own.
+  // logout() also tells the other tabs. The sign-in page follows only once the portal has signed the
+  // person out: until then the cookie still works, so the page stays and says so.
+  const [signOutFailed, setSignOutFailed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const signOut = async () => {
-    await logout().catch(() => undefined);
+    setSignOutFailed(false);
+    setSigningOut(true);
+    try {
+      await logout();
+    } catch {
+      setSignOutFailed(true);
+      setSigningOut(false);
+      return;
+    }
     resetAuthProbe();
     navigate('/login');
   };
@@ -100,9 +110,16 @@ export default function Layout() {
                 </select>
               </label>
               {me?.authEnabled && (
-                <button className="btn ghost sm" onClick={() => void signOut()}>
-                  Sign out
-                </button>
+                <>
+                  {signOutFailed && (
+                    <span className="signout-error" role="alert">
+                      Sign-out did not reach the portal. You are still signed in. Try again.
+                    </span>
+                  )}
+                  <button className="btn ghost sm" disabled={signingOut} onClick={() => void signOut()}>
+                    {signingOut ? 'Signing out...' : 'Sign out'}
+                  </button>
+                </>
               )}
             </div>
           </header>

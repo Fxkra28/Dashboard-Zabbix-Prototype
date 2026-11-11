@@ -1,6 +1,6 @@
 import { zbx } from '../clients/zabbix.js';
-import { cached } from '../core/cache.js';
-import { getProblems, openProblems } from '../domain/queries.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
+import { cachedProblems, openProblems } from '../domain/queries.js';
 import { getIcmpByHost, hostState } from '../domain/reachability.js';
 import { naturalCompare, siteFromHostName } from '../domain/naming.js';
 import { isNetworkKey, withoutNetworkItems } from '../security/viewerPolicy.js';
@@ -54,7 +54,7 @@ export async function getHostOverview() {
       selectInterfaces: ['ip', 'type', 'available'],
       sortfield: 'name',
     }),
-    cached('problems', 5_000, getProblems).then(openProblems),
+    cachedProblems().then(openProblems),
     getIcmpByHost(),
   ]);
 
@@ -105,9 +105,12 @@ export interface ItemQuery {
 /**
  * Items for one host, powers the graph item picker (or specific items of any host, which resolves a deep link).
  * The list is the same for every role; the caller cuts interface items for a viewer after this cache.
+ * It leaves out `lastvalue` and `lastclock`: Zabbix looks each one up on its own, 30 ms to 0.5 s an item on HCML's, so a host of 609
+ * graphable items took 20 to 32 s (tracker BK-25). The picker needs only names and ids; last values come from /api/latest.
  */
 export function findItems({ hostid, itemids, search, graphable }: ItemQuery) {
-  const key = `items:${hostid ?? ''}:${search ?? ''}:${graphable ? 1 : 0}:${itemids?.join(',') ?? ''}`;
+  const text = search?.trim() ?? '';
+  const key = `items:${hostid ?? ''}:${text}:${graphable ? 1 : 0}:${itemids?.join(',') ?? ''}`;
   return cached(key, 30_000, async () => {
     const items = await zbx<ZItem[]>('item.get', {
       ...(hostid ? { hostids: [hostid] } : {}),
@@ -118,8 +121,6 @@ export function findItems({ hostid, itemids, search, graphable }: ItemQuery) {
         'key_',
         'value_type',
         'units',
-        'lastvalue',
-        'lastclock',
         'state',
         'status',
         'delay',
@@ -127,12 +128,12 @@ export function findItems({ hostid, itemids, search, graphable }: ItemQuery) {
       ],
       selectTags: ['tag', 'value'],
       webitems: true,
-      ...(search ? { search: { key_: search } } : {}),
+      ...(text ? { search: { key_: text } } : {}),
       ...(graphable ? { filter: { value_type: ['0', '3'], status: '0', state: '0' } } : {}),
       sortfield: 'name',
     });
     return graphable ? items.filter(isGraphable) : items;
-  });
+  }, { typed: true });
 }
 
 /** The ids a Latest data request narrows to; Zabbix needs one of them to bound the result set. */
@@ -156,7 +157,8 @@ export interface LatestPageQuery {
  * Latest data, paged server-side: one light read of every matching id+name (search covers name OR key),
  * sorted naturally, then full details for just that page.
  */
-export function getLatestPage({ filter, hostid, groupid, needle, page, pageSize, hide }: LatestPageQuery) {
+export function getLatestPage({ filter, hostid, groupid, needle: typedNeedle, page, pageSize, hide }: LatestPageQuery) {
+  const needle = typedNeedle.trim();
   return cached(`latest:p:${hostid ?? ''}:${groupid ?? ''}:${needle}:${page}:${pageSize}:${hide ? 'v' : 'o'}`, 15_000, async () => {
     const all = await cached(`latest:ids:${hostid ?? ''}:${groupid ?? ''}:${needle}`, 15_000, async () => {
       const rows = await zbx<{ itemid: string; name: string; key_?: string }[]>('item.get', {
@@ -170,10 +172,12 @@ export function getLatestPage({ filter, hostid, groupid, needle, page, pageSize,
       return rows
         .sort((a, b) => naturalCompare(a.name, b.name) || naturalCompare(a.itemid, b.itemid))
         .map((r) => ({ id: r.itemid, net: isNetworkKey(r.key_) }));
-    });
+    }, { typed: true });
     const ids = (hide ? all.filter((r) => !r.net) : all).map((r) => r.id);
     const total = ids.length;
-    const slice = ids.slice((page - 1) * pageSize, page * pageSize);
+    // A page past the end is the last one, so an old address or a list that shrank never reads as empty.
+    const at = Math.min(page, Math.max(1, Math.ceil(total / pageSize)));
+    const slice = ids.slice((at - 1) * pageSize, at * pageSize);
     let items: { itemid: string }[] = [];
     if (slice.length) {
       const details = await zbx<{ itemid: string }[]>('item.get', {
@@ -185,19 +189,20 @@ export function getLatestPage({ filter, hostid, groupid, needle, page, pageSize,
       const byId = new Map(details.map((d) => [d.itemid, d]));
       items = slice.map((id) => byId.get(id)).filter((d): d is { itemid: string } => !!d);
     }
-    return { items, truncated: all.length >= LATEST_ID_LIMIT, total, page, pageSize };
-  });
+    return { items, truncated: all.length >= LATEST_ID_LIMIT, total, page: at, pageSize };
+  }, { typed: true });
 }
 
 /** Latest data without `page`: the original first-500 read, kept for older callers. */
 export function getLatestItems(filter: LatestFilter, hostid: string | undefined, groupid: string | undefined, search: string | undefined, hide: boolean) {
-  const key = `latest:${hostid ?? ''}:${groupid ?? ''}:${search ?? ''}`;
+  const text = search?.trim() ?? '';
+  const key = `latest:${hostid ?? ''}:${groupid ?? ''}:${text}`;
   return cached(key, 15_000, async () => {
     const items = await zbx<ZItem[]>('item.get', {
       output: LATEST_OUTPUT,
       selectHosts: ['hostid', 'name'],
       ...filter,
-      ...(search ? { search: { name: search } } : {}),
+      ...(text ? { search: { name: text } } : {}),
       monitored: true,
       webitems: true,
       sortfield: 'name',
@@ -207,5 +212,8 @@ export function getLatestItems(filter: LatestFilter, hostid: string | undefined,
     // rather than showing a short list that looks complete: the same
     // contract the report endpoints use.
     return { items, truncated: items.length >= LATEST_LIMIT };
-  }).then((r) => (hide ? { ...r, items: withoutNetworkItems(r.items) } : r)); // after the shared cache
+  }, { typed: true }).then((r) => (hide ? { ...r, items: withoutNetworkItems(r.items) } : r)); // after the shared cache
 }
+
+/** The Hosts overview as its route, the Devices page and the warm-up read it. */
+export const hostsOverviewView = () => cached('hosts:overview', 15_000, getHostOverview, SLOW_VIEW);

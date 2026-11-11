@@ -710,7 +710,7 @@ erDiagram
     PORTAL_USER {
         string name PK "parsed from PORTAL_USERS, name:password:role"
         string pass "plain text or scrypt hash"
-        string role "viewer, operator or admin"
+        string role "viewer, wall, operator or admin"
     }
     STATS {
         number hosts

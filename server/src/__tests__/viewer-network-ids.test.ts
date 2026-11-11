@@ -85,7 +85,7 @@ describe.each(READS)('/api/%s by item id', (_name, url) => {
       expect(res.statusCode, id).toBe(403);
       expect(res.json()).toEqual({
         error: 'forbidden',
-        message: 'Network interface data needs the "operator" role; you are signed in as "viewer".',
+        message: 'Network interface data needs the "wall" role; you are signed in as "viewer".',
       });
     }
     const reads = zbxMock.mock.calls.filter(([m]) => m === 'history.get' || m === 'trend.get');

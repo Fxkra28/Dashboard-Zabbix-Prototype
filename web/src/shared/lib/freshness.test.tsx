@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { BrowserRouter, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { api } from '../../api';
 import { Async } from '../components/states';
-import { ageWords, momentWords, noteStaleCopy, staleCopyOf } from './freshness';
+import { ageWords, momentWords, noteStaleCopy, REFRESHING_NOTICE_AFTER_S, staleCopyOf } from './freshness';
 import Availability from '../../features/sla/Availability';
 import Capacity from '../../features/reports/Capacity';
 import Overview from '../../features/dashboard/Overview';
@@ -300,7 +300,7 @@ describe('the live list says how old it is (UX-01) and how much of the list it s
   it('stamps the list with when it came, and says Live while the stream sends', () => {
     frame([problem(1, 4)]);
     openDashboard();
-    expect(document.querySelector('.live-age')?.textContent).toMatch(/^Updated \d\d:\d\d:\d\d$/);
+    expect(document.querySelector('.live-age')?.textContent).toMatch(/^Updated \d\d:\d\d:\d\d WIB$/);
     expect(badge()).toHaveTextContent('Live');
     expect(badge()).not.toHaveClass('late');
   });
@@ -314,7 +314,7 @@ describe('the live list says how old it is (UX-01) and how much of the list it s
     openDashboard();
     expect(badge()).toHaveClass('late');
     expect(badge()).toHaveTextContent('No new data for 1 min');
-    expect(screen.getByText(/^No new data since \d\d:\d\d:\d\d$/)).toBeInTheDocument();
+    expect(screen.getByText(/^No new data since \d\d:\d\d:\d\d WIB$/)).toBeInTheDocument();
   });
 
   it('counts the minutes without a running count for a screen reader', () => {
@@ -360,11 +360,12 @@ describe('words for ages and moments', () => {
   });
 
   it('momentWords gives the clock for today and puts the date before it for another day', () => {
-    const now = new Date(2026, 9, 7, 15, 30).getTime();
-    expect(momentWords(new Date(2026, 9, 7, 9, 5).getTime(), now)).toBe('09:05');
-    const other = momentWords(new Date(2026, 8, 17, 16, 59).getTime(), now);
-    expect(other).toMatch(/17/);
-    expect(other).toMatch(/16:59$/);
+    // Written in UTC: 15:30 on 7 October in Jakarta is 08:30 UTC, whatever zone this machine is in.
+    const now = Date.UTC(2026, 9, 7, 8, 30);
+    expect(momentWords(Date.UTC(2026, 9, 7, 2, 5), now)).toBe('09:05 WIB');
+    const other = momentWords(Date.UTC(2026, 8, 17, 9, 59), now);
+    expect(other).toMatch(/^17 /);
+    expect(other).toMatch(/16:59 WIB$/);
   });
 });
 
@@ -389,6 +390,42 @@ describe('noting an old copy (IN-05)', () => {
       noteStaleCopy(body, stale(age), 10_000_000);
       expect(staleCopyOf(body), String(age)).toEqual({ asOf: null });
     }
+  });
+
+  const refreshing = (age: string) => new Headers({ 'X-Data-Refreshing': 'true', 'X-Data-Age-Seconds': age });
+
+  it('remembers a copy shown while a newer one is read, as that kind, once it is two minutes old', () => {
+    const old = {};
+    noteStaleCopy(old, refreshing('300'), 10_000_000);
+    expect(staleCopyOf(old)).toEqual({ asOf: 10_000_000 - 300_000, refreshing: true });
+
+    const young = {};
+    noteStaleCopy(young, refreshing(String(REFRESHING_NOTICE_AFTER_S - 1)), 10_000_000);
+    expect(staleCopyOf(young)).toBeNull();
+    const unknown = {};
+    noteStaleCopy(unknown, new Headers({ 'X-Data-Refreshing': 'true' }), 10_000_000);
+    expect(staleCopyOf(unknown)).toBeNull();
+  });
+
+  it('takes a failed fetch for what it is when a reply says both', () => {
+    const body = {};
+    noteStaleCopy(body, new Headers({ 'X-Data-Stale': 'true', 'X-Data-Refreshing': 'true', 'X-Data-Age-Seconds': '600' }), 10_000_000);
+    expect(staleCopyOf(body)).toEqual({ asOf: 10_000_000 - 600_000 });
+  });
+
+  it('shows a refreshing copy as news, not a warning, above the page it belongs to', () => {
+    const body = { rows: [] };
+    noteStaleCopy(body, refreshing('300'), Date.now());
+    render(
+      <Async loading={false} error={null} data={body}>
+        {() => <p>the page</p>}
+      </Async>,
+    );
+    const note = screen.getByRole('status');
+    expect(note).toHaveClass('data-age');
+    expect(note).not.toHaveClass('refresh-failed');
+    expect(note.textContent).toMatch(/^Data from \d{2}:\d{2} WIB \(5 min ago\); a newer copy is being read from Zabbix\.$/);
+    expect(screen.getByText('the page')).toBeInTheDocument();
   });
 
   it('ignores a reply that is not flagged, and a body that cannot carry a note', () => {

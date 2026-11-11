@@ -7,7 +7,7 @@ What happens when the Problems page loads:
 1. React calls `api.problems()` → `fetch('/bff/api/problems')`. No token in the browser.
 2. Dev: Vite's proxy rewrites `/bff/api/problems` → `http://localhost:4000/api/problems`.
    Prod: nginx reverse-proxies `/bff/` → the `portal-bff` container.
-3. The BFF route checks its TTL cache (`problems`, 5 s). On a hit it returns instantly.
+3. The BFF route checks its TTL cache (`problems`, 15 s). On a hit it returns instantly.
 4. On a miss it calls `getProblems()` which:
    - calls Zabbix `problem.get` (raw problems, no host names),
    - collects the trigger ids, calls `trigger.get` with `selectHosts` once,

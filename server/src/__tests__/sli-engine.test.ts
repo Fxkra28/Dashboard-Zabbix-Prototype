@@ -8,6 +8,7 @@ import {
   parseDelay,
   wasMeasured,
   type SliHost,
+  type TriggerEvent,
 } from '../sli/engine.js';
 import { intersectIntervals, mergeIntervals, totalSeconds } from '../sli/intervals.js';
 
@@ -77,6 +78,25 @@ describe('initialState', () => {
     // first later event changed it from.
     expect(initialState([], trigger('0', 50), 10, 0)).toBe(true);
     expect(initialState([], trigger('1', 50), 10, 1)).toBe(false);
+  });
+});
+
+describe('initialState with the event before the window (BK-46)', () => {
+  const trigger = { value: '0', lastchange: '0' };
+  const first = (value: number): TriggerEvent[] => [{ clock: 100, value }];
+
+  it('says a first PROBLEM in the window is a repeat when the last event before the window was a PROBLEM', () => {
+    expect(initialState(first(1), trigger, 5_000, undefined, 1)).toBe(true);
+  });
+
+  it('keeps a first PROBLEM as the start of the problem when the last event before was an OK or there was none', () => {
+    expect(initialState(first(1), trigger, 5_000, undefined, 0)).toBe(false);
+    expect(initialState(first(1), trigger, 5_000, undefined, undefined)).toBe(false);
+  });
+
+  it('does not let the event before the window overrule a first OK, which always ends a problem', () => {
+    expect(initialState(first(0), trigger, 5_000, undefined, 0)).toBe(true);
+    expect(initialState(first(0), trigger, 5_000, undefined, 1)).toBe(true);
   });
 });
 
@@ -153,6 +173,7 @@ interface Fixture {
   events: { eventid: string; objectid: string; clock: number; value: number }[];
   items?: Params[];
   trends?: { itemid: string; clock: number; num: number }[];
+  history?: { itemid: string; clock: number }[];
   maintenance?: Params[];
   groups?: Params[];
 }
@@ -173,10 +194,10 @@ function serve(f: Fixture) {
           .filter(
             (e) =>
               p.objectids.includes(e.objectid) &&
-              e.clock >= p.time_from &&
+              e.clock >= (p.time_from ?? 0) &&
               e.clock <= p.time_till,
           )
-          .sort((a, b) => a.clock - b.clock)
+          .sort((a, b) => (p.sortorder === 'DESC' ? b.clock - a.clock : a.clock - b.clock))
           .slice(0, p.limit)
           .map((e) => ({ ...e, clock: String(e.clock), value: String(e.value) }));
         return rows;
@@ -187,6 +208,10 @@ function serve(f: Fixture) {
         return f.maintenance ?? [];
       case 'hostgroup.get':
         return f.groups ?? [];
+      case 'history.get':
+        return (f.history ?? [])
+          .filter((r) => p.itemids.includes(r.itemid) && r.clock >= p.time_from && r.clock <= p.time_till)
+          .map((r) => ({ itemid: r.itemid, clock: String(r.clock) }));
       case 'trend.get':
         return (f.trends ?? [])
           .filter((r) => p.itemids.includes(r.itemid) && r.clock >= p.time_from && r.clock <= p.time_till)
@@ -260,7 +285,7 @@ describe('computeSli: hcml-report profile', () => {
     serve({
       // In problem today, but it only went into problem in September, so it
       // was OK throughout August.
-      triggers: [trig('1', '101', '1.1 IDX02FW01', 'High ICMP ping loss', { value: '1', lastchange: String(AUG.to + 5 * 86400) })],
+      triggers: [trig('1', '101', '1.1 ALPHA-FW01', 'High ICMP ping loss', { value: '1', lastchange: String(AUG.to + 5 * 86400) })],
       parents: { '101': ['FortiGate by SNMP'] },
       events: [{ eventid: 'z', objectid: '1', clock: AUG.to + 5 * 86400, value: 1 }],
     });
@@ -556,5 +581,146 @@ describe('computeSli: planned maintenance (tracker BK-05)', () => {
     expect(byName['INET : SAMPANG WAN 1']).toMatchObject({ downtime: 3600, maintenance: 0 });
     expect(byName['INET : SAMPANG WAN 1'].sli).toBeCloseTo(100 * (1 - 3600 / MONTH), 10);
     expect(r.basis.maintenancePolicy).toBe('excluded');
+  });
+});
+
+describe('computeSli: a trigger set to multiple PROBLEM events (BK-46)', () => {
+  const eventCalls = () => zbxMock.mock.calls.filter(([m]) => m === 'event.get').map(([, p]) => p as Params);
+  const asked = () => eventCalls().filter((p) => p.sortorder === 'DESC');
+
+  it('counts the time before a repeated PROBLEM as down when the last event before the window was a PROBLEM', async () => {
+    serve({
+      triggers: [trig('1', '101', '1.2.1 IDX02CORESWITCH', 'High ICMP ping loss', { type: '1', value: '0' })],
+      parents: { '101': ['Cisco IOS by SNMP'] },
+      events: [
+        { eventid: 'a', objectid: '1', clock: AUG.from - 5000, value: 1 },
+        { eventid: 'b', objectid: '1', clock: AUG.from + 1000, value: 1 },
+        { eventid: 'c', objectid: '1', clock: AUG.from + 3000, value: 0 },
+      ],
+    });
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-08', profile: 'hcml-report' });
+    expect(r.hosts[0]).toMatchObject({ downtime: 3000, incidents: 1 });
+  });
+
+  it('starts the outage at the first PROBLEM in the window when the last event before it was an OK', async () => {
+    serve({
+      triggers: [trig('1', '101', '1.2.1 IDX02CORESWITCH', 'High ICMP ping loss', { type: '1' })],
+      parents: { '101': ['Cisco IOS by SNMP'] },
+      events: [
+        { eventid: 'a', objectid: '1', clock: AUG.from - 5000, value: 0 },
+        { eventid: 'b', objectid: '1', clock: AUG.from + 1000, value: 1 },
+        { eventid: 'c', objectid: '1', clock: AUG.from + 3000, value: 0 },
+      ],
+    });
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-08', profile: 'hcml-report' });
+    expect(r.hosts[0]).toMatchObject({ downtime: 2000, incidents: 1 });
+  });
+
+  it('starts it there too when there was no event before the window at all', async () => {
+    serve({
+      triggers: [trig('1', '101', '1.2.1 IDX02CORESWITCH', 'High ICMP ping loss', { type: '1' })],
+      parents: { '101': ['Cisco IOS by SNMP'] },
+      events: [
+        { eventid: 'b', objectid: '1', clock: AUG.from + 1000, value: 1 },
+        { eventid: 'c', objectid: '1', clock: AUG.from + 3000, value: 0 },
+      ],
+    });
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-08', profile: 'hcml-report' });
+    expect(r.hosts[0]).toMatchObject({ downtime: 2000, incidents: 1 });
+  });
+
+  it('asks for the event before the window once for each such trigger, newest first, one row, and for no other trigger', async () => {
+    serve({
+      triggers: [
+        trig('1', '101', '1.2.1 IDX02CORESWITCH', 'High ICMP ping loss', { type: '1' }),
+        // Single PROBLEM events: a first PROBLEM is always the start, nothing to ask.
+        trig('2', '102', '4.3.3 FPSO ARUBA 3', 'High ICMP ping loss', { type: '0' }),
+        // Its first event is an OK, which always ends a problem: nothing to ask either.
+        trig('3', '103', 'INET : SAMPANG WAN 1', 'High ICMP ping loss', { type: '1' }),
+        // No events in the window.
+        trig('4', '104', '2.1.1 SOMEWHERE', 'High ICMP ping loss', { type: '1' }),
+      ],
+      parents: {},
+      events: [
+        { eventid: 'a', objectid: '1', clock: AUG.from + 1000, value: 1 },
+        { eventid: 'b', objectid: '2', clock: AUG.from + 1000, value: 1 },
+        { eventid: 'c', objectid: '3', clock: AUG.from + 1000, value: 0 },
+      ],
+    });
+    const { computeSli } = await import('../sli/engine.js');
+    await computeSli({ month: '2026-08', profile: 'hcml-report' });
+    expect(asked()).toHaveLength(1);
+    expect(asked()[0]).toMatchObject({ objectids: ['1'], time_till: AUG.from - 1, sortorder: 'DESC', limit: 1 });
+    expect(asked()[0]!.time_from).toBeUndefined();
+  });
+
+  it('asks nothing extra when no trigger is set to multiple PROBLEM events', async () => {
+    serve({
+      triggers: [trig('1', '101', '1.2.1 IDX02CORESWITCH', 'High ICMP ping loss')],
+      parents: {},
+      events: [{ eventid: 'a', objectid: '1', clock: AUG.from + 1000, value: 1 }],
+    });
+    const { computeSli } = await import('../sli/engine.js');
+    await computeSli({ month: '2026-08', profile: 'hcml-report' });
+    expect(asked()).toEqual([]);
+  });
+
+  it('reads the type of each trigger from Zabbix', async () => {
+    serve({ triggers: [], parents: {}, events: [] });
+    const { computeSli } = await import('../sli/engine.js');
+    await computeSli({ month: '2026-08', profile: 'hcml-report' });
+    const call = zbxMock.mock.calls.find(([m]) => m === 'trigger.get')!;
+    expect((call[1] as Params).output).toContain('type');
+  });
+});
+
+describe('computeSli: the hours after the last trend row, in an open month (BK-46)', () => {
+  const SEP_FROM = AUG.to;
+  const NOW = Date.parse('2026-09-17T03:20:00Z') / 1000;
+  const HOUR = Math.floor(NOW / 3600) * 3600;
+  const world = (lastTrend: number, historyFrom: number) => {
+    const trends = [];
+    for (let h = SEP_FROM; h <= lastTrend; h += 3600) trends.push({ itemid: 'i101', clock: h, num: 60 });
+    const history = [];
+    for (let c = historyFrom; c < NOW; c += 60) history.push({ itemid: 'i101', clock: c });
+    serve({
+      triggers: [trig('1', '101', '1.2.1 IDX02CORESWITCH', 'Unavailable by ICMP ping')],
+      parents: { '101': ['Cisco IOS by SNMP'] },
+      events: [],
+      items: [{ itemid: 'i101', hostid: '101', key_: 'icmpping', delay: '1m', value_type: '3' }],
+      trends,
+      history,
+    });
+    return trends.length * 3600;
+  };
+  const historyCalls = () => zbxMock.mock.calls.filter(([m]) => m === 'history.get').map(([, p]) => p as Params);
+
+  beforeEach(() => vi.setSystemTime(new Date(NOW * 1000)));
+
+  it('reads the hours after the last trend row from history when it is within six hours of the end', async () => {
+    const fromTrends = world(HOUR - 3 * 3600, HOUR - 2 * 3600);
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-09', profile: 'availability' });
+    expect(r.hosts[0]!.covered).toBe(fromTrends + 2 * 3600 + 1200);
+    expect(historyCalls().every((p) => p.time_from === HOUR - 2 * 3600)).toBe(true);
+  });
+
+  it('reads the hour in progress, and no more, when the last trend row is older than that', async () => {
+    const fromTrends = world(HOUR - 10 * 3600, HOUR - 9 * 3600);
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-09', profile: 'availability' });
+    expect(r.hosts[0]!.covered).toBe(fromTrends + 1200);
+    expect(historyCalls().length).toBeGreaterThan(0);
+    expect(historyCalls().every((p) => p.time_from === HOUR && p.time_till === NOW)).toBe(true);
+  });
+
+  it('reads the hour in progress when there is no trend row at all', async () => {
+    world(SEP_FROM - 3600, HOUR);
+    const { computeSli } = await import('../sli/engine.js');
+    const r = await computeSli({ month: '2026-09', profile: 'availability' });
+    expect(r.hosts[0]!.covered).toBe(1200);
   });
 });

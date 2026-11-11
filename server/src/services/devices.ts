@@ -1,8 +1,8 @@
 import { zbx } from '../clients/zabbix.js';
-import { cached } from '../core/cache.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 import { DEVICE_CLASS_LABELS, deviceClass, siteFromHostName, type DeviceClass } from '../domain/naming.js';
 import { categoryFor } from '../sli/engine.js';
-import { getHostOverview } from './hosts.js';
+import { hostsOverviewView } from './hosts.js';
 
 /**
  * Devices: every host as a device of one kind, for the Devices page; the kind is naming.ts `deviceClass` (template, then name), as in the SLA report.
@@ -23,7 +23,7 @@ export const CLASS_ORDER: readonly DeviceClass[] = [
 
 export async function getDevices() {
   const [overview, templates] = await Promise.all([
-    cached('hosts:overview', 15_000, getHostOverview),
+    hostsOverviewView(),
     cached('hosts:templates', 300_000, () =>
       zbx<{ hostid: string; parentTemplates?: { name: string }[] }[]>('host.get', {
         output: ['hostid'],
@@ -41,3 +41,6 @@ export async function getDevices() {
     }),
   };
 }
+
+/** The Devices page as its route and the warm-up read it. */
+export const devicesView = () => cached('devices', 30_000, getDevices, SLOW_VIEW);

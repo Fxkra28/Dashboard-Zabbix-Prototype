@@ -128,12 +128,13 @@ is about 10 pages and 69 KB and the workbook about 23 KB. In a fresh process the
   this and the SLA page shows the same sum, so a group's downtime and its SLA do not always describe
   the same devices. The report's notes say that a group row adds up all its devices.
 
-Not done: a scheduled or emailed report, which would need HCML to say who gets it and when, a mail
+Not done when this was written: a scheduled report, which would need HCML to say who gets it and when, a mail
 relay or a folder to write to, and somewhere for the schedule to live, while the portal keeps nothing
-([ADR-0003](0003-no-database.md)). Goal 6 stays partial. Also not done: a CSV file of this report (other pages have one: Alert noise, the Inventory scorecard and, since
+([ADR-0003](0003-no-database.md)). Goal 6 stays partial. An emailed report, on an administrator's request, was added on
+4 November 2026: see [ADR-0014](0014-email-the-sla-report-through-smtp.md). Also not done then: a CSV file of this report (other pages have one: Alert noise, the Inventory scorecard and, since
 19 October 2026, the Graphs page's Show data), a chart in the
 workbook, fonts beyond Western European letters, and an export of any page but the SLA report. The
-Availability page's buttons download this report, not that page's own table.
+Availability page's buttons download this report, not that page's own table. Amended 9 November 2026: the scheduled report and the CSV file were built on 4 November 2026 (tracker IN-59 and FR-27, [ADR-0015](0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)).
 
 ## Pros and Cons of the Options
 

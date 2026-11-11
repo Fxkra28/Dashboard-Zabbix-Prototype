@@ -42,7 +42,8 @@ The gates:
 *Amended 20 October 2026 (tracker SC-23).* Gate 1 holds for the portal's code, which uses the read token only
 through `zbx()` and the write token only through `zbxWrite()`. It does not yet hold for the credential: checked on
 13 October, both tokens belong to the built-in `Admin` user, whose role is Super admin, so whoever held the read
-token could write with it. Until the read token belongs to a user whose role allows only the read methods (a change
+token could write with it. Read again on 3 November on HCML's own Zabbix (the first reading was of the local copy): the
+three tokens that exist belong to users 4 and 12, both with the Super admin role, and the built-in `Admin` owns none. Until the read token belongs to a user whose role allows only the read methods (a change
 in Zabbix, which is HCML's to make), read "cannot write" in this record as "is never used to write", and
 "provably read-only" below as a statement about the code.
 
@@ -73,8 +74,8 @@ pushed to every open SSE client immediately.
 * Two credentials to provision, store and rotate rather than one.
 * `ROUTE_RULES` reserves `/api/problems/close` but no such route exists: a dead rule that reads
   like a missing feature.
-* Roles gate by sensitivity and cost, not by write access: `admin` guards the inventory scorecard and
-  `operator` guards the network pages, neither of which writes anything. That is deliberate, and it
+* Roles gate by sensitivity and cost, not by write access: `admin` guards the inventory scorecard, the emailed report and the monthly send, and
+  `wall` guards the network pages, none of which writes to Zabbix. That is deliberate, and it
   surprises people who expect the roles to mean read/write.
 
 ## Pros and Cons of the Options

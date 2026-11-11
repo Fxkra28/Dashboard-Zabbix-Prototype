@@ -26,8 +26,11 @@ by open severity, then hosts down. The Links page applies the same freshness rul
 ## Is Zabbix still collecting?
 
 A stopped `zabbix-server` leaves every API call working and every value in place, so a frozen
-estate looks live. `GET /api/freshness` rolls up the newest `lastclock` of any supported ICMP item,
-from the same `item.get` the host states read (so it costs Zabbix no extra call), and says `stale`
+estate looks live. `GET /api/freshness` rolls up the newest value of any supported ICMP item, from
+the same reads the host states make (so it costs Zabbix no extra call): the ping items, listed once
+an hour, and their values of the last 15 minutes, one `history.get` per value type, which took HCML's
+Zabbix 2.8 s where its own `lastvalue` for the same 405 items took 54.5 s. With nothing in those 15
+minutes, Zabbix's own last value of a few items says how long ago it stopped. It says `stale`
 once nothing has been collected for ten minutes, the same floor a ping stays fresh for. The
 Dashboard polls it every minute: when stale it shows "Zabbix has collected nothing since …" and
 turns the Live badge to the late style. No ICMP item means an unknown age, never a stale one.
@@ -53,11 +56,18 @@ method counts each as 100 %; the SLA page lists them and the figures are unchang
   evicted first. A value bigger than the whole budget is answered but not stored, with a warning;
 - `pin`: evicted only after every unpinned entry, so a run of graph keys cannot push out a closed
   month's SLA report (`services/sli.ts` pins closed months). Pins share at most 32 MB;
-- `staleMs`: serve the previous value while one background refresh runs, only for the slow reports
-  (`derived-sli:*`, `avail:*`, `noise:*`, `capacity:*`), never for anything carrying problem state;
+- `staleMs`: serve the previous value while one background refresh runs, for the slow reports
+  (`derived-sli:*`, `avail:*`, `noise:*`, `capacity:*`) and for the views HCML's Zabbix takes tens
+  of seconds to build (`SLOW_VIEW`: the Hosts overview, Devices, the network pages, the meters, the
+  busiest hosts, web monitoring, services, maps and the SLA), never for the problem list. With
+  `noteAge` the answer says how old it is (`X-Data-Refreshing: true` and `X-Data-Age-Seconds`), and
+  the page shows "Data from …; a newer copy is being read from Zabbix." once the copy is two
+  minutes old;
 - `staleIfError`: if Zabbix fails, answer from the last good run rather than a 502. The request is
   told: `staleness.ts` adds `X-Data-Stale: true` and `X-Data-Age-Seconds` to that answer, from a
-  note `cache.ts` leaves in a request-scoped store, and to no other. The web app shows "Zabbix did
+  note `cache.ts` leaves in a request-scoped store, and to no other. A failure also starts a pause of a minute
+  (`REFRESH_RETRY_MS`): until it has passed the same copy is answered without asking Zabbix, so a Zabbix that is
+  down is asked about each value once a minute (tracker BK-27, BK-31). The web app shows "Zabbix did
   not answer, so this is the last copy the portal kept, from …" on the SLA, Availability, Capacity
   and Alert noise pages;
 - `invalidate(prefix, { holdMs })` also cancels fetches already in flight, so data from before an
@@ -86,8 +96,8 @@ method counts each as 100 %; the SLA page lists them and the figures are unchang
   because behind Docker's port publishing every browser arrives from the same gateway address.
 - The live stream has its own nginx location whose error log is set to `crit`, so an unreachable BFF
   does not write an old page's stream token into the error log.
-- Docker publishes the Zabbix UI (8080) and the portals (8081, and 8082 for the Ollama variant) on
-  `127.0.0.1` only; the trapper port 10051 is no longer published.
+- Docker publishes the portals (8081, and 8082 for the Ollama variant) on `127.0.0.1` only. The local Zabbix
+  stack that once published its UI (8080) and a trapper port (10051) was taken down on 29 October 2026.
 
 ## Guards against drift
 
@@ -120,6 +130,9 @@ method counts each as 100 %; the SLA page lists them and the figures are unchang
   than 20 s gets `503 ai_busy` with `Retry-After`.
 
 ## Zabbix stack settings (`Proto1/docker-compose.yml`)
+
+Retired on 29 October 2026: the portals read HCML's Zabbix (option B), and this local stack was taken down. The
+table records how it was tuned while it ran.
 
 | Setting | Why | Measured |
 |---|---|---|

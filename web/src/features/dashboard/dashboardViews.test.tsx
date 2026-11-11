@@ -64,6 +64,14 @@ describe('the Dashboard views', () => {
     await waitFor(() => expect(api.netMeters).toHaveBeenCalledTimes(1));
   });
 
+  it('shows a wall screen\'s account the three views and the meters, as an operator sees them (MT-06)', async () => {
+    signedInAs('wall');
+    open();
+    expect(await screen.findByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'Hosts', 'Internet traffic']);
+    await waitFor(() => expect(api.netMeters).toHaveBeenCalledTimes(1));
+  });
+
   it('asks for the meters once for both views: the tab shows what the card was given', async () => {
     const user = userEvent.setup();
     signedInAs('operator');
@@ -281,6 +289,13 @@ describe('the wall screen turning by itself', () => {
     expect(window.location.search).toBe('');
   });
 
+  it('writes the clock and the name of its zone as two words, so a screen reader does not read "05WIB"', async () => {
+    signedInAs('operator');
+    await wall();
+    const clock = document.querySelector('.wall-stamp .wall-time');
+    expect(clock?.textContent).toMatch(/^\d{2}:\d{2}:\d{2} WIB$/);
+  });
+
   it('takes the seconds from the address', async () => {
     signedInAs('operator');
     await wall('/?rotate=10');
@@ -460,5 +475,25 @@ describe('the wall screen turning by itself', () => {
     open('/?view=internet');
     expect(await screen.findAllByRole('meter')).toHaveLength(40);
     expect(screen.queryByText(/^Page \d/)).toBeNull();
+  });
+
+  it('says the items are still being counted, and shows the counts that are in', async () => {
+    signedInAs('viewer');
+    vi.spyOn(api, 'stats').mockResolvedValue({ hosts: 24, items: null, triggers: 300, groups: 8, problems: 0, unacknowledged: 0, bySeverity: {} });
+    open();
+    const card = async (label: string) => (await screen.findByText(label, { selector: '.label' })).closest('.kpi');
+    await waitFor(async () => expect(await card('Items')).toHaveTextContent('counting'));
+    expect(await card('Items')).toHaveTextContent('…');
+    expect(await card('Hosts')).toHaveTextContent('24');
+  });
+
+  it('says the triggers are still being counted too, which took HCML\'s Zabbix 74 s', async () => {
+    signedInAs('viewer');
+    vi.spyOn(api, 'stats').mockResolvedValue({ hosts: 24, items: 33226, triggers: null, groups: 8, problems: 0, unacknowledged: 0, bySeverity: {} });
+    open();
+    const card = async (label: string) => (await screen.findByText(label, { selector: '.label' })).closest('.kpi');
+    await waitFor(async () => expect(await card('Triggers')).toHaveTextContent('counting'));
+    expect(await card('Triggers')).toHaveTextContent('…');
+    expect(await card('Items')).toHaveTextContent('33226');
   });
 });

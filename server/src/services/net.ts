@@ -1,5 +1,5 @@
 import { zbx } from '../clients/zabbix.js';
-import { cached } from '../core/cache.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 import { config } from '../core/config.js';
 import { naturalCompare, siteFromHostName } from '../domain/naming.js';
 import { getIcmpByHost, isFresh } from '../domain/reachability.js';
@@ -176,7 +176,7 @@ export function getNetDevices() {
     return hosts
       .map((h) => {
         const r = icmp.get(h.hostid);
-        // Loss and latency stay on this operator-only route; the viewer
+        // Loss and latency stay on this route, which starts at the wall role; the viewer
         // routes (Sites, Hosts) carry only the derived state.
         return {
           ...h,
@@ -185,7 +185,7 @@ export function getNetDevices() {
         };
       })
       .sort((a, b) => naturalCompare(a.name, b.name));
-  });
+  }, SLOW_VIEW);
 }
 
 export interface InterfaceQuery {
@@ -202,15 +202,19 @@ export interface InterfaceQuery {
  * the core switch), filtered and paged.
  */
 export async function getInterfacePage({ hostid, search, status: wanted, page, pageSize }: InterfaceQuery) {
-  const rows = await cached(`net:interfaces:${hostid}`, 15_000, async () =>
-    groupInterfaces(
-      await zbx<ZIfItem[]>('item.get', {
-        hostids: [hostid],
-        search: { key_: 'net.if.' },
-        startSearch: true,
-        output: ['itemid', 'name', 'key_', 'lastvalue', 'lastclock', 'units', 'value_type', 'state', 'status'],
-      }),
-    ),
+  const rows = await cached(
+    `net:interfaces:${hostid}`,
+    15_000,
+    async () =>
+      groupInterfaces(
+        await zbx<ZIfItem[]>('item.get', {
+          hostids: [hostid],
+          search: { key_: 'net.if.' },
+          startSearch: true,
+          output: ['itemid', 'name', 'key_', 'lastvalue', 'lastclock', 'units', 'value_type', 'state', 'status'],
+        }),
+      ),
+    { ...SLOW_VIEW, typed: true },
   );
 
   const needle = search?.trim().toLowerCase() ?? '';
@@ -222,11 +226,13 @@ export async function getInterfacePage({ hostid, search, status: wanted, page, p
   const status = wanted === 'up' || wanted === 'down' || wanted === 'other' ? wanted : undefined;
   const filtered = status ? searched.filter((r) => statusBucket(r.operStatus) === status) : searched;
 
+  // A page past the end is the last one, so an old address or a list that shrank never reads as empty.
+  const at = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
   return {
-    rows: filtered.slice((page - 1) * pageSize, page * pageSize),
+    rows: filtered.slice((at - 1) * pageSize, at * pageSize),
     total: filtered.length,
     summary,
-    page,
+    page: at,
     pageSize,
   };
 }

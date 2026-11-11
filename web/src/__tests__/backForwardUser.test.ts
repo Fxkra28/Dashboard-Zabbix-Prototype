@@ -44,4 +44,26 @@ describe('a page Back restores after another user signed in', () => {
     expect(changed).toHaveBeenCalledTimes(2);
     window.removeEventListener(AUTH_CHANGED, changed);
   });
+
+  it('tells what a page keeps for one person (the Graphs item list) as well as the menus, when the user or the role changed', async () => {
+    const fetchMock = vi.fn(async () => me('ana', 'operator'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { api, onSessionChange, sessionTiming } = await import('../api');
+    await api.me();
+    const heard = vi.fn();
+    const stop = onSessionChange(heard);
+    const restoreAndSettle = async (answer: () => Response) => {
+      fetchMock.mockImplementation(async () => answer());
+      const before = sessionTiming();
+      restoredFromCache();
+      await vi.waitFor(() => expect(sessionTiming()).not.toBe(before));
+      await new Promise((r) => setTimeout(r, 0));
+    };
+
+    await restoreAndSettle(() => me('ana', 'operator'));
+    expect(heard).not.toHaveBeenCalled();
+    await restoreAndSettle(() => me('ana', 'viewer'));
+    expect(heard).toHaveBeenCalledTimes(1);
+    stop();
+  });
 });

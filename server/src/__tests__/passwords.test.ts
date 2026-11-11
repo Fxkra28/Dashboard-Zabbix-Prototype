@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SCRYPT_DEFAULTS, hashPassword, isGuessable, parseStoredPassword, verifyPassword } from '../security/passwords.js';
+import { SCRYPT_DEFAULTS, hashPassword, isCommon, isGuessable, parseStoredPassword, verifyPassword } from '../security/passwords.js';
 
 /**
  * Password storage: plain text as before, or a self-describing scrypt hash,
@@ -107,6 +107,27 @@ describe('isGuessable', () => {
 
   it('leaves an unusable hash to the parser, which refuses it', () => {
     expect(isGuessable('scrypt.nonsense')).toBe(false);
+  });
+});
+
+describe('isCommon (SC-46)', () => {
+  it.each(['secret', 'Secret', 'ZABBIX', ' password ', 'changeme', 'ChangeMe', '123456'])('flags %j, whatever its case and spaces', (stored) => {
+    expect(isCommon(stored)).toBe(true);
+  });
+
+  it.each(['<a long password>', '<password>', ' <your password> '])('flags the placeholder %j from the documents', (stored) => {
+    expect(isCommon(stored)).toBe(true);
+  });
+
+  it.each(['a-long-real-password', 'secretive', 'zabbix-2026-long-one', 'pass word', '1234567', '<open', 'close>', ''])('leaves %j alone', (stored) => {
+    expect(isCommon(stored)).toBe(false);
+  });
+
+  it('flags a hash of a common password, and of nothing else', async () => {
+    expect(isCommon(await hashPassword('secret', CHEAP))).toBe(true);
+    expect(isCommon(await hashPassword('zabbix', CHEAP))).toBe(true);
+    expect(isCommon(await hashPassword('a-long-real-password', CHEAP))).toBe(false);
+    expect(isCommon('scrypt.nonsense')).toBe(false);
   });
 });
 

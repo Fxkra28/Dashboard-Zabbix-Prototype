@@ -1,7 +1,7 @@
 import { zbx } from '../clients/zabbix.js';
-import { cached } from '../core/cache.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 import { config } from '../core/config.js';
-import { getProblems, openProblems } from '../domain/queries.js';
+import { cachedProblems, openProblems } from '../domain/queries.js';
 
 interface ZSelement {
   selementid: string;
@@ -121,7 +121,7 @@ export function getMapDetail(mapid: string) {
             output: ['hostid', 'host', 'name'],
             selectInterfaces: ['ip', 'dns', 'useip', 'main'],
           }),
-          cached('problems', 5_000, getProblems).then(openProblems),
+          cachedProblems().then(openProblems),
         ])
       : [[], []];
 
@@ -149,7 +149,7 @@ export function getMapDetail(mapid: string) {
         };
       }),
     }));
-  });
+  }, { ...SLOW_VIEW, typed: true });
 }
 
 /** Monitoring → Maps: list available network maps. */

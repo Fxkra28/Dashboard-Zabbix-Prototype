@@ -1,11 +1,11 @@
 # Screenshots
 
-The main pages of the portal, as images. They were taken on 20 October 2026 from a running portal that
-reads HCML's restored Zabbix data, built from the working tree on top of commit `5cf5268`. The footer of the images says `Build 0044efe-dirty`, a label set by hand when the
-portal was started and one commit behind the tree it was built from. The set of 13
-October, from commit `cef91b3`, is replaced: it showed the Dashboard before its Hosts and Internet traffic
-views, and Graphs before the CSV download. The Dashboard's Internet traffic view has no image here: see "Adding or replacing one".
-Each is one screen, 1440 px wide, in the light theme unless it says otherwise.
+The main pages of the portal, as images. They were taken on 11 November 2026 from a throwaway portal made from the live image of
+`hcml-portal`, which reads HCML's own Zabbix (the set of 20 October came from the restored copy of September). The throwaway had a
+made-up sign-in, no write token and no mail. The footer of the images says `Build bfa4d45-dirty, 11/11/2026, 12.29.05 WIB`: the build that
+went live that day, made from the working tree on top of commit `bfa4d45`. The set of 20 October is replaced: it showed the look before
+26 October (soft depth, the white logo) and none of what came after. The Dashboard's Internet traffic view has no image here: see "Adding or
+replacing one". Each is one screen, 1440 px wide, in the light theme unless it says otherwise.
 
 ## What is real and what is replaced
 
@@ -21,11 +21,11 @@ stops, writing nothing, if a real one is still there.
 
 Not replaced, because the pages need them or this repository already says them: counts, severities, times,
 site names, host group names, interface names such as `Gi1/0/8`, template names such as `Cisco IOS by SNMP`,
-and the text of triggers that name no host. The figures are real, so the images show the size and shape of
-the estate, though not what its devices are called.
+the names of the web monitoring scenarios, and the text of triggers that name no host. The figures are real, so the
+images show the size and shape of the estate, though not what its devices are called.
 
-The Zabbix server in the restored copy is off, so devices read "No data" and nothing is being polled. That
-is how the portal looks on this data, and it is left as it is.
+The data is HCML's own, read when the pictures were taken, so a device shows whether it answers ping and the lists of
+busiest hosts hold values. Acknowledge is off, because the portal that was shot had no write token.
 
 ## The images
 
@@ -43,14 +43,13 @@ second view is the next image; the third, Internet traffic, has none.
 
 How many hosts are up, degraded, down or without data, the devices of each kind, the web scenarios that
 pass, fail or have no current result, and the ten busiest hosts by CPU and by memory. Everyone sees it. The
-two lists of busiest hosts say "No current value" because the Zabbix server of this restored copy is off,
-and a figure that is old is never listed.
+two lists of busiest hosts show the highest current values, and a figure that is old is never listed.
 
 ### Dashboard: Internet traffic
 
 There is no image of it. The view draws a gauge for each gauge widget of HCML's Zabbix dashboard, with the
 capacity and the colour zones the widget gives, the value, and an old reading dimmed with its age, for
-operators and administrators only, because it is interface data. The capacity of each link is a figure HCML
+the wall, operators and administrators only, because it is interface data. The capacity of each link is a figure HCML
 typed into its own Zabbix, and on 22 October 2026 the owner chose not to publish it, so the picture that was
 here was removed (it is still in the commit of 20 October). A wall screen signed in as an operator or an
 administrator turns between the three views by itself.
@@ -90,15 +89,15 @@ With Show data open the table stays open when an item is added or removed or the
 
 A tile for each kind of device (switches, firewalls, access points, radio repeaters, servers, WAN links, web
 services, other) with its count, how many have problems and how many are down, and under them the list of
-the kind chosen, with its site, interface, availability, problems and template. Operators and administrators
+the kind chosen, with its site, interface, availability, problems and template. The wall, operators and administrators
 also get a Ports link on each row.
 
 ### Network
 
-![Network: devices grouped by site, all reading No data](network.png)
+![Network: devices grouped by site, each with whether it answers ping, its packet loss and its round trip time](network.png)
 
-Devices grouped by site. They read "No data" because the Zabbix server of this restored copy is off. A
-card opens that device's interfaces.
+Devices grouped by site, each with whether it answers ping, its packet loss and its round trip time; a device with
+no ping data reads "No data". A card opens that device's interfaces.
 
 ### Dark theme
 

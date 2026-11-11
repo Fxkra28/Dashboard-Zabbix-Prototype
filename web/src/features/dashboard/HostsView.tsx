@@ -6,9 +6,8 @@ import { BUSY, HOT, NO_WEB_WORDS, WALL_FAILURES, WALL_TOP_ROWS, WEB_SUB, availab
 import { tally, trouble } from '../hosts/deviceTally';
 import KpiCard from '../../shared/components/KpiCard';
 import { Async } from '../../shared/components/states';
-
-const clockTime = (ms: number) =>
-  new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+import { formatClockLabeled } from '../../shared/lib/time';
+import { useReportTimeZone } from '../../shared/hooks/useReportTimeZone';
 
 const TOP_TITLE = { cpu: 'Top hosts by CPU', memory: 'Top hosts by memory' } as const;
 
@@ -87,7 +86,7 @@ function WebPanel({ w, wall }: { w: WebMonitoringResponse; wall: boolean }) {
                     {wall ? f.host : <Link to={`/graphs?hostid=${f.hostid}&itemid=${f.itemid}`}>{f.host}</Link>} · {f.name}
                   </span>
                   <span className="muted">
-                    {failureWords(f)}, {clockTime(f.clock * 1000)}
+                    {failureWords(f)}, {formatClockLabeled(f.clock * 1000, true)}
                   </span>
                 </li>
               ))}
@@ -127,9 +126,10 @@ function TopList({ m, wall }: { m: TopHostsMetric; wall: boolean }) {
 
 /** The Dashboard's Hosts view. `q` is the Dashboard's three requests (useHostsView.ts); a wall shows no links. */
 export default function HostsView({ q, wall }: { q: HostsViewQuery; wall: boolean }) {
+  useReportTimeZone();
   return (
     <>
-      {q.devices.updatedAt !== null && <p className="muted view-updated">Updated {clockTime(q.devices.updatedAt)}</p>}
+      {q.devices.updatedAt !== null && <p className="muted view-updated">Updated {formatClockLabeled(q.devices.updatedAt, true)}</p>}
       <Async loading={q.devices.loading} error={q.devices.error} data={q.devices.data} updatedAt={q.devices.updatedAt} loadingLabel="Loading the hosts…">
         {(d) => <Counts data={d} wall={wall} />}
       </Async>

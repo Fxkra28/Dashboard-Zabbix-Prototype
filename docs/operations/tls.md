@@ -76,7 +76,7 @@ server {
 }
 ```
 
-The portal's own nginx still sets the real limit for each route (60 seconds for an ordinary call),
+The portal's own nginx still sets the real limit for each route (360 seconds for an ordinary call, 480 for the SLA and for explanations),
 so the hour here only lets the streams run.
 
 ## Option B: Caddy
@@ -144,7 +144,54 @@ Then sign in in a browser and open the developer tools. The `hcml_session` cooki
 `hcml_session_ollama`) must be marked `Secure`. If it is not, `X-Forwarded-Proto` is not reaching the
 BFF. If sign-in answers 403 `csrf`, the proxy is not passing the browser's `Host`.
 
+## When Zabbix's own certificate has expired
+
+With an `https://` address in `ZBX_URL`, the BFF checks Zabbix's certificate as a browser would. An
+expired one is refused: the BFF log says `CERT_HAS_EXPIRED` and every page says the data source is
+not answering. The fix is a renewed certificate. Until it arrives, two settings let the BFF accept
+the one certificate it already knows, up to a day you choose:
+
+```bash
+ZBX_TLS_PIN_SHA256=<the certificate's SHA-256 fingerprint>
+ZBX_TLS_PIN_UNTIL=2026-11-30     # accepted until 23:59 WIB that day
+```
+
+The exception (`server/src/clients/pinnedTls.ts`) still refuses:
+
+- any other certificate, one for the same name included. The fingerprint must match, and the
+  handshake proves the server holds that certificate's key;
+- a certificate with any fault besides its age, or one that does not name the host in `ZBX_URL`;
+- everything after the last day. Connections opened earlier are closed then, so none carries a
+  request past it.
+
+The connection is judged before the request is written, so a refused server never receives the
+token. A certificate that passes the normal check, the renewed one for example, goes through as
+before: renewal needs no change here, and the two lines can then be deleted. Other HTTPS
+connections, such as the AI provider's, keep the normal check. The BFF warns at every start while
+the lines are set.
+
+Take the fingerprint from a check of the chain, not from the BFF's error. Node names only the last
+fault it finds, and age is checked last, so "expired" alone does not show who signed the
+certificate. `-no_check_time` makes OpenSSL check everything except the dates:
+
+```bash
+host=zabbix.example.com
+openssl s_client -connect "$host:443" -servername "$host" -showcerts </dev/null 2>/dev/null \
+  | awk '/BEGIN CERT/{n++; on=1} on{print > (n == 1 ? "leaf.pem" : "chain.pem")} /END CERT/{on=0}'
+# A server that sends only its own certificate leaves no chain.pem: fetch the issuer the certificate names.
+[ -s chain.pem ] || curl -s "$(openssl x509 -in leaf.pem -noout -ext authorityInfoAccess | sed -n 's/.*CA Issuers - URI://p')" \
+  | openssl x509 -inform DER -out chain.pem
+openssl verify -no_check_time -untrusted chain.pem leaf.pem   # leaf.pem: OK
+openssl x509 -in leaf.pem -noout -fingerprint -sha256         # the value for ZBX_TLS_PIN_SHA256
+```
+
+`-ext` and `-no_check_time` need OpenSSL 1.1.1 or newer. The `openssl` that macOS ships is LibreSSL 3.3 and refuses both options (it prints "unknown option -ext" or its usage text); use the one from Homebrew, `$(brew --prefix openssl)/bin/openssl`.
+
 ## What was tested
+
+The fingerprint commands above were run against HCML's Zabbix on 27 October 2026. Its server sent
+only its own certificate, which is why the `chain.pem` step is there; the same gap makes Node refuse
+even a renewed certificate unless the server is set to send the GeoTrust intermediate with it.
 
 These recipes were written from each product's documentation and from how this portal reads its
 headers (`server/src/security/auth.ts`, `setup.md` §23, ADR-0010). They were **not run** against a live

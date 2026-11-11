@@ -23,6 +23,13 @@ proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 # below carries it too, so one id finds the request in both.
 proxy_set_header X-Request-Id $request_id;
 
+# The four security headers are the server's (default.conf), on a reply nginx makes itself as well as on this one.
+# The copies the BFF's helmet sends are dropped, so that each header is sent once.
+proxy_hide_header X-Frame-Options;
+proxy_hide_header X-Content-Type-Options;
+proxy_hide_header Referrer-Policy;
+proxy_hide_header Content-Security-Policy;
+
 # No Connection header to the BFF, so the connection can stay open (the streams need that).
 # Buffering and the read timeout are set per location in default.conf: only the
 # streams run unbuffered with a long timeout.

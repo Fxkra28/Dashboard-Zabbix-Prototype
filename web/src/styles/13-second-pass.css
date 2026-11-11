@@ -35,6 +35,13 @@ table.data a:not(.btn):hover {
   font-size: var(--t-sm);
 }
 
+/* An older copy shown while a newer one is read: news, not a warning. */
+.data-age {
+  margin-bottom: var(--s-2-5);
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
 /* A problem inside a planned maintenance window: neutral, like "no data", because it counts nowhere */
 .pill.maintenance {
   color: var(--muted);

@@ -31,9 +31,17 @@ export const PERCENT_DP = {
 
 export type PercentMeasure = keyof typeof PERCENT_DP;
 
+/** `value.toFixed(digits)`, except that a figure below 100 is cut and never rounded up to read as 100. */
+export function fixedBelow100(value: number, digits: number): string {
+  const text = value.toFixed(digits);
+  if (value >= 100 || Number(text) < 100) return text;
+  const scale = 10 ** digits;
+  return (Math.trunc(value * scale) / scale).toFixed(digits);
+}
+
 export function formatPercent(v: number | null | undefined, measure: PercentMeasure): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—';
-  return `${v.toFixed(PERCENT_DP[measure])}%`;
+  return `${measure === 'availability' ? fixedBelow100(v, PERCENT_DP[measure]) : v.toFixed(PERCENT_DP[measure])}%`;
 }
 
 function trim(n: number, dp: number): string {
@@ -52,15 +60,17 @@ function plain(n: number): string {
   return n.toPrecision(2);
 }
 
+const decimalsOf = (v: number, level: number): number => (Math.abs(v) >= 100 || level === 0 ? (Number.isInteger(v) ? 0 : 1) : 2);
+
 function scaled(n: number, base: 1000 | 1024, unit: string): string {
   let i = 0;
   let v = n;
-  while (Math.abs(v) >= base && i < DECIMAL.length - 1) {
+  // Rounded first: 999.999 Kbps prints as 1000, so it is 1 Mbps.
+  while (i < DECIMAL.length - 1 && Math.abs(Number(trim(v, decimalsOf(v, i)))) >= base) {
     v /= base;
     i++;
   }
-  const dp = Math.abs(v) >= 100 || i === 0 ? (Number.isInteger(v) ? 0 : 1) : 2;
-  return `${trim(v, dp)} ${DECIMAL[i]}${unit}`;
+  return `${trim(v, decimalsOf(v, i))} ${DECIMAL[i]}${unit}`;
 }
 
 export function formatDuration(totalSeconds: number): string {
@@ -83,17 +93,26 @@ export function dur(totalSeconds: number): string {
   const s = Math.abs(Math.round(totalSeconds));
   const sign = Math.round(totalSeconds) < 0 ? '−' : '';
   if (s < 60) return `${sign}${s}s`;
-  if (s < 3600) return `${sign}${Math.round(s / 60)}m`;
-  if (s < 86400) return `${sign}${(s / 3600).toFixed(1)}h`;
+  // Each unit is chosen on the rounded figure: 3,599 s is 60m as minutes, so it is 1.0h.
+  const minutes = Math.round(s / 60);
+  if (minutes < 60) return `${sign}${minutes}m`;
+  const hours = (s / 3600).toFixed(1);
+  if (Number(hours) < 24) return `${sign}${hours}h`;
   return `${sign}${(s / 86400).toFixed(1)}d`;
 }
 
+/** Milliseconds, and seconds, minutes and hours after them: each is used while its rounded figure stays below the next unit. */
 function seconds(n: number): string {
   const abs = Math.abs(n);
   if (abs === 0) return '0 s';
-  if (abs < 1) return `${trim(n * 1000, abs * 1000 >= 100 ? 0 : abs * 1000 >= 10 ? 1 : 2)} ms`;
-  if (abs < 60) return `${trim(n, 2)} s`;
-  if (abs < 3600) return `${trim(n / 60, 1)} min`;
+  if (abs < 1) {
+    const ms = trim(n * 1000, abs * 1000 >= 100 ? 0 : abs * 1000 >= 10 ? 1 : 2);
+    if (Math.abs(Number(ms)) < 1000) return `${ms} ms`;
+  }
+  const s = trim(n, 2);
+  if (abs < 60 && Math.abs(Number(s)) < 60) return `${s} s`;
+  const min = trim(n / 60, 1);
+  if (abs < 3600 && Math.abs(Number(min)) < 60) return `${min} min`;
   return `${trim(n / 3600, 1)} h`;
 }
 
@@ -113,8 +132,10 @@ export function formatValue(v: number | null | undefined, units?: string): strin
       return formatPercent(v, 'item');
     case 's':
       return seconds(v);
-    case 'ms':
-      return v >= 1000 ? seconds(v / 1000) : `${trim(v, v >= 100 ? 0 : 2)} ms`;
+    case 'ms': {
+      const ms = trim(v, v >= 100 ? 0 : 2);
+      return v < 1000 && Math.abs(Number(ms)) < 1000 ? `${ms} ms` : seconds(v / 1000);
+    }
     case 'uptime':
       return formatDuration(v);
     case 'unixtime':

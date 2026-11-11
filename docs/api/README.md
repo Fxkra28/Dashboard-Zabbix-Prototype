@@ -1,6 +1,6 @@
 # API documentation
 
-[`openapi.yaml`](openapi.yaml) is the contract for the BFF: 45 endpoints (40 GET and 5 POST), with
+[`openapi.yaml`](openapi.yaml) is the contract for the BFF: 51 endpoints (42 GET, 6 POST, 2 PUT and 1 DELETE), with
 every query parameter, both security schemes, every status code and every response schema.
 Fastify's own client errors can come back from any POST and are not repeated per route: 400
 `fst_err_ctp_invalid_json_body` for malformed JSON, and 415 for a content type Fastify has no
@@ -51,7 +51,7 @@ passing everything.
 Expected output:
 
 ```
-openapi.check: 45 endpoints (40 GET + 5 POST), all documented, none extra. Methods and path parameters agree; ...
+openapi.check: 51 endpoints (1 DELETE + 42 GET + 6 POST + 2 PUT), all documented, none extra. Methods and path parameters agree; ...
 ```
 
 **Run it after adding a route, and after editing the spec.** It is the reason this document will not
@@ -90,17 +90,20 @@ change its schema in the same commit.
   code does not say so, but `X-Data-Stale: true` and `X-Data-Age-Seconds: <seconds>` do. They are
   absent on a live answer, and the JSON body never changes. The SLA report download is built from the
   same cached figures, so it can be a 200 with a file made from older figures, with the same headers.
+  A view HCML's Zabbix takes tens of seconds to build, and a slow report past its cache time, may
+  instead answer from its last copy while a newer one is read: `X-Data-Refreshing: true` with the
+  same age header, never together with `X-Data-Stale`.
 - The live stream is capped, not rate limited. `GET /api/stream` answers `429 too_many_streams`
   with `Retry-After: 30` past `STREAM_MAX_CLIENTS` screens in all or `STREAM_MAX_PER_USER` for one
   user, and it ends when the session token expires.
 - `GET /api/health` is public, and tells a signed-in caller more. Anyone gets `ok`, `ts`, `ai`,
-  `aiProvider`, `aiExternal`, `writeBack` and `defaults`. A request with a valid session also gets
-  `version`, `startedAt`, `build`, `ready` (does Zabbix answer, and the model) and `streams`. A bad or
+  `aiProvider`, `aiExternal`, `writeBack`, `defaults` and `ready`, a plain `true` or `false` for whether Zabbix can be read (so a monitor needs no account; a revoked token reads as any other failure). A request with a valid session also gets
+  `version`, `startedAt`, `build`, `ready` as the whole check (does Zabbix answer, and the model) and `streams`. A bad or
   expired token is not a 401 here: it gets the public reply. The status stays 200 when Zabbix is
   down: read `ready.ok`. With sign-in off every caller counts as signed in, as for `/api/auth/me`.
   `writeBack` is false when sign-in is off and `ALLOW_WRITE_WITHOUT_AUTH` is not `true`, since
   acknowledge would be refused.
 - Three endpoints are not JSON at all: `GET /api/stream` and `POST /api/chat` are
   `text/event-stream`, and their event names and frame payloads are in the operation descriptions.
-  `GET /api/sli/export` answers a PDF or an Excel file. It needs `format=pdf` or `format=xlsx` (there
-  is no default), takes no other parameter than `month` (any other is a 400), is never compressed, and carries `Cache-Control: private, no-store`.
+  `GET /api/sli/export` answers a PDF, an Excel file or a zip of CSV files. It needs `format=pdf`, `format=xlsx` or `format=csv` (there
+  is no default), takes no other parameter than `month` and the style (`decimal`, `date`, `separator`; any other is a 400), is never compressed, and carries `Cache-Control: private, no-store`.

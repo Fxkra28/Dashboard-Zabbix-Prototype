@@ -9,7 +9,8 @@ import type { Me, Role } from '../../types';
  * shows everything and nothing has to special-case the unauthenticated path. The answer also says
  * how long the session has left, which `api.me()` records for useSessionRenewal.
  */
-const RANK: Record<Role, number> = { viewer: 1, operator: 2, admin: 3 };
+/** The same order as the BFF's (security/auth.ts): a wall screen sees the network pages and never writes. */
+const RANK: Record<Role, number> = { viewer: 1, wall: 2, operator: 3, admin: 4 };
 
 export const roleAllows = (has: Role | null, needs: Role) =>
   has !== null && RANK[has] >= RANK[needs];

@@ -55,8 +55,8 @@ Browser ──POST /bff/api/chat {messages} ──► BFF ──► buildSnapsho
             event: done | error
 ```
 
-[`routes/chat.ts`](../../server/src/routes/chat.ts) has [`services/chat.ts`](../../server/src/services/chat.ts) validate the body (the last 12 turns, each at most
-2 000 characters, ending with a user turn), then hijacks the reply and writes SSE frames as
+[`routes/chat.ts`](../../server/src/routes/chat.ts) has [`services/chat.ts`](../../server/src/services/chat.ts) validate the body (the newest turns up to 3 000 characters together, each cut to
+2 000 characters, ending with a user turn; the page itself sends the last 12), then hijacks the reply and writes SSE frames as
 `streamAnswer()` yields text. `EventSource` cannot POST, so the browser reads the stream with `fetch`
 + `ReadableStream` in [`api/assistant.ts`](../../web/src/api/assistant.ts) `chatStream()`. A reader who navigates away closes
 the socket; the route aborts the upstream request so the model stops generating for nobody.
@@ -86,7 +86,7 @@ times as long. `thinkingControl()` in [`ai.ts`](../../server/src/clients/ai.ts) 
 ## RBAC and rate limiting
 
 `viewer`. The snapshot contains only what a viewer can already open: Problems, Sites, SLA,
-Services; the operator-only Links and Network views are not in it. The route is a POST, but not a
+Services; the Links and Network views, which start at the wall role, are not in it. The route is a POST, but not a
 write: the surface test pins both non-GET routes and states which one touches Zabbix. It is
 rate-limited like any other request.
 

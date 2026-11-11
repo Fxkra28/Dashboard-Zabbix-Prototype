@@ -22,9 +22,10 @@ function Dialog({ onClose, items = true, startAtFirst = false }: { onClose: () =
   );
 }
 
-function Page({ items = true, startAtFirst = false, removeOpener = false }: { items?: boolean; startAtFirst?: boolean; removeOpener?: boolean }) {
+function Page({ items = true, startAtFirst = false, removeOpener = false, disableOpener = false }: { items?: boolean; startAtFirst?: boolean; removeOpener?: boolean; disableOpener?: boolean }) {
   const [open, setOpen] = useState(false);
   const [showOpener, setShowOpener] = useState(true);
+  const [openerOff, setOpenerOff] = useState(false);
   return (
     <>
       <main id="main">
@@ -32,13 +33,18 @@ function Page({ items = true, startAtFirst = false, removeOpener = false }: { it
       </main>
       <button>Before</button>
       <button onClick={() => setShowOpener(false)}>Remove opener</button>
-      {showOpener && <button onClick={() => setOpen(true)}>Open</button>}
+      {showOpener && (
+        <button disabled={openerOff} onClick={() => setOpen(true)}>
+          Open
+        </button>
+      )}
       {open && (
         <Dialog
           items={items}
           startAtFirst={startAtFirst}
           onClose={() => {
             if (removeOpener) setShowOpener(false);
+            if (disableOpener) setOpenerOff(true);
             setOpen(false);
           }}
         />
@@ -62,6 +68,20 @@ function open(props: Parameters<typeof Page>[0] = {}) {
 }
 const tab = (shiftKey = false) => fireEvent.keyDown(document, { key: 'Tab', shiftKey });
 
+function DisabledStart() {
+  const box = useRef<HTMLDivElement>(null);
+  const first = useRef<HTMLButtonElement>(null);
+  useDialogFocus(box, first);
+  return (
+    <div ref={box} role="dialog" aria-label="Dialog" tabIndex={-1}>
+      <button ref={first} disabled>
+        First
+      </button>
+      <button>Second</button>
+    </div>
+  );
+}
+
 describe('useDialogFocus', () => {
   it('moves focus into the dialog when it opens: to the box, or to the element it names', () => {
     open();
@@ -69,6 +89,11 @@ describe('useDialogFocus', () => {
     cleanup();
     open({ startAtFirst: true });
     expect(screen.getByRole('button', { name: 'First' })).toHaveFocus();
+  });
+
+  it('falls back to the dialog itself when the element it was told to focus cannot take focus', () => {
+    render(<DisabledStart />);
+    expect(screen.getByRole('dialog')).toHaveFocus();
   });
 
   it('wraps Tab from the last element to the first, and Shift+Tab from the first to the last', () => {
@@ -130,6 +155,13 @@ describe('useDialogFocus', () => {
     open({ removeOpener: true });
     fireEvent.click(screen.getByRole('button', { name: 'Last' }));
     expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
+    expect(screen.getByRole('main')).toHaveFocus();
+  });
+
+  it('gives focus to the main content when the same close switches the opener off, as the Email report button is while a send goes on (reviewer, 11 November)', () => {
+    open({ disableOpener: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Last' }));
+    expect(screen.getByRole('button', { name: 'Open' })).toBeDisabled();
     expect(screen.getByRole('main')).toHaveFocus();
   });
 

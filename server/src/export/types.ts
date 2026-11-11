@@ -91,6 +91,10 @@ export interface BarChart {
   target: number;
   /** The axis starts here, since availability figures crowd the top of a 0 to 100 scale. Not finite means 0. */
   axisMin: number;
+  /** The target as printed above its line, such as "Target 99%". Absent: the writer prints the number. */
+  targetLabel?: string;
+  /** The start of the axis as printed under it, such as "95%". Absent: the writer prints the number. */
+  axisLabel?: string;
   bars: Bar[];
 }
 
@@ -122,3 +126,9 @@ export interface ReportDoc {
 
 export const PDF_TYPE = 'application/pdf';
 export const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+/** The CSV files travel in one zip. */
+export const CSV_TYPE = 'application/zip';
+
+
+/** What a table with no rows says when it names nothing of its own. */
+export const NOTHING_TO_LIST = 'Nothing to list.';

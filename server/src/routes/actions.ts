@@ -4,6 +4,7 @@ import { invalidate } from '../core/cache.js';
 import { config, writeBackEnabled } from '../core/config.js';
 import { notifyProblemsChanged } from '../services/stream.js';
 import { acknowledgeBody } from '../core/schemas.js';
+import { isZabbixId } from '../core/validate.js';
 import {
   ACTION_CLOSE,
   ACTION_ACKNOWLEDGE,
@@ -16,7 +17,14 @@ import {
   AckBody,
   STALE_AFTER_WRITE,
   WRITE_HOLD_MS,
+  writeFailure,
 } from '../services/actions.js';
+
+/** The first `max` characters, without the first half of a pair that the cut would split: Zabbix may refuse a lone half. */
+function cutText(text: string, max: number): string {
+  const cut = text.slice(0, max);
+  return /[\ud800-\udbff]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
 
 export async function actionRoutes(app: FastifyInstance): Promise<void> {
   // What is turned away outside the handler (no token, a viewer, a bad body, a limit) is on record too,
@@ -64,7 +72,7 @@ export async function actionRoutes(app: FastifyInstance): Promise<void> {
       return refuse(400, 'bad_request', `At most ${MAX_EVENTIDS} event ids per request.`);
     }
     // Ids go straight into a write against Zabbix; refuse anything that is not one.
-    if (eventids.some((id) => !/^\d+$/.test(id))) {
+    if (eventids.some((id) => !isZabbixId(id))) {
       return refuse(400, 'bad_request', 'eventids must be numeric Zabbix event ids.');
     }
 
@@ -97,7 +105,7 @@ export async function actionRoutes(app: FastifyInstance): Promise<void> {
     // Zabbix files the write under the token's owner, so the portal user goes into the text. The tag
     // comes first: a "[portal:...]" typed after it is only text, and the cut to Zabbix's limit keeps it.
     const tag = `[portal:${user}]`;
-    const message = (note ? `${tag} ${note}` : tag).slice(0, MAX_MESSAGE);
+    const message = cutText(note ? `${tag} ${note}` : tag, MAX_MESSAGE);
     const action = asked | ACTION_MESSAGE;
     const sent = { ...trail, eventids, action, close, acknowledge };
 
@@ -107,10 +115,14 @@ export async function actionRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       answered.add(req);
       req.log.warn({ ...sent, err: err instanceof Error ? `${err.name}: ${err.message}` : String(err) }, 'zabbix write-back failed');
-      throw err;
+      const told = writeFailure(err, req.id);
+      if (!told) throw err;
+      // The error handler's own log line, which this answer skips: the address Zabbix was asked at is in it.
+      req.log.error({ detail: (err as { detail?: string }).detail }, (err as Error).message);
+      return reply.code(told.status).send({ error: told.error, message: told.message });
     }
 
-    // Without this the change wouldn't surface until the 5s cache expired, and
+    // Without this the change wouldn't surface until the 15 s cache expired, and
     // the click would look like it did nothing.
     for (const key of STALE_AFTER_WRITE) invalidate(key, { holdMs: WRITE_HOLD_MS });
     // Live screens get the new list now, not on the stream's next tick.

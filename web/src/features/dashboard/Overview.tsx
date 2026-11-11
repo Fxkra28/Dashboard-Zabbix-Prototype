@@ -26,6 +26,8 @@ import type { LayoutContext } from '../shell/Layout';
 import { LIVE_ROWS, liveRows, topRows } from './liveList';
 import { internetCard, rotateSeconds, slidesOf, wallPages, type Slide } from '../../shared/lib/wall';
 import { ageWords, momentWords } from '../../shared/lib/freshness';
+import { formatClock, formatClockLabeled, formatWeekdayDate, zoneLabel } from '../../shared/lib/time';
+import { useReportTimeZone } from '../../shared/hooks/useReportTimeZone';
 import { problemListGuard } from '../../guards';
 import { TableWrap } from '../../shared/components/TableWrap';
 
@@ -39,20 +41,25 @@ const isOpen = (p: Problem) => (!p.r_eventid || p.r_eventid === '0') && p.suppre
 /** Past this the numbers on screen are old enough that a wall screen must say so. */
 const DATA_LATE_MS = 90_000;
 
-const clockTime = (ms: number) =>
-  new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+/** The clock with its zone's name smaller beside it, for the big digits of a wall. */
+function WallDigits({ at }: { at: number }) {
+  return (
+    <>
+      {formatClock(at, true)}
+      <span className="wall-zone"> {zoneLabel(at)}</span>
+    </>
+  );
+}
 
-/** The wall's clock. Its own component, so only it re-renders every second. */
+/** The wall's clock, in the report zone. Its own component, so only it re-renders every second. */
 function WallClock() {
   const now = useNow(1_000);
-  const at = new Date(now);
+  useReportTimeZone();
   return (
     <div className="wall-stamp">
-      <span className="wall-label">
-        {at.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-      </span>
-      <time className="wall-time" dateTime={at.toISOString()}>
-        {clockTime(now)}
+      <span className="wall-label">{formatWeekdayDate(now)}</span>
+      <time className="wall-time" dateTime={new Date(now).toISOString()}>
+        <WallDigits at={now} />
       </time>
     </div>
   );
@@ -86,7 +93,7 @@ function WallBar({
       <WallClock />
       <div className={`wall-stamp${lateMinutes !== null || idleFor !== null || cutOff ? ' late' : ''}`}>
         <span className="wall-label">Data as of</span>
-        <span className="wall-time">{shownAt !== null ? clockTime(shownAt) : '…'}</span>
+        <span className="wall-time">{shownAt !== null ? <WallDigits at={shownAt} /> : '…'}</span>
         {lateMinutes !== null && <span className="wall-label">No new data for {lateMinutes} min</span>}
         {idleFor !== null && <span className="wall-label">Zabbix collected nothing for {idleFor}</span>}
         {cutOff && <span className="wall-label">Zabbix cannot reach the network</span>}
@@ -103,7 +110,7 @@ function WallBar({
   );
 }
 
-/** The Dashboard's views, like the pages of a Zabbix dashboard: the problems, the hosts, and the internet traffic meters (operators and admins). */
+/** The Dashboard's views, like the pages of a Zabbix dashboard: the problems, the hosts, and the internet traffic meters (wall screens, operators and admins). */
 const VIEWS = ['overview', 'hosts', 'internet'] as const;
 const VIEW_TABS = [
   { key: 'overview', label: 'Overview' },
@@ -113,9 +120,9 @@ const VIEW_TABS = [
 
 export default function Overview() {
   const { wall, exitWall } = useOutletContext<LayoutContext>();
-  // The meters are interface data, which is for operators and admins; a viewer has the Overview and the Hosts.
+  // The meters are interface data, which is for a wall screen, an operator and an admin; a viewer has the Overview and the Hosts.
   const { role } = useAuth();
-  const canSeeMeters = role !== null && roleAllows(role, 'operator');
+  const canSeeMeters = role !== null && roleAllows(role, 'wall');
   const [view, setView] = useUrlState<(typeof VIEWS)[number]>('view', 'overview', { options: VIEWS });
   const viewsId = useId();
 
@@ -267,8 +274,8 @@ export default function Overview() {
                   <CollectorNotice freshness={freshQ.data} now={now} />
                   <div className="grid kpis">
                     <KpiCard label="Hosts" value={stats?.hosts ?? '…'} sub="monitored" />
-                    <KpiCard label="Items" value={stats?.items ?? '…'} sub="collecting" />
-                    <KpiCard label="Triggers" value={stats?.triggers ?? '…'} />
+                    <KpiCard label="Items" value={stats?.items ?? '…'} sub={stats && stats.items === null ? 'counting' : 'collecting'} />
+                    <KpiCard label="Triggers" value={stats?.triggers ?? '…'} sub={stats && stats.triggers === null ? 'counting' : undefined} />
                     <KpiCard label="Host groups" value={stats?.groups ?? '…'} />
                   </div>
 
@@ -292,7 +299,7 @@ export default function Overview() {
                       value={count(problems.filter((p) => p.acknowledged !== '1').length)}
                       accent={SEVERITIES[4].color}
                     />
-                    {/* Interface data is for operators and admins, so a viewer's row has no fifth card. */}
+                    {/* Interface data is for a wall screen, an operator and an admin, so a viewer's row has no fifth card. */}
                     {canSeeMeters && (
                       <KpiCard
                         label="Internet links"
@@ -308,11 +315,11 @@ export default function Overview() {
                       <div className="panel-head">
                         <h2>Live problems</h2>
                         <span className="live-status">
-                          {shownAt !== null && <span className="live-age">Updated {clockTime(shownAt)}</span>}
+                          {shownAt !== null && <span className="live-age">Updated {formatClockLabeled(shownAt, true)}</span>}
                           {/* Announced on a change of state only; the visible label's minute count would be read out every minute. */}
                           <span className="sr-only" aria-live="polite">
                             {late && shownAt !== null
-                              ? `No new data since ${clockTime(shownAt)}`
+                              ? `No new data since ${formatClockLabeled(shownAt, true)}`
                               : collectedAt !== null
                                 ? `Zabbix has collected nothing since ${momentWords(collectedAt * 1000, now)}`
                                 : cutOff

@@ -17,6 +17,7 @@ import { Async, Empty } from '../../shared/components/states';
 import { Field } from '../../shared/components/Field';
 import KpiCard from '../../shared/components/KpiCard';
 import { NoData } from '../../shared/components/NoData';
+import EmailReport from './EmailReport';
 import ReportDownload from './ReportDownload';
 import {
   CoverageText,
@@ -216,7 +217,10 @@ export default function Availability() {
           <MethodToggle value={profile} onChange={setProfile} />
         )}
         {reportMonth && (
-          <ReportDownload month={reportMonth} disabled={q.loading || q.stale || !q.data} />
+          <>
+            <ReportDownload month={reportMonth} disabled={q.loading || q.stale || !q.data} />
+            <EmailReport month={reportMonth} disabled={q.loading || q.stale || !q.data} />
+          </>
         )}
       </div>
 

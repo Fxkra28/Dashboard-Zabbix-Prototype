@@ -199,6 +199,122 @@ export interface SlaSource {
   services: number;
 }
 
+/** How a report writes its numbers and dates, and what a CSV file puts between its fields. Never changes a figure. */
+export interface ReportStyle {
+  decimal: 'dot' | 'comma';
+  date: 'long' | 'numeric' | 'iso';
+  separator: 'comma' | 'semicolon';
+}
+
+/** The kinds of file the report comes in. The CSV files travel as one zip. */
+export type ReportFileFormat = 'pdf' | 'xlsx' | 'csv';
+
+/** GET /api/sli/email: whether the report can be emailed, from where, to whom unless told otherwise, and how far a list may go (administrators only). */
+export interface EmailInfo {
+  enabled: boolean;
+  from: string;
+  /** The saved list. */
+  recipients: string[];
+  /** The most addresses a list may hold. */
+  max: number;
+  /** Lower case. Empty: an address may be in any domain. */
+  allowedDomains: string[];
+  /** Whether the saved list survives a restart of the portal. */
+  kept: boolean;
+}
+
+/** PUT /api/sli/recipients: the list the portal saved, and the list that applies now. */
+export interface SavedRecipients {
+  recipients: string[];
+  saved: number;
+}
+
+/** DELETE /api/sli/recipients: the list that applies now (the one in MAIL_TO, or nobody), and how many addresses were removed. */
+export interface DeletedRecipients {
+  recipients: string[];
+  removed: number;
+}
+
+/** What POST /api/sli/email takes besides the month. */
+export interface EmailRequest {
+  formats: ReportFileFormat[];
+  to?: string[];
+  remember?: boolean;
+  style?: ReportStyle;
+}
+
+/** POST /api/sli/email: how many recipients the mail server took the message for, how many it refused, and what went. */
+export interface EmailSent {
+  sent: number;
+  refused: number;
+  month: string;
+  files: { format: ReportFileFormat; fileName: string; bytes: number }[];
+  /** Whether the list was saved. */
+  remembered: boolean;
+}
+
+/** The monthly send as it is set. */
+export interface ScheduleSettings {
+  enabled: boolean;
+  /** 1 to 28. */
+  day: number;
+  /** HH:MM, 24 hours, in the report time zone. */
+  time: string;
+  formats: ReportFileFormat[];
+  style: ReportStyle;
+  /** Who is told when a send fails. */
+  notify: string[];
+  setBy: string;
+  /** Unix seconds. */
+  setAt: number;
+}
+
+/** One send the portal made, with counts and never an address. */
+export interface SendRecord {
+  month: string;
+  trigger: 'schedule' | 'manual';
+  /** A user name, or "schedule". */
+  by: string;
+  /** Unix seconds. */
+  at: number;
+  outcome: 'sending' | 'sent' | 'failed' | 'missed';
+  attempts: number;
+  formats: ReportFileFormat[];
+  recipients: number;
+  refused: number;
+  bytes: number;
+  reason?: string;
+}
+
+/** GET and PUT /api/sli/schedule (administrators only). */
+export interface ScheduleInfo {
+  available: boolean;
+  /** Empty when available; otherwise a sentence that says what to change. */
+  why: string;
+  timezone: string;
+  /** Null until one is saved. */
+  schedule: ScheduleSettings | null;
+  recipients: string[];
+  /** The next send: the month it is for and when (Unix seconds); `retrying` when a send failed and waits for another try. */
+  next: { month: string; at: number; retrying: boolean } | null;
+  /** The last twelve, newest first. */
+  sends: SendRecord[];
+  max: number;
+  maxNotify: number;
+  allowedDomains: string[];
+}
+
+/** What PUT /api/sli/schedule takes. */
+export interface ScheduleRequest {
+  enabled: boolean;
+  day: number;
+  time: string;
+  formats: ReportFileFormat[];
+  recipients: string[];
+  notify: string[];
+  style?: ReportStyle;
+}
+
 // Services → SLA (Zabbix-native, read-only)
 export interface Sla {
   slaid: string;

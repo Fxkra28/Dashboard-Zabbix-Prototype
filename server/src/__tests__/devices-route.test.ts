@@ -147,6 +147,21 @@ describe('GET /api/devices', () => {
     expect(hostGets('selectParentTemplates')).toHaveLength(2);
   });
 
+  it('is read again after a write, so a close shows in its problem counts at once', async () => {
+    const { STALE_AFTER_WRITE, WRITE_HOLD_MS } = await import('../services/actions.js');
+    const open = { eventid: '9', objectid: '9', object: '0', clock: String(Math.floor(Date.now() / 1000)), r_eventid: '0', severity: '4', acknowledged: '0', name: 'x' };
+    zabbix(ESTATE, [open]);
+    const app = await buildTestApp(deviceRoutes);
+    const total = async () => (await get(app)).devices.find((d: { hostid: string }) => d.hostid === '1').problems.total;
+    expect(await total()).toBe(1);
+
+    zabbix(ESTATE, []);
+    expect(await total()).toBe(1);
+    // What routes/actions.ts does once Zabbix has accepted a close.
+    for (const key of STALE_AFTER_WRITE) invalidate(key, { holdMs: WRITE_HOLD_MS });
+    expect(await total()).toBe(0);
+  });
+
   it('says one sentence, and no method name, when Zabbix cannot be read', async () => {
     const { ZabbixApiError } = await import('../clients/zabbix.js');
     zbxMock.mockRejectedValue(new ZabbixApiError('host.get: {"code":-32602}'));

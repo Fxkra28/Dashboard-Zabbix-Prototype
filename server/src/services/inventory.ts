@@ -98,7 +98,7 @@ export async function getScorecard(): Promise<ScorecardResponse> {
       {
         key: 'site',
         label: 'Site mapping',
-        hint: `tag "${config.site.tag}" or inventory site_city / location`,
+        hint: `tag "${config.site.tag}", the site code in the host name, or inventory site_city / location`,
         scored: true,
         ok: hasExplicitSite,
       },

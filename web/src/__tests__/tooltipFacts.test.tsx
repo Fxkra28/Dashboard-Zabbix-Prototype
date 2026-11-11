@@ -20,7 +20,8 @@ describe('a refresh that failed', () => {
     const note = screen.getByRole('status');
     expect(note).toHaveAttribute('title', 'Request timed out');
     expect(within(note).getByText('. Request timed out')).toHaveClass('sr-only');
-    expect(note).toHaveTextContent(/Refresh failed: showing data from/);
+    // 03:04 UTC is 10:04 in Jakarta, wherever this machine is: the time printed is the report zone's, with its name.
+    expect(note).toHaveTextContent('Refresh failed: showing data from 10:04 WIB');
   });
 });
 

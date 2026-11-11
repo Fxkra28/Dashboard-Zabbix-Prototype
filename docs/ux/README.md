@@ -15,10 +15,11 @@
 
 | Fact | Source |
 |---|---|
-| Three roles, ranked: viewer, operator, admin | `server/src/security/auth.ts` `ROUTE_RULES` |
-| An unmatched route needs `viewer`, so a new route is private by default | `security/auth.ts:44` |
-| Only `/api/reports/inventory` needs admin | `security/auth.ts:37` |
-| Only `/api/links`, `/api/net` (the Dashboard's internet traffic meters, `/api/net/meters`, among them) and the write route (acknowledge, with close as an option) need operator | `security/auth.ts:38,40` |
+| Four roles, ranked: viewer, wall, operator, admin | `server/src/security/auth.ts` `ROUTE_RULES` |
+| An unmatched route needs `viewer`, so a new route is private by default | `security/auth.ts:48` |
+| Only `/api/reports/inventory`, `/api/sli/email` and `/api/sli/schedule` need admin | `security/auth.ts:39` and `:41` |
+| `/api/links` and `/api/net` (the Dashboard's internet traffic meters, `/api/net/meters`, among them) need wall, which an operator and an admin pass too | `security/auth.ts:42` |
+| Only the write route (acknowledge, with close as an option) needs operator, so a wall screen never writes | `security/auth.ts:44` |
 | 19 pages, 18 of them behind the shell | `web/src/App.tsx` |
 | 139 monitored hosts across 14 sites | Zabbix, measured 15 September 2026 |
 | Exactly one write exists: acknowledge and close | `server/src/routes/actions.ts` |
@@ -28,9 +29,9 @@
 
 Everything after this point is inference from those facts.
 
-## Three roles, three different relationships with the screen
+## Four roles, four different relationships with the screen
 
-The roles are not seniority levels. They are three different reasons to open the portal, and the
+The roles are not seniority levels. They are four different reasons to open the portal, and the
 route rules draw the lines in a way that says what each one is for.
 
 ### Viewer
@@ -48,9 +49,18 @@ things are working, not how they are wired.
 The screens this implies matter most: Dashboard, Problems, SLA, Availability. Three of the four
 answer a question someone else asked them.
 
+### Wall
+
+Has: everything a viewer has, plus Network, Links and WAN, and the Dashboard's internet traffic
+meters, to read only.
+
+This is not a person. It is the account of a NOC screen that turns between the Overview and the
+meters (`/?wall=1`), and the meters are interface data. A screen anyone can walk up to must never be
+able to acknowledge or close, so the wall stops one rank below operator (tracker MT-06).
+
 ### Operator
 
-Has: everything a viewer has, plus Network, Links and WAN, plus acknowledge and close.
+Has: everything a wall screen has, plus acknowledge and close.
 
 This is the only role that can change anything, and what it can change is one thing. The portal is
 read-only except for a single write (ADR-0006), and that write is what an operator is for.
@@ -123,7 +133,7 @@ Where the friction is, in order of how much it costs:
 2. **The 15-second write window is invisible.** The operator has no way to tell "already
    acknowledged, waiting for Zabbix" from "the click did nothing". *Addressed 7 October 2026:* a row
    says "Sent, waiting for Zabbix" until the refreshed list shows the change, and the list is read
-   every 3 s meanwhile. After a minute with no change the row offers Ack again and says nothing more.
+   every 3 s meanwhile. After a minute with no change the row offers Ack again; a close that the list still shows open keeps a note, "Close requested, not yet applied by Zabbix", until the problem shows resolved.
 3. **Write-back being off removes the control rather than explaining it.** Correct for a viewer, and
    confusing for an operator who has acknowledged from this screen before. *Addressed 7 October 2026:*
    an operator sees "Acknowledge is off on this portal. Ask the portal admin to turn it on." once the

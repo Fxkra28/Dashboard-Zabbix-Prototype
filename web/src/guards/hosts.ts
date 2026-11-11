@@ -49,8 +49,6 @@ const itemFields: Shape<Item> = {
   key_: text,
   value_type: text,
   units: opt(text),
-  lastvalue: opt(text),
-  lastclock: opt(text),
   state: opt(text),
   status: opt(text),
   delay: opt(text),
@@ -61,7 +59,7 @@ const itemFields: Shape<Item> = {
 
 const item = shape<Item>(itemFields);
 
-const latestItem = shape<LatestItem>({ ...itemFields, prevvalue: opt(text) });
+const latestItem = shape<LatestItem>({ ...itemFields, lastvalue: opt(text), lastclock: opt(text), prevvalue: opt(text) });
 
 const latest = shape<LatestResponse>({
   items: listOf(latestItem),

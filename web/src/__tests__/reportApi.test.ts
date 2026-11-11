@@ -13,6 +13,8 @@ const xlsx = (headers: Record<string, string> = {}) =>
     status: 200,
     headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ...headers },
   });
+const zip = (headers: Record<string, string> = {}) =>
+  new Response('PK csv files', { status: 200, headers: { 'Content-Type': 'application/zip', ...headers } });
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -58,6 +60,58 @@ describe('api.sliExport', () => {
     expect((await api.sliExport('2026-08', 'pdf')).fileName).toBe('HCML_SLA_Report_2026-08.pdf');
     expect((await api.sliExport('2026-07', 'xlsx')).fileName).toBe('HCML_SLA_Report_2026-07.xlsx');
     expect(fetchMock.mock.calls[1][0]).toBe('/bff/api/sli/export?month=2026-07&format=xlsx');
+  });
+
+  it('asks for the CSV files as one zip, and names it itself when the BFF sent no name', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(zip());
+    const { blob, fileName } = await api.sliExport('2026-08', 'csv');
+    expect(fetchMock.mock.calls[0][0]).toBe('/bff/api/sli/export?month=2026-08&format=csv');
+    expect(fileName).toBe('HCML_SLA_Report_2026-08_csv.zip');
+    expect(blob.type).toBe('application/zip');
+  });
+
+  it('keeps the BFF’s name for the zip, and drops one that does not end in the zip’s own extension', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValueOnce(zip({ 'Content-Disposition': 'attachment; filename="HCML_SLA_Report_2026-08_csv.zip"' }));
+    expect((await api.sliExport('2026-08', 'csv')).fileName).toBe('HCML_SLA_Report_2026-08_csv.zip');
+    fetchMock.mockResolvedValueOnce(zip({ 'Content-Disposition': 'attachment; filename="HCML_SLA_Report_2026-08_extra.zip"' }));
+    expect((await api.sliExport('2026-08', 'csv')).fileName).toBe('HCML_SLA_Report_2026-08_extra.zip');
+    fetchMock.mockResolvedValueOnce(zip({ 'Content-Disposition': 'attachment; filename="report.zip.exe"' }));
+    expect((await api.sliExport('2026-08', 'csv')).fileName).toBe('HCML_SLA_Report_2026-08_csv.zip');
+    fetchMock.mockResolvedValueOnce(zip({ 'Content-Disposition': 'attachment; filename="HCML_SLA_Report_2026-08.pdf"' }));
+    expect((await api.sliExport('2026-08', 'csv')).fileName).toBe('HCML_SLA_Report_2026-08_csv.zip');
+  });
+
+  it('refuses a 200 that is not a zip when a zip was asked for, whatever else it is', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValueOnce(pdf());
+    await expect(api.sliExport('2026-08', 'csv')).rejects.toThrow('The server answered with something that is not a zip file.');
+    fetchMock.mockResolvedValueOnce(zip());
+    await expect(api.sliExport('2026-08', 'pdf')).rejects.toThrow('not a PDF file');
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 200, headers: { 'Content-Type': 'application/zip' } }));
+    await expect(api.sliExport('2026-08', 'csv')).rejects.toThrow('The server sent an empty file.');
+  });
+
+  it('puts the style in the query: the decimal and the date for every file, the separator for a CSV only', async () => {
+    const { api } = await load();
+    fetchMock.mockImplementation(async (url: string) => (url.includes('format=csv') ? zip() : url.includes('format=xlsx') ? xlsx() : pdf()));
+    const style = { decimal: 'comma', date: 'iso', separator: 'semicolon' } as const;
+    await api.sliExport('2026-08', 'csv', undefined, style);
+    await api.sliExport('2026-08', 'pdf', undefined, style);
+    await api.sliExport('2026-08', 'xlsx', undefined, style);
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      '/bff/api/sli/export?month=2026-08&format=csv&decimal=comma&date=iso&separator=semicolon',
+      '/bff/api/sli/export?month=2026-08&format=pdf&decimal=comma&date=iso',
+      '/bff/api/sli/export?month=2026-08&format=xlsx&decimal=comma&date=iso',
+    ]);
+  });
+
+  it('asks with no style words at all when no style is given, so the server’s defaults stand', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(pdf());
+    await api.sliExport('2026-08', 'pdf');
+    expect(fetchMock.mock.calls[0][0]).toBe('/bff/api/sli/export?month=2026-08&format=pdf');
   });
 
   it('hands the abort signal to fetch, so a page that has gone can call the download off', async () => {
@@ -263,3 +317,149 @@ describe('reportFileName', () => {
   });
 });
 
+
+const INFO = { enabled: true, from: 'portal@example.com', recipients: ['ana@example.org'], max: 10, allowedDomains: [] as string[], kept: true };
+
+describe('api.sliEmailInfo', () => {
+  it('asks the BFF whether the report can be emailed, and returns what it says', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, INFO));
+    expect(await api.sliEmailInfo()).toEqual(INFO);
+    expect(fetchMock.mock.calls[0][0]).toBe('/bff/api/sli/email');
+  });
+
+  it.each([
+    ['a flag that is text', { ...INFO, enabled: 'yes' }],
+    ['recipients that are not a list', { ...INFO, recipients: 'ana@example.org' }],
+    ['no limit on the list', { ...INFO, max: undefined }],
+    ['domains that are not a list', { ...INFO, allowedDomains: 'example.org' }],
+    ['no word on whether the list is kept', { ...INFO, kept: undefined }],
+    ['the old shape, with a list called to', { enabled: true, from: 'portal@example.com', to: ['ana@example.org'] }],
+  ])('refuses an answer with %s, rather than showing a button on a guess', async (_what, answer) => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, answer));
+    await expect(api.sliEmailInfo()).rejects.toThrow();
+  });
+});
+
+describe('api.sliEmail', () => {
+  const answer = { sent: 2, refused: 0, month: '2026-08', files: [{ format: 'pdf', fileName: 'HCML_SLA_Report_2026-08.pdf', bytes: 1234 }], remembered: false };
+
+  it('posts the month and what was asked for, with the CSRF header the cookie needs, and nothing else', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, answer));
+    const style = { decimal: 'comma', date: 'iso', separator: 'semicolon' } as const;
+    expect(await api.sliEmail('2026-08', { formats: ['pdf', 'csv'], to: ['ana@example.org'], remember: true, style })).toEqual(answer);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/bff/api/sli/email');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-HCML-CSRF': '1' });
+    expect(JSON.parse(String(init.body))).toEqual({ month: '2026-08', formats: ['pdf', 'csv'], to: ['ana@example.org'], remember: true, style });
+  });
+
+  it('leaves out what it was not asked to send', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, answer));
+    await api.sliEmail('2026-08', { formats: ['pdf'] });
+    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({ month: '2026-08', formats: ['pdf'] });
+  });
+
+  it.each([
+    [502, 'mail_error', 'The mail server refused the login. Check MAIL_USER and MAIL_PASS.'],
+    [429, 'rate_limited', 'The limit is 5 report emails an hour for each person. Try again in about 59 minutes.'],
+    [503, 'mail_disabled', 'Email is not set up on this portal.'],
+    [400, 'bad_request', 'Recipients: "nope" is not a plain address such as name@example.com.'],
+  ])('throws the BFF’s own sentence on a %i', async (status, error, message) => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(status, { error, message }));
+    await expect(api.sliEmail('2026-08', { formats: ['pdf'] })).rejects.toThrow(message);
+  });
+
+  it('goes to sign-in on a 401, as every write does', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(401, { error: 'unauthorized' }));
+    await expect(api.sliEmail('2026-08', { formats: ['pdf'] })).rejects.toThrow('Unauthorized');
+    expect(where.href).toBe('/login?next=' + encodeURIComponent('/sla?month=2026-08'));
+  });
+});
+
+const SCHEDULE = {
+  available: true,
+  why: '',
+  timezone: 'Asia/Jakarta',
+  schedule: { enabled: true, day: 1, time: '00:00', formats: ['pdf'], style: { decimal: 'dot', date: 'long', separator: 'comma' }, notify: ['boss@example.org'], setBy: 'ana', setAt: 1_800_000_000 },
+  recipients: ['ana@example.org'],
+  next: { month: '2026-10', at: 1_800_000_600, retrying: false },
+  sends: [{ month: '2026-09', trigger: 'schedule', by: 'schedule', at: 1_800_000_000, outcome: 'sent', attempts: 1, formats: ['pdf'], recipients: 1, refused: 0, bytes: 100 }],
+  max: 10,
+  maxNotify: 3,
+  allowedDomains: [] as string[],
+};
+
+describe('api.sliSchedule', () => {
+  it('asks for the schedule and returns what the BFF says', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, SCHEDULE));
+    expect(await api.sliSchedule()).toEqual(SCHEDULE);
+    expect(fetchMock.mock.calls[0][0]).toBe('/bff/api/sli/schedule');
+  });
+
+  it('takes a portal with no schedule yet, and one with nothing next', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, { ...SCHEDULE, schedule: null, next: null, sends: [] }));
+    expect(await api.sliSchedule()).toMatchObject({ schedule: null, next: null, sends: [] });
+  });
+
+  it.each([
+    ['a flag that is text', { ...SCHEDULE, available: 'yes' }],
+    ['no sentence for why', { ...SCHEDULE, why: undefined }],
+    ['a schedule that is a number', { ...SCHEDULE, schedule: 5 }],
+    ['a schedule with no day', { ...SCHEDULE, schedule: { ...SCHEDULE.schedule, day: undefined } }],
+    ['a next send with no month', { ...SCHEDULE, next: { at: 1, retrying: false } }],
+    ['sends that are not a list', { ...SCHEDULE, sends: {} }],
+    ['a send with no count of people', { ...SCHEDULE, sends: [{ ...SCHEDULE.sends[0], recipients: undefined }] }],
+    ['no limit for the people to tell', { ...SCHEDULE, maxNotify: undefined }],
+  ])('refuses an answer with %s', async (_what, answer) => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, answer));
+    await expect(api.sliSchedule()).rejects.toThrow();
+  });
+});
+
+describe('api.sliScheduleSave', () => {
+  const settings = { enabled: true, day: 5, time: '08:30', formats: ['pdf'] as const, recipients: ['ana@example.org'], notify: [] as string[] };
+
+  it('puts the settings, with the CSRF header the cookie needs, and returns the schedule as it now stands', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, SCHEDULE));
+    expect(await api.sliScheduleSave({ ...settings, formats: ['pdf'] })).toEqual(SCHEDULE);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/bff/api/sli/schedule');
+    expect(init.method).toBe('PUT');
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-HCML-CSRF': '1' });
+    expect(JSON.parse(String(init.body))).toEqual({ ...settings, formats: ['pdf'] });
+  });
+
+  it('refuses an answer of the wrong shape after a save, as it does after a read', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, { ...SCHEDULE, recipients: 'ana@example.org' }));
+    await expect(api.sliScheduleSave({ ...settings, formats: ['pdf'] })).rejects.toThrow();
+  });
+
+  it.each([
+    [400, 'bad_request', 'day must be a whole number from 1 to 28.'],
+    [503, 'schedule_unavailable', 'The portal has no data folder to keep a schedule in.'],
+    [500, 'state_error', 'The portal could not save this. Check that its data folder can be written.'],
+  ])('throws the BFF’s own sentence on a %i', async (status, error, message) => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(status, { error, message }));
+    await expect(api.sliScheduleSave({ ...settings, formats: ['pdf'] })).rejects.toThrow(message);
+  });
+
+  it('goes to sign-in on a 401, as every write does', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(401, { error: 'unauthorized' }));
+    await expect(api.sliScheduleSave({ ...settings, formats: ['pdf'] })).rejects.toThrow('Unauthorized');
+  });
+});

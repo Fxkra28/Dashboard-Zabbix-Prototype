@@ -1,48 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, HttpFailure, type ReportFormat } from '../../api';
+import { REVOKE_AFTER_MS, saveFile } from '../../shared/lib/saveFile';
+import ReportStyleButton from './ReportStyleButton';
+import { readReportStyle } from './reportStyle';
 
 /**
- * Download a month's SLA report as a PDF or an Excel file. The BFF builds the
+ * Download a month's SLA report as a PDF, an Excel file or a zip of CSV files. The BFF builds the
  * file from the same figures the page shows (GET /api/sli/export); this only
  * fetches it and hands it to the browser.
  */
 
-const FORMATS: { format: ReportFormat; label: string; noun: string }[] = [
-  { format: 'pdf', label: 'PDF report', noun: 'PDF' },
-  { format: 'xlsx', label: 'Excel report', noun: 'Excel' },
-];
-
-/** Firefox and Safari can cancel a save whose URL is revoked at once; download helpers settle on 40 s. */
-export const REVOKE_AFTER_MS = 40_000;
-/** A request that has not answered by now is given up on, so the buttons never stay shut for good. */
-export const GIVE_UP_AFTER_MS = 120_000;
-/** Long enough for "ready" to be heard, short enough that nobody meets it later as stale news. */
-export const READY_FOR_MS = 6_000;
-
 /** The file always holds both methods, so the toggle beside the buttons does not change it. */
 const BOTH_METHODS = 'Both methods, strict and HCML’s report method, whichever one the page shows';
 
+const FORMATS: { format: ReportFormat; label: string; noun: string; hint: string }[] = [
+  { format: 'pdf', label: 'PDF report', noun: 'PDF', hint: BOTH_METHODS },
+  { format: 'xlsx', label: 'Excel report', noun: 'Excel', hint: BOTH_METHODS },
+  { format: 'csv', label: 'CSV report', noun: 'CSV', hint: `${BOTH_METHODS}, as one zip with a CSV file for each table` },
+];
+
+export { REVOKE_AFTER_MS };
+/** A request that has not answered by now is given up on, so the buttons never stay shut for good. */
+export const GIVE_UP_AFTER_MS = 440_000;
+/** Long enough for "ready" to be heard, short enough that nobody meets it later as stale news. */
+export const READY_FOR_MS = 6_000;
+
 /** "August 2026". The label in shared/lib/time.ts abbreviates the month, and this one is read aloud. */
-function monthInWords(month: string): string {
+export function monthInWords(month: string): string {
   const [year, mon] = month.split('-').map(Number);
   return new Date(Date.UTC(year, mon - 1, 15)).toLocaleString('en-GB', {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
   });
-}
-
-/** A blob has no name of its own, so it is saved through a throwaway link that carries one. */
-function saveFile(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  // Some browsers ignore a click on a link that is not in the page.
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS);
 }
 
 /** What a person should read for a failure: the BFF's own words when it gave any, else a plain sentence. */
@@ -100,7 +90,7 @@ export default function ReportDownload({ month, disabled = false }: { month: str
       stop.abort();
     }, GIVE_UP_AFTER_MS);
     try {
-      const { blob, fileName } = await api.sliExport(month, format, stop.signal);
+      const { blob, fileName } = await api.sliExport(month, format, stop.signal, readReportStyle());
       saveFile(blob, fileName);
       if (owns()) {
         setStatus(`${noun} report ready`);
@@ -130,13 +120,13 @@ export default function ReportDownload({ month, disabled = false }: { month: str
           role="group"
           aria-label={`Download the SLA report for ${monthInWords(month)}, both methods`}
         >
-          {FORMATS.map(({ format, label, noun }) => (
+          {FORMATS.map(({ format, label, noun, hint }) => (
             <button
               key={format}
               type="button"
               className="btn ghost sm"
               disabled={disabled}
-              title={BOTH_METHODS}
+              title={hint}
               // Not `disabled` while a download runs: that would drop the keyboard focus the button holds.
               aria-disabled={busy !== null || undefined}
               aria-busy={busy === format || undefined}
@@ -157,6 +147,7 @@ export default function ReportDownload({ month, disabled = false }: { month: str
           {status}
         </span>
       </div>
+      <ReportStyleButton />
       {/* Outside the buttons' box, on a row of its own in the controls row: next to the buttons it would
           push them onto a new row whenever it did not fit, moving the very button that was just pressed. */}
       {error && (

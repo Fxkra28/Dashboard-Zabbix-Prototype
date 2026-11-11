@@ -14,8 +14,29 @@ let lastUser: { name: string; role: string } | null = null;
 /** Set by a sign-out in this tab or another, so a renewal on its way out cannot undo it. */
 let signedOut = false;
 
+/** True while a sign-out request is out: no renewal starts meanwhile, and the flag above is set only once the server has answered. */
+let signingOut = 0;
+
 /** The renewal in flight, which a sign-out waits for: its answer would set the cookie again. */
 let renewing: Promise<unknown> | null = null;
+
+const sessionListeners = new Set<() => void>();
+
+/** For what a page keeps for one person: `listener` runs whenever this tab or another signs in, signs out or changes role. */
+export function onSessionChange(listener: () => void): () => void {
+  sessionListeners.add(listener);
+  return () => void sessionListeners.delete(listener);
+}
+
+const sessionChanged = () => {
+  for (const listener of sessionListeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error('A page that follows the session failed:', error);
+    }
+  }
+};
 
 /** Every POST carries this; with the session in a cookie the BFF refuses one without it. */
 export const CSRF = { 'X-HCML-CSRF': '1' };
@@ -62,17 +83,24 @@ const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastCh
 
 const announce = (type: AuthMessage['type']) => channel?.postMessage({ type } satisfies AuthMessage);
 
+/** Another person or another role is signed in on this page: the menus follow it, and so does what a page keeps for one person. */
+export function userOrRoleChanged(): void {
+  sessionChanged();
+  window.dispatchEvent(new Event(AUTH_CHANGED));
+}
+
 channel?.addEventListener('message', (e: MessageEvent<AuthMessage>) => {
   if (e.data?.type === 'signed-out') {
     signedOut = true;
     session = null;
+    sessionChanged();
     // A renewal this tab had out would set the cookie again: clear it once more when it lands.
     const pending = renewing;
     if (pending) void pending.finally(() => void postLogout().catch(() => undefined));
     goToSignIn();
   } else if (e.data?.type === 'signed-in' || e.data?.type === 'changed') {
     signedOut = false;
-    window.dispatchEvent(new Event(AUTH_CHANGED));
+    userOrRoleChanged();
   }
 });
 
@@ -103,7 +131,7 @@ export function renewSession(): Promise<'renewed' | 'failed' | 'signed-out'> {
 }
 
 async function doRenew(): Promise<'renewed' | 'failed' | 'signed-out'> {
-  if (signedOut) return 'signed-out';
+  if (signedOut || signingOut > 0) return 'signed-out';
   type Renewed = { user?: { name: string; role: string }; expiresIn?: unknown };
   let res: Response;
   let body: Renewed | null = null;
@@ -132,7 +160,7 @@ async function doRenew(): Promise<'renewed' | 'failed' | 'signed-out'> {
   const was = lastUser;
   recordSession(body.expiresIn, body.user);
   if (was && (was.role !== body.user.role || was.name !== body.user.name)) {
-    window.dispatchEvent(new Event(AUTH_CHANGED));
+    userOrRoleChanged();
     announce('changed');
   }
   return 'renewed';
@@ -155,26 +183,44 @@ export async function login(username: string, password: string) {
   const data = (await res.json()) as { user: { name: string; role: string }; expiresIn: number };
   recordSession(data.expiresIn, data.user);
   startConversation(); // a sign-in starts a conversation of its own, whoever was here before
+  sessionChanged();
   announce('signed-in');
   return data.user;
 }
 
 /** POST /api/auth/logout: the BFF clears the cookie. Public, so it works with an expired session too. */
 async function postLogout(): Promise<void> {
-  const res = await fetch('/bff/api/auth/logout', { method: 'POST', headers: CSRF });
-  if (!res.ok) throw new Error(`Sign-out failed (HTTP ${res.status}).`);
+  // A portal that does not answer would leave the button looking dead for as long as nginx waits (six minutes).
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 30_000);
+  try {
+    const res = await fetch('/bff/api/auth/logout', { method: 'POST', headers: CSRF, signal: abort.signal });
+    if (!res.ok) throw new Error(`Sign-out failed (HTTP ${res.status}).`);
+  } catch (error) {
+    if (abort.signal.aborted) throw new Error('Sign-out got no answer from the portal.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
- * Sign out, here and in every other tab. Waits for a renewal on its way,
- * whose answer would otherwise set the cookie again after it was cleared.
+ * Sign out, here and in every other tab, once the server has answered: a failed request leaves the page signed in and the
+ * caller gets the error. Waits for a renewal in flight, whose answer would set the cookie again.
  */
 export async function logout(): Promise<void> {
+  signingOut++;
+  try {
+    await renewing?.catch(() => undefined);
+    await postLogout();
+  } finally {
+    signingOut--;
+  }
+  // The next person at this workstation must not read the conversation. Only now: a sign-out that failed leaves the page as it was.
+  clearConversation();
   signedOut = true;
   session = null;
   lastUser = null;
-  clearConversation(); // the next person at this workstation must not read it
-  await renewing?.catch(() => undefined);
+  sessionChanged();
   announce('signed-out');
-  await postLogout();
 }

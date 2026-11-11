@@ -244,3 +244,166 @@ describe('SESSION_HOURS and SESSION_EPOCH (SC-14)', () => {
     }
   });
 });
+
+describe('SLA_TIMEZONE (BK-34)', () => {
+  it('is Asia/Jakarta when unset, empty or only spaces, and takes any zone the runtime knows, spaces trimmed', async () => {
+    for (const raw of ['', '   ']) {
+      const { config, assertConfig } = await load({ ...AUTH_ON, SLA_TIMEZONE: raw });
+      expect(config.sla.timezone, JSON.stringify(raw)).toBe('Asia/Jakarta');
+      expect(assertConfig, JSON.stringify(raw)).not.toThrow();
+    }
+    for (const [raw, zone] of [['UTC', 'UTC'], ['Asia/Makassar', 'Asia/Makassar'], [' Asia/Jayapura ', 'Asia/Jayapura'], ['Europe/London', 'Europe/London']] as const) {
+      const { config, assertConfig } = await load({ ...AUTH_ON, SLA_TIMEZONE: raw });
+      expect(config.sla.timezone, raw).toBe(zone);
+      expect(assertConfig, raw).not.toThrow();
+    }
+  });
+
+  it('stops the start on a name the runtime does not know, naming the setting and the value', async () => {
+    for (const raw of ['Asia/Jakata', 'Jakarta', 'WIB', 'Asia Jakarta', 'GMT+7 (WIB)']) {
+      const { assertConfig } = await load({ ...AUTH_ON, SLA_TIMEZONE: raw });
+      expect(assertConfig, raw).toThrow(`SLA_TIMEZONE="${raw}" is not a time zone the portal knows`);
+    }
+  });
+
+  it('accepts only zones that the month cutting can use, so no accepted zone turns an SLA page into a 500', async () => {
+    const { monthBounds } = await import('../sli/time.js');
+    for (const raw of ['UTC', 'Asia/Makassar', 'Europe/London', 'America/New_York']) {
+      const { assertConfig } = await load({ ...AUTH_ON, SLA_TIMEZONE: raw });
+      expect(assertConfig, raw).not.toThrow();
+      expect(() => monthBounds('2026-10', raw), raw).not.toThrow();
+    }
+  });
+});
+
+describe.each(['ZABBIX_TIMEOUT_MS', 'AI_TIMEOUT_MS'])('%s (BK-34)', (name) => {
+  it('starts unset or empty, and on a whole number of milliseconds from a second up to what a timer can hold', async () => {
+    for (const raw of ['', '   ', '1000', '30000', ' 300000 ', '2147483647']) {
+      const { assertConfig } = await load({ ...AUTH_ON, [name]: raw });
+      expect(assertConfig, JSON.stringify(raw)).not.toThrow();
+    }
+  });
+
+  it('is refused at zero, below a second, negative, fractional, in words or units, or above what a timer can hold, naming itself', async () => {
+    for (const raw of ['0', '999', '-5', '2.5', '1e4', 'abc', '30s', '10 000', '0x10', '2147483648']) {
+      const { assertConfig } = await load({ ...AUTH_ON, [name]: raw });
+      expect(assertConfig, raw).toThrow(`${name}="${raw}" is not a timeout the portal can use`);
+    }
+  });
+});
+
+describe.each([
+  { name: 'SLO_TARGET', standard: 99, fits: ['99', '99.9', '100', '0', ' 95 ', '99.', '.5'], wrong: ['100.1', '999', '-1', '99%', 'abc', '1e2', '0x10', '99,5', '9 9'], range: 'from 0 to 100', what: 'a target' },
+  { name: 'SLI_MIN_COVERAGE', standard: 0.5, fits: ['0', '0.5', '1', ' 0.25 ', '.5'], wrong: ['1.1', '50', '-0.1', '50%', 'half', '1e-1', '0x1', '0,5'], range: 'from 0 to 1', what: 'a share' },
+])('$name (BK-48)', ({ name, standard, fits, wrong, range, what }) => {
+  it('starts unset, empty or only spaces, with the standard value', async () => {
+    for (const raw of ['', '   ']) {
+      const { config, assertConfig } = await load({ ...AUTH_ON, [name]: raw });
+      expect(assertConfig, JSON.stringify(raw)).not.toThrow();
+      expect(name === 'SLO_TARGET' ? config.sla.target : config.sla.minCoverage).toBe(standard);
+    }
+  });
+
+  it('starts on a plain number inside the range, the ends included', async () => {
+    for (const raw of fits) {
+      const { assertConfig } = await load({ ...AUTH_ON, [name]: raw });
+      expect(assertConfig, raw).not.toThrow();
+    }
+  });
+
+  it('is refused outside the range or when it is not a plain number, naming itself, the value and the range', async () => {
+    for (const raw of wrong) {
+      const { assertConfig } = await load({ ...AUTH_ON, [name]: raw });
+      expect(assertConfig, raw).toThrow(`${name}="${raw}" is not ${what} the portal can use`);
+      expect(assertConfig, raw).toThrow(range);
+    }
+  });
+});
+
+
+describe('email with sign-in off, said at start-up (SC-43)', () => {
+  const MAIL = { MAIL_PROVIDER: 'gmail', MAIL_USER: 'portal.reports@example.com', MAIL_PASS: 'not-a-real-password', MAIL_TO: 'ana@example.org' };
+  async function said(env: Record<string, string>): Promise<string[]> {
+    vi.resetModules();
+    for (const [key, value] of Object.entries({ ALLOW_EMAIL_WITHOUT_AUTH: '', ...env })) vi.stubEnv(key, value);
+    const { assertConfig } = await import('../core/config.js');
+    const lines: string[] = [];
+    assertConfig((m) => lines.push(m));
+    return lines;
+  }
+  const email = (lines: string[]) => lines.filter((l) => /email/i.test(l) && /ALLOW_EMAIL_WITHOUT_AUTH/.test(l));
+
+  it('says that email is off, and what to set, when sign-in is off and the opt-in is not given', async () => {
+    const lines = email(await said({ ...MAIL, AUTH_ENABLED: 'false' }));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/Email is off while sign-in is off/);
+    expect(lines[0]).toContain('ALLOW_EMAIL_WITHOUT_AUTH=true');
+  });
+
+  it('says that anyone who reaches the server can send and set the schedule when the opt-in is given', async () => {
+    const lines = email(await said({ ...MAIL, AUTH_ENABLED: 'false', ALLOW_EMAIL_WITHOUT_AUTH: 'true' }));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^ALLOW_EMAIL_WITHOUT_AUTH=true: with sign-in off, anyone who reaches this server can email the report/);
+    expect(lines[0]).toContain('monthly schedule');
+  });
+
+  it('reads the opt-in as true in any case and with spaces, and as nothing else', async () => {
+    for (const raw of [' TRUE ', 'True']) expect(email(await said({ ...MAIL, AUTH_ENABLED: 'false', ALLOW_EMAIL_WITHOUT_AUTH: raw }))[0], raw).toMatch(/^ALLOW_EMAIL_WITHOUT_AUTH=true:/);
+    for (const raw of ['1', 'yes', 'on', 'enabled']) expect(email(await said({ ...MAIL, AUTH_ENABLED: 'false', ALLOW_EMAIL_WITHOUT_AUTH: raw }))[0], raw).toMatch(/Email is off while sign-in is off/);
+  });
+
+  it('says nothing about it with sign-in on, or when email is not set up', async () => {
+    expect(email(await said({ ...MAIL, ...AUTH_ON }))).toEqual([]);
+    expect(email(await said({ AUTH_ENABLED: 'false', MAIL_PROVIDER: '', MAIL_USER: '', MAIL_PASS: '', MAIL_TO: '' }))).toEqual([]);
+  });
+});
+
+describe('a password on every short list (SC-46)', () => {
+  const warned = async (env: Record<string, string>): Promise<{ lines: string[]; threw: boolean }> => {
+    const { assertUsers } = await load(env);
+    const lines: string[] = [];
+    let threw = false;
+    try {
+      assertUsers((m: string) => lines.push(m));
+    } catch {
+      threw = true;
+    }
+    return { lines, threw };
+  };
+
+  it('warns, and does not refuse, for the passwords the documents once used as examples, naming the users and never the passwords', async () => {
+    const { lines, threw } = await warned({ ...AUTH_ON, PORTAL_PASS: '', PORTAL_USERS: 'ana:secret:viewer,budi:Zabbix:operator,citra:a-long-real-password:admin' });
+    expect(threw).toBe(false);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/"ana", "budi" have a password/);
+    expect(lines[0]).not.toContain('citra');
+    expect(lines[0]).not.toMatch(/secret|zabbix/i);
+  });
+
+  it('says it of one user in the singular, for the PORTAL_PASS pair', async () => {
+    const { lines, threw } = await warned({ ...AUTH_ON, PORTAL_PASS: 'zabbix', PORTAL_USERS: '' });
+    expect(threw).toBe(false);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/"admin" has a password/);
+  });
+
+  it('warns of a placeholder that was pasted as it stood', async () => {
+    const { lines } = await warned({ ...AUTH_ON, PORTAL_PASS: '', PORTAL_USERS: 'ana:<a long password>:admin' });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/placeholder/);
+  });
+
+  it('says nothing for a long password, with sign-in off, or when none is given to say it to', async () => {
+    expect((await warned({ ...AUTH_ON })).lines).toEqual([]);
+    expect((await warned({ AUTH_ENABLED: 'false', PORTAL_PASS: 'secret', PORTAL_USERS: '' })).lines).toEqual([]);
+    const { assertUsers } = await load({ ...AUTH_ON, PORTAL_PASS: 'secret', PORTAL_USERS: '' });
+    expect(() => assertUsers()).not.toThrow();
+  });
+
+  it('still refuses an empty password and "admin" as it did, and says nothing else then', async () => {
+    const { lines, threw } = await warned({ ...AUTH_ON, PORTAL_PASS: 'admin', PORTAL_USERS: '' });
+    expect(threw).toBe(true);
+    expect(lines).toEqual([]);
+  });
+});
+

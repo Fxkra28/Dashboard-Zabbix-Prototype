@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import { config, assertConfig, trustProxyOption } from './core/config.js';
+import { config, assertConfig, mailNow, trustProxyOption } from './core/config.js';
 import { registerErrorHandler } from './http/errors.js';
 import { genReqId, registerRequestId } from './http/requestId.js';
 import { AJV_OPTIONS } from './core/schemas.js';
@@ -14,7 +14,7 @@ import { assertUsers, setupAuth } from './security/auth.js';
 import { registerRateLimit } from './http/rateLimit.js';
 import { registerHealth } from './http/health.js';
 import { registerHostCheck } from './http/hostCheck.js';
-import { installShutdown } from './http/shutdown.js';
+import { closeWith, installShutdown } from './http/shutdown.js';
 import { hostRoutes } from './routes/hosts.js';
 import { deviceRoutes } from './routes/devices.js';
 import { problemRoutes } from './routes/problems.js';
@@ -36,8 +36,14 @@ import { analyticsRoutes } from './routes/analytics.js';
 import { actionRoutes } from './routes/actions.js';
 import { chatRoutes } from './routes/chat.js';
 import { warmModel } from './clients/ai.js';
+import { warmUp } from './services/warmUp.js';
 import { sliRoutes } from './routes/sli.js';
 import { sliExportRoutes } from './routes/sliExport.js';
+import { sliMailRoutes } from './routes/sliMail.js';
+import { sliScheduleRoutes } from './routes/sliSchedule.js';
+import { initPortalState, portalState } from './services/portalState.js';
+import { createReportSchedule } from './services/reportSchedule.js';
+import { emailReport, sendNotice } from './services/sliMail.js';
 
 const app = Fastify({
   // Fastify's own request log line, except that a `?token=` an old page may
@@ -58,11 +64,24 @@ setCacheLogger(app.log);
 // clear refusal at boot than a portal that looks healthy and isn't.
 try {
   assertConfig((m) => app.log.warn(m));
-  assertUsers();
+  assertUsers((m) => app.log.warn(m));
 } catch (err) {
   app.log.error(err instanceof Error ? err.message : err);
   process.exit(1);
 }
+
+// The recipients, the schedule and what was sent (core/state.ts). It never fails: with no folder it keeps them in memory and says so.
+await initPortalState((m) => app.log.warn(m));
+const reportSchedule = createReportSchedule({
+  now: () => Math.floor(Date.now() / 1000),
+  state: portalState,
+  settings: mailNow,
+  send: emailReport,
+  notice: sendNotice,
+  timezone: config.sla.timezone,
+  log: app.log,
+});
+closeWith(app, reportSchedule);
 
 // X-Request-Id on every reply and `requestId` in every error body. First, so the refusals below
 // carry it too (requestId.ts).
@@ -127,12 +146,16 @@ await app.register(actionRoutes);
 await app.register(chatRoutes);
 await app.register(sliRoutes);
 await app.register(sliExportRoutes);
+await app.register(sliMailRoutes);
+await app.register(sliScheduleRoutes, { schedule: reportSchedule });
 
 try {
   await app.listen({ port: config.port, host: config.host });
   app.log.info(`HCML BFF listening on ${config.host}:${config.port}`);
   void warmModel(app.log); // load the local model now, not on the first question
   readiness.warm(); // so the first /api/health already has an answer
+  void warmUp(app.log); // the main slow views, so their first visitor does not wait (not the other reports or the SLA figures)
+  reportSchedule.start();
   installShutdown(app);
 } catch (err) {
   app.log.error(err);

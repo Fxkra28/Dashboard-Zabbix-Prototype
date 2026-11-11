@@ -167,7 +167,7 @@ export default function Sites() {
           </label>
         </FieldGroup>
         <FieldSpacer>
-          <span className="pill">{count(filtered.length, 'site')}</span>
+          {q.data && <span className="pill">{count(filtered.length, 'site')}</span>}
         </FieldSpacer>
       </div>
 

@@ -779,6 +779,33 @@ describe('workbook numbers', () => {
     for (const c of codes) expect(c).not.toContain('"');
   });
 
+  it('gives a percent below 100 the decimals it takes not to read as 100, and no more (BK-46)', () => {
+    const cells: Cell[] = [
+      { text: '99.99%', n: 99.9999996 },
+      { text: '99.99%', n: 99.99996 },
+      { text: '99.99%', n: 99.9951 },
+      { text: '100.00%', n: 100 },
+    ];
+    const { b, s } = built(numTable('percent', cells));
+    const codes = cells.map((_, i) => styleOf(b, s, `B${5 + i}`).formatCode);
+    expect(codes).toEqual(['0.0000000\\%', '0.00000\\%', '0.0000\\%', '0.0000\\%']);
+    expect(Number(kid(cell(s, 'B5')!, 'v')!.text)).toBe(99.9999996);
+  });
+
+  it('reads the decimals of a text that writes them with a comma, so a style never cuts a figure back to the target', () => {
+    const cells: Cell[] = [
+      { text: '99,38%', n: 99.38 },
+      { text: '98,99998%', n: 98.99998 },
+      { text: '98,99999998%', n: 98.99999998 },
+      { text: '100%', n: 100 },
+      { text: `99,${'9'.repeat(30)}%`, n: 99.99 },
+    ];
+    const { b, s } = built(numTable('percent', cells, { text: '98,99998%', n: 98.99998 }));
+    const codes = [...cells.keys(), cells.length].map((i) => styleOf(b, s, `B${5 + i}`).formatCode);
+    expect(codes).toEqual(['0.0000\\%', '0.00000\\%', '0.00000000\\%', '0.0000\\%', `0.${'0'.repeat(15)}\\%`, '0.00000\\%']);
+    expect(Number(kid(cell(s, 'B6')!, 'v')!.text)).toBe(98.99998);
+  });
+
   it('shares one number format between the cells that need the same decimals', () => {
     const cells: Cell[] = [4, 5, 4, 6, 5, 4].map((d) => ({ text: `98.${'9'.repeat(d)}%`, n: 98.9 }));
     const { b } = built(numTable('percent', cells));

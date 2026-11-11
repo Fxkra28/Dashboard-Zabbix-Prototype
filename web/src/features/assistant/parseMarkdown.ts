@@ -20,7 +20,20 @@ export type Block =
 
 const UL = /^\s*[-*•]\s+(.*)$/;
 const OL = /^\s*(\d{1,3})[.)]\s+(.*)$/;
-const HEADING = /^\s*#{1,6}\s+(.*?)\s*#*\s*$/;
+const HEADING_MARK = /^\s*#{1,6}\s/;
+
+/**
+ * The text of a heading line ("## Summary ##" is "Summary"), or null. Read part by part: one pattern with a lazy group and
+ * optional trailing spaces took six seconds on 3,200 spaces.
+ */
+function headingOf(line: string): string | null {
+  const mark = HEADING_MARK.exec(line);
+  if (!mark) return null;
+  const text = line.slice(mark[0].length).trim();
+  let end = text.length;
+  while (end > 0 && text[end - 1] === '#') end--;
+  return end === text.length ? text : text.slice(0, end).trimEnd();
+}
 
 /**
  * Left to right: a backtick with a closing partner opens a code span (literal
@@ -88,7 +101,8 @@ export function parseMarkdown(text: string): Block[] {
   };
 
   for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
-    const line = raw.replace(/\s+$/, '');
+    // trimEnd, not a pattern: `\s+$` tries every start in a long run of spaces and takes seconds on 50,000 of them.
+    const line = raw.trimEnd();
     if (!line.trim()) {
       endPara();
       endList();
@@ -117,11 +131,11 @@ export function parseMarkdown(text: string): Block[] {
       continue;
     }
 
-    const heading = HEADING.exec(line);
-    if (heading) {
+    const heading = headingOf(line);
+    if (heading !== null) {
       endPara();
       endList();
-      if (heading[1]) blocks.push({ type: 'paragraph', lines: [inline(heading[1])], strong: true });
+      if (heading) blocks.push({ type: 'paragraph', lines: [inline(heading)], strong: true });
       continue;
     }
 

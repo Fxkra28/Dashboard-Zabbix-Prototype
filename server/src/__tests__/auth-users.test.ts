@@ -212,3 +212,16 @@ describe('the sign-in log (SC-19)', () => {
     }
   });
 });
+
+describe('the first PORTAL_USERS entry (MT-06)', () => {
+  it('replaces PORTAL_USER and PORTAL_PASS, so a new wall account needs the admin listed beside it', async () => {
+    const wall = await hashPassword('wall-screen-pass', CHEAP);
+    const alone = await buildAuthApp({ PORTAL_USERS: `wall:${wall}:wall`, PORTAL_USER: 'boss', PORTAL_PASS: 'boss-pass' });
+    expect((await alone.signIn('wall', 'wall-screen-pass')).json().user).toEqual({ name: 'wall', role: 'wall' });
+    expect((await alone.signIn('boss', 'boss-pass')).statusCode).toBe(401);
+    await closeAuthApps();
+    const both = await buildAuthApp({ PORTAL_USERS: `boss:boss-pass:admin,wall:${wall}:wall` });
+    expect((await both.signIn('boss', 'boss-pass')).json().user).toEqual({ name: 'boss', role: 'admin' });
+    expect((await both.signIn('wall', 'wall-screen-pass')).json().user).toEqual({ name: 'wall', role: 'wall' });
+  });
+});

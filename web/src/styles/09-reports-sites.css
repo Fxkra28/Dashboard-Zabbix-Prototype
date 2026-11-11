@@ -275,7 +275,7 @@
 .svc-sla em {
   font-style: normal;
   font-weight: var(--w-regular);
-  opacity: 0.65;
+  color: var(--muted);
 }
 .svc-sla.ok {
   background: var(--good-bg);
@@ -430,3 +430,17 @@
   font-weight: var(--w-semibold);
 }
 
+
+/* Maps: a host node is a button that prints its severity in words under the map (UX-38). */
+.map-node {
+  cursor: pointer;
+}
+/* A host with problems already has a 2px outline; the one pressed, or under the keyboard, has a heavier one on every browser. */
+.map-node[aria-pressed='true'] rect,
+.map-node:focus-visible rect {
+  stroke-width: 4px;
+}
+.map-selected {
+  margin: var(--s-3) 0 0;
+  font-size: var(--t-base);
+}

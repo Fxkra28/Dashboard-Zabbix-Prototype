@@ -1,4 +1,6 @@
 import type { FastifyRequest } from 'fastify';
+import { ZabbixRefusedError, ZabbixTimeoutError } from '../clients/zabbix.js';
+import { actor } from '../security/audit.js';
 
 /**
  * Acknowledge / close write-back: the portal's only write path.
@@ -34,13 +36,6 @@ export const MAX_MESSAGE = 2048;
 /** Most event ids one request may act on: a slip or a script cannot close a whole estate. */
 export const MAX_EVENTIDS = 50;
 
-/** Who is acting, for the message tag and the log. Brackets and control characters are dropped, so the tag cannot be closed early. */
-function actor(req: FastifyRequest): string {
-  const sub = (req.user as { sub?: unknown } | undefined)?.sub;
-  const name = typeof sub === 'string' ? sub.replace(/[\p{Cc}\p{Cf}[\]]/gu, '').trim().slice(0, 64) : '';
-  return name || 'anonymous';
-}
-
 /** The event ids a body names, for the log only: at most MAX_EVENTIDS, each cut short, whatever the body holds. */
 function idsForLog(body: unknown): string[] {
   const raw = body && typeof body === 'object' ? (body as AckBody).eventids : undefined;
@@ -65,6 +60,20 @@ export function trailOf(req: FastifyRequest) {
 /** Every attempt is on record with who and from where, before any check can turn it away. */
 export async function logAttempt(req: FastifyRequest): Promise<void> {
   req.log.info(trailOf(req), 'zabbix write-back attempt');
+}
+
+export const WRITE_REFUSED = 'Zabbix refused the change. It may already be closed, or this account may not be allowed to change it.';
+export const WRITE_MAY_HAVE_GONE = 'Zabbix did not answer in time, so the change may or may not have been made. Look at the problem again before you try it again.';
+
+/**
+ * The answer for a write that failed in a way the general "not answering" would misstate: Zabbix refused it, or timed out with the change
+ * possibly made. Zabbix's own words go to the log. Undefined for any other failure, which the error handler words as before.
+ */
+export function writeFailure(err: unknown, requestId: string): { status: number; error: string; message: string } | undefined {
+  const reference = `Tell an administrator and quote reference ${requestId}.`;
+  if (err instanceof ZabbixRefusedError) return { status: 502, error: 'zabbix_error', message: `${WRITE_REFUSED} ${reference}` };
+  if (err instanceof ZabbixTimeoutError) return { status: 503, error: 'zabbix_timeout', message: `${WRITE_MAY_HAVE_GONE} ${reference}` };
+  return undefined;
 }
 
 /** Requests the handler has already logged as refused or failed, so the response hook does not log them twice. */
@@ -93,6 +102,7 @@ export const STALE_AFTER_WRITE = [
   'aging',
   'services',
   'hosts:overview',
+  'devices',
   'map:',
   'chat:snapshot',
 ];

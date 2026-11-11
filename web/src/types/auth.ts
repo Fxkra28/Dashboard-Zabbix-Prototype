@@ -1,6 +1,6 @@
 /** Who is signed in, what the server says about itself, and the roles. */
 
-export type Role = 'viewer' | 'operator' | 'admin';
+export type Role = 'viewer' | 'wall' | 'operator' | 'admin';
 
 export interface Me {
   authEnabled: boolean;
@@ -22,6 +22,6 @@ export interface Health {
   defaults?: { availabilityMinSeverity?: number; timezone?: string };
   /** Only in the reply a signed-in caller gets. */
   build?: { commit?: string; time?: string };
-  /** Only in the reply a signed-in caller gets: the BFF's cached check of Zabbix and of the AI model. */
-  ready?: { model?: string };
+  /** Whether Zabbix can be read: a plain true or false for anyone, and for a signed-in caller the BFF's cached check of Zabbix and of the AI model. */
+  ready?: boolean | { model?: string };
 }

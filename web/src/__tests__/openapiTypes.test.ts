@@ -58,6 +58,8 @@ const READS = {
   '/api/services': typed<Web.ServicesResponse>(),
   '/api/services/derived': typed<Web.DerivedServicesResponse>(),
   '/api/sli': typed<Web.SliReport>(),
+  '/api/sli/email': typed<Web.EmailInfo>(),
+  '/api/sli/schedule': typed<Web.ScheduleInfo>(),
   '/api/sla/source': typed<Web.SlaSource>(),
   '/api/sla': typed<Web.Sla[]>(),
   '/api/sla/sli': typed<Web.SlaSli[]>(),
@@ -68,6 +70,18 @@ const READS = {
 /** Each POST path api/ reads with `post<T>`. */
 const WRITES = {
   '/api/problems/acknowledge': typed<Web.AcknowledgeResult>(),
+  '/api/sli/email': typed<Web.EmailSent>(),
+};
+
+/** Each PUT path api/ reads with `put<T>`. */
+const PUTS = {
+  '/api/sli/recipients': typed<Web.SavedRecipients>(),
+  '/api/sli/schedule': typed<Web.ScheduleInfo>(),
+};
+
+/** Each DELETE path api/ reads with `del<T>`. */
+const DELETES = {
+  '/api/sli/recipients': typed<Web.DeletedRecipients>(),
 };
 
 // The comparison
@@ -104,13 +118,13 @@ type Drift<S, W, D extends unknown[] = []> = [S] extends [W]
         : '';
 
 /** The 200 body, as JSON, that the file documents for a method on a path. */
-type Body<P extends string, M extends 'get' | 'post'> = P extends keyof paths
+type Body<P extends string, M extends 'get' | 'post' | 'put' | 'delete'> = P extends keyof paths
   ? paths[P] extends { [K in M]: { responses: { 200: { content: { 'application/json': infer B } } } } }
     ? B
     : 'no JSON body for the 200 answer'
   : 'no such path';
 
-type Drifts<M extends 'get' | 'post', R extends Record<string, unknown>> = {
+type Drifts<M extends 'get' | 'post' | 'put' | 'delete', R extends Record<string, unknown>> = {
   [P in keyof R & string]: Prefix<P, Drift<Body<P, M>, R[P]>>;
 }[keyof R & string];
 
@@ -118,7 +132,7 @@ type Drifts<M extends 'get' | 'post', R extends Record<string, unknown>> = {
  * Every place an answer drifts, named by path. `{}` fits only when there are none: if this line fails to
  * compile, the error lists the first of them. Hover `Drifts` for the whole list.
  */
-export const noDrift: Record<Drifts<'get', typeof READS> | Drifts<'post', typeof WRITES>, never> = {};
+export const noDrift: Record<Drifts<'get', typeof READS> | Drifts<'post', typeof WRITES> | Drifts<'put', typeof PUTS> | Drifts<'delete', typeof DELETES>, never> = {};
 
 // The comparison has to be able to fail. Each `@ts-expect-error` below becomes an error of its own, as an unused
 // directive, if the comparison ever stops reporting what it should; the last three show what it lets through.
@@ -159,8 +173,8 @@ export const proofs: {
 /** Every file of api/ as one text: the calls are in a file for each part of the portal. */
 const apiSource = Object.values(import.meta.glob('../api/*.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>).join('\n');
 
-/** The paths a helper (`request` or `post`) is called with in api/, once each. */
-const callsIn = (source: string, helper: 'request' | 'post') =>
+/** The paths a helper (`request`, `post` or `put`) is called with in api/, once each. */
+const callsIn = (source: string, helper: 'request' | 'post' | 'put' | 'del') =>
   [...new Set([...source.matchAll(new RegExp(`\\b${helper}<[^(]*\\(\\s*[\`'](/api/[\\w/-]+)`, 'g'))].map((m) => m[1]))].sort();
 
 describe('the OpenAPI file and the web types (FR-16)', () => {
@@ -168,6 +182,8 @@ describe('the OpenAPI file and the web types (FR-16)', () => {
     expect(callsIn(apiSource, 'request').length, 'the pattern still finds the calls').toBeGreaterThan(30);
     expect(callsIn(apiSource, 'request')).toEqual(Object.keys(READS).sort());
     expect(callsIn(apiSource, 'post')).toEqual(Object.keys(WRITES).sort());
+    expect(callsIn(apiSource, 'put')).toEqual(Object.keys(PUTS).sort());
+    expect(callsIn(apiSource, 'del')).toEqual(Object.keys(DELETES).sort());
   });
 
   it('has a generated file that is current, made from the OpenAPI file as it is now', async () => {

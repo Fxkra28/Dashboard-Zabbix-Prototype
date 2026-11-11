@@ -4,7 +4,7 @@
  */
 
 import { noteStaleCopy } from '../shared/lib/freshness';
-import { assertFits, type Guard } from '../guards';
+import { assertFits, UnreadableAnswer, type Guard } from '../guards';
 import { CSRF, endSession, goToSignIn } from './session';
 
 /**
@@ -69,17 +69,14 @@ export async function fetchOk(path: string, signal: AbortSignal | undefined): Pr
   return res;
 }
 
-/** How long a read may go unanswered before the page is told it failed. */
-const REQUEST_TIMEOUT_MS = 30_000;
+/** How long a read may go unanswered before the page is told it failed: one page took HCML's Zabbix 256 s. */
+const REQUEST_TIMEOUT_MS = 330_000;
 
-/**
- * An explanation waits on a language model, which the BFF itself allows 30 s
- * (one retry) hosted or 120 s local. This stays above both, and below nginx's 180 s.
- */
-export const EXPLAIN_TIMEOUT_MS = 170_000;
+/** An explanation reads Zabbix, then waits on a language model (30 s with one retry hosted, 120 s local). Below nginx's 480 s. */
+export const EXPLAIN_TIMEOUT_MS = 450_000;
 
-/** The first monthly SLA after a restart is computed from months of events. Below nginx's 180 s. */
-export const SLI_TIMEOUT_MS = 170_000;
+/** The first monthly SLA after a restart is computed from months of events. Below nginx's 480 s. */
+export const SLI_TIMEOUT_MS = 450_000;
 
 /**
  * All portal data goes through /bff (proxied to the BFF); the browser never sees Zabbix.
@@ -123,26 +120,59 @@ export async function request<T>(
   }
 }
 
-export async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`/bff${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...CSRF },
-    body: JSON.stringify(body),
-  });
+/**
+ * A write, with the deadline of a read. The timeout says the change may have been made, because the server can finish after the
+ * page gave up, and a person who sends it again would otherwise do it twice.
+ */
+async function write<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body: unknown, guard?: Guard<T>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+  try {
+    const res = await fetch(`/bff${path}`, {
+      method,
+      // A DELETE has no body, and the server refuses a JSON content type with an empty one.
+      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...CSRF },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: abort.signal,
+    });
 
-  if (res.status === 401) {
-    endSession();
-    goToSignIn();
-    throw new Error('Unauthorized');
+    if (res.status === 401) {
+      endSession();
+      goToSignIn();
+      throw new Error('Unauthorized');
+    }
+    if (!res.ok) {
+      const b = (await res.json().catch(() => null)) as
+        | { error?: unknown; message?: unknown }
+        | null;
+      // Only words count, as for a read: an nginx page or an empty body carries none, and the page then says so in its own.
+      const said = [b?.message, b?.error].find((v): v is string => typeof v === 'string' && v.trim() !== '');
+      throw new HttpFailure(said ?? `${path}: HTTP ${res.status}`, res.status, said !== undefined);
+    }
+    let json: unknown;
+    try {
+      json = await res.json();
+    } catch (err) {
+      // The server said it was done, so the change was made: only its answer is not JSON.
+      if (abort.signal.aborted) throw err;
+      throw new UnreadableAnswer(path, 'an answer', 'the body is not JSON');
+    }
+    return guard ? assertFits(guard, json, path) : (json as T);
+  } catch (err) {
+    if (abort.signal.aborted) {
+      throw new Error(
+        `No answer from the server within ${Math.round(timeoutMs / 1000)} seconds. Check whether the change was made before you send it again.`,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  if (!res.ok) {
-    const b = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(b?.message ?? b?.error ?? `${path}: HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
+
+export const post = <T>(path: string, body: unknown, guard?: Guard<T>, timeoutMs?: number): Promise<T> => write<T>('POST', path, body, guard, timeoutMs);
+export const put = <T>(path: string, body: unknown, guard?: Guard<T>): Promise<T> => write<T>('PUT', path, body, guard);
+export const del = <T>(path: string, guard?: Guard<T>): Promise<T> => write<T>('DELETE', path, undefined, guard);
 
 export const qs = (params: Record<string, string | number | undefined>) => {
   const p = Object.entries(params)

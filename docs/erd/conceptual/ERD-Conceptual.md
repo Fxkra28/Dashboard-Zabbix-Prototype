@@ -134,7 +134,7 @@ flowchart TB
 Host State is an entity, not a property of Device. The portal answers "is it down?" ping first, because
 on 17 September 2026 sixteen of HCML's twenty-three devices marked *unavailable* by Zabbix answered ping,
 and forty-three devices had no interface at all. The verdict is five states and eight reasons with a
-documented precedence (`server/src/domain/reachability.ts:17,20-28,186-230`), which is more than an attribute can
+documented precedence (`server/src/domain/reachability.ts:18,21-29,222-278`), which is more than an attribute can
 carry. No existing ERD covers it.
 
 ***stations* carries the site signal, and that is why it is an association and not a foreign key.** A
@@ -207,7 +207,7 @@ absent on purpose. See the *cascade* legend in
 
 ***derives from* carries the evidence source**: trends, raw history on an instance too young to have
 trends, or none at all. The same capacity figure means different things depending on which answered, so the
-source belongs to the association (`server/src/services/capacity.ts:161-177`).
+source belongs to the association (`server/src/services/capacity.ts:164-180`).
 
 **Interface Reading is absent from every existing ERD** (`server/src/services/net.ts:7-14,39-54`).
 
@@ -538,7 +538,7 @@ the physical model where a foreign key backs the cardinality, and the code where
 | R1 | Device | (1,n) | belongs to | (0,n) | Device Group | M:N: a link table with a key on both sides |
 | R2 | Site | (1,n) | stations | (1,1) | Device | carries the signal · conceptual only, `services/sites.ts:83-104` |
 | R3 | Device Class | (0,n) | classes | (1,1) | Device | conceptual only, `naming.ts`, total, defaults to *other* |
-| R4 | Device | (1,1) | reaches | (1,1) | Host State | conceptual only, `reachability.ts:207-230`, total, disabled devices included |
+| R4 | Device | (1,1) | reaches | (1,1) | Host State | conceptual only, `reachability.ts:255-278`, total, disabled devices included |
 | R5 | Device | (0,n) | carries | (1,1) | Measurement | a NOT NULL foreign key |
 | R6 | Measurement | (0,n) | records | (1,1) | Observation | no foreign key on purpose. See Measurement above |
 | R7 | Device | (0,n) | exposes | (1,1) | Interface Reading | conceptual only, `services/net.ts:57-63`, SNMP devices only |

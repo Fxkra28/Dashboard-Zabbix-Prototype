@@ -117,7 +117,9 @@ describe('titleFor', () => {
 describe('the date in the topbar (FR-08)', () => {
   it('turns over at midnight on a tab that stays open', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 9, 7, 23, 59, 30));
+    // Half a minute before midnight in the report zone (Jakarta), whatever zone this machine is set to (FR-24).
+    vi.setSystemTime(new Date('2026-10-07T23:59:30+07:00'));
+    const jakartaDay = (day: string) => new Date(`2026-10-${day}T12:00:00+07:00`).toLocaleDateString(undefined, { timeZone: 'Asia/Jakarta' });
     // A page with nothing in it: only the shell is under test.
     render(
       <MemoryRouter initialEntries={['/links']}>
@@ -129,10 +131,10 @@ describe('the date in the topbar (FR-08)', () => {
       </MemoryRouter>,
     );
     const topbar = screen.getByRole('banner');
-    expect(topbar).toHaveTextContent(new Date(2026, 9, 7).toLocaleDateString());
+    expect(topbar).toHaveTextContent(jakartaDay('07'));
 
     act(() => void vi.advanceTimersByTime(60_000));
-    expect(topbar).toHaveTextContent(new Date(2026, 9, 8).toLocaleDateString());
-    expect(topbar).not.toHaveTextContent(new Date(2026, 9, 7).toLocaleDateString());
+    expect(topbar).toHaveTextContent(jakartaDay('08'));
+    expect(topbar).not.toHaveTextContent(jakartaDay('07'));
   });
 });

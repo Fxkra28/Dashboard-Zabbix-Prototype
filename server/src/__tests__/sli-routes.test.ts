@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pingZabbix } from './helpers/pingZabbix.js';
 import { buildTestApp } from './helpers/app.js';
 
 /**
@@ -246,14 +247,12 @@ describe('explain caching and facts', () => {
 
 describe('GET /api/links', () => {
   it('reports a link that has never collected as unknown, not down, and pairs WAN legs by name', async () => {
-    zbxMock.mockImplementation(async (method: string) =>
-      method === 'item.get'
-        ? [
-            // Never polled: Zabbix says lastvalue "0", lastclock "0".
-            { itemid: '1', name: 'ICMP ping', key_: 'icmpping', lastvalue: '0', lastclock: '0', state: '1', hosts: [{ hostid: '102', name: 'INET : SAMPANG WAN 1' }] },
-            { itemid: '2', name: 'ICMP ping', key_: 'icmpping', lastvalue: '1', lastclock: String(NOW - 30), state: '0', delay: '1m', hosts: [{ hostid: '103', name: 'INET : SAMPANG WAN 2' }] },
-          ]
-        : [],
+    zbxMock.mockImplementation(
+      pingZabbix([
+        // Never polled: Zabbix says lastvalue "0", lastclock "0".
+        { itemid: '1', name: 'ICMP ping', key_: 'icmpping', lastvalue: '0', lastclock: '0', state: '1', value_type: '3', hosts: [{ hostid: '102', name: 'INET : SAMPANG WAN 1' }] },
+        { itemid: '2', name: 'ICMP ping', key_: 'icmpping', lastvalue: '1', lastclock: String(NOW - 30), state: '0', delay: '1m', value_type: '3', hosts: [{ hostid: '103', name: 'INET : SAMPANG WAN 2' }] },
+      ]),
     );
     const { linkRoutes } = await import('../routes/links.js');
     const app = await buildTestApp(linkRoutes);
@@ -267,10 +266,10 @@ describe('GET /api/links', () => {
 
   it('treats a value hours old as unknown, not as the link\'s current state', async () => {
     // A supported item whose poller stopped: lastvalue "0" from 3 h ago would read as down.
-    zbxMock.mockImplementation(async (method: string) =>
-      method === 'item.get'
-        ? [{ itemid: '3', name: 'ICMP ping', key_: 'icmpping', lastvalue: '0', lastclock: String(NOW - 3 * 3600), state: '0', delay: '1m', hosts: [{ hostid: '104', name: 'INET : SAMPANG WAN 3' }] }]
-        : [],
+    zbxMock.mockImplementation(
+      pingZabbix([
+        { itemid: '3', name: 'ICMP ping', key_: 'icmpping', lastvalue: '0', lastclock: String(NOW - 3 * 3600), state: '0', delay: '1m', value_type: '3', hosts: [{ hostid: '104', name: 'INET : SAMPANG WAN 3' }] },
+      ]),
     );
     const { linkRoutes } = await import('../routes/links.js');
     const app = await buildTestApp(linkRoutes);
@@ -321,5 +320,104 @@ describe('analytics fixes', () => {
     expect(capacityMetricFor('vm.memory.util[vm.memory.util.1]')).toBe('memory');
     expect(capacityMetricFor('vm.memory.util[memoryUsedPercentage.0]')).toBe('memory');
     expect(capacityMetricFor('vfs.fs.pfree')).toBe('disk');
+  });
+});
+
+describe('the verdict of an SLA explanation is the server\'s own comparison, whatever the model says (BK-33)', () => {
+  // The service functions are called as they are, not through the route: its per-minute allowance counts real time.
+  const derived = async () => {
+    const { explainDerivedSla } = await import('../services/explain.js');
+    return explainDerivedSla({ month: '2026-08', profile: 'hcml-report', scope: 'site:1' }, () => undefined);
+  };
+  const zabbixSla = async () => {
+    const { explainZabbixSla } = await import('../services/explain.js');
+    return explainZabbixSla('2', undefined, () => undefined);
+  };
+
+  it('turns a model\'s "on target" into a miss, in its words as well as its colour, when the figure is under the target', async () => {
+    const { invalidate } = await import('../core/cache.js');
+    const { config } = await import('../core/config.js');
+    invalidate('');
+    estate();
+    const target = config.sla.target;
+    config.sla.target = 99.99; // the switch lost an hour of 744, so its figure is about 99.87
+    humanizeMock.mockResolvedValue({ status: 'On target', plain: 'Met.', meetingTarget: true, recommendation: 'Nothing.' });
+    try {
+      const answer = await derived();
+      // The verdict is the server's, and so are the words about it: the model's "Met." is about a result that is not this one.
+      expect(answer).toMatchObject({ status: 'Below the target', meetingTarget: false });
+      expect((answer as { plain: string }).plain).toMatch(/99\.8\d* %.*target of 99\.99 %/);
+      expect(JSON.stringify(answer)).not.toContain('Met.');
+      expect(JSON.stringify(answer)).not.toContain('Nothing.');
+    } finally {
+      config.sla.target = target;
+      invalidate('');
+    }
+  });
+
+  it('turns a model\'s "missed" into a pass when the figure is at the target or over it', async () => {
+    const { invalidate } = await import('../core/cache.js');
+    invalidate('');
+    estate();
+    humanizeMock.mockResolvedValue({ status: 'Missed', plain: 'Short.', meetingTarget: false, recommendation: 'Look.' });
+    const answer = await derived();
+    expect(answer).toMatchObject({ status: 'On target', meetingTarget: true });
+    expect(JSON.stringify(answer)).not.toContain('Short.');
+    expect(JSON.stringify(answer)).not.toContain('Missed');
+    invalidate('');
+  });
+
+  it('keeps the model\'s explanation and advice when it agrees with the figure, but the pill\'s words are the server\'s', async () => {
+    const { invalidate } = await import('../core/cache.js');
+    invalidate('');
+    estate();
+    humanizeMock.mockResolvedValue({ status: 'Comfortably on target', plain: 'Up nearly all month.', meetingTarget: true, recommendation: 'Keep watching it.' });
+    expect(await derived()).toEqual({ status: 'On target', plain: 'Up nearly all month.', meetingTarget: true, recommendation: 'Keep watching it.' });
+    invalidate('');
+  });
+
+  it('does not show a word the model made up for the status, as a small local model did on HCML\'s data ("success" beside a missed target)', async () => {
+    const { invalidate } = await import('../core/cache.js');
+    const { config } = await import('../core/config.js');
+    invalidate('');
+    estate();
+    const target = config.sla.target;
+    config.sla.target = 99.99;
+    humanizeMock.mockResolvedValue({ status: 'success', plain: 'The target was not met.', meetingTarget: false, recommendation: 'Look at the worst devices.' });
+    try {
+      expect(await derived()).toEqual({ status: 'Below the target', plain: 'The target was not met.', meetingTarget: false, recommendation: 'Look at the worst devices.' });
+    } finally {
+      config.sla.target = target;
+      invalidate('');
+    }
+  });
+
+  it('does the same for one of Zabbix\'s own SLAs: met only when every service is at or over its objective', async () => {
+    const { invalidate } = await import('../core/cache.js');
+    invalidate('');
+    const sli = (rows: { sli: number }[]) => ({
+      periods: [{ period_from: 1, period_to: 2 }],
+      serviceids: rows.map((_, i) => 10 + i),
+      sli: [rows.map((r) => ({ uptime: 100, downtime: 1, sli: r.sli, error_budget: 0 }))],
+    });
+    let rows = [{ sli: 98.5 }, { sli: 100 }];
+    estate({
+      'sla.get': () => [{ slaid: '2', name: 'SLA:1', slo: '99', period: '1', status: '1' }],
+      'sla.getsli': () => sli(rows),
+      'service.get': () => [{ serviceid: '10', name: 'A' }, { serviceid: '11', name: 'B' }],
+    });
+    humanizeMock.mockResolvedValue({ status: 'On target', plain: 'Met.', meetingTarget: true, recommendation: 'Nothing.' });
+    const missed = await zabbixSla();
+    expect(missed).toMatchObject({ status: 'Below the target', meetingTarget: false });
+    expect((missed as { plain: string }).plain).toMatch(/lowest service is at 98\.5 % against a target of 99 %/);
+    expect(JSON.stringify(missed)).not.toContain('Met.');
+
+    invalidate('');
+    rows = [{ sli: 99 }, { sli: 100 }];
+    humanizeMock.mockResolvedValue({ status: 'Missed', plain: 'Short.', meetingTarget: false, recommendation: 'Look.' });
+    const met = await zabbixSla();
+    expect(met).toMatchObject({ status: 'On target', meetingTarget: true });
+    expect(JSON.stringify(met)).not.toContain('Short.');
+    invalidate('');
   });
 });

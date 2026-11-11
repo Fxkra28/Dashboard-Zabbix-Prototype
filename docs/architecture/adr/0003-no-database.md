@@ -4,6 +4,7 @@
 * Deciders: HCML internship project
 * Date: 2026-09-07 (recorded as an ADR 2026-09-22)
 * Amended: 2026-10-07, the claim that the portal has no state to back up (the `.env` files are state)
+* Amended: 2026-11-04, by [ADR-0015](0015-keep-a-small-state-file-for-recipients-and-the-schedule.md): the hosted copy keeps one small file of its own, on a volume
 
 ## Context and Problem Statement
 
@@ -31,15 +32,18 @@ module-level `Map` with an LRU cap of 500 entries or about 64 MB and per-key TTL
 
 The cache coalesces concurrent misses onto one upstream fetch, so twenty NOC screens cost one Zabbix
 read. The slow report families may serve a stale value rather than an error, and say so in two response
-headers (`X-Data-Stale`, `X-Data-Age-Seconds`); problem and acknowledgement state never may.
+headers (`X-Data-Stale`, `X-Data-Age-Seconds`); since 29 October 2026 the views HCML's Zabbix takes tens of
+seconds to build may answer from their last copy while a newer one is read, with `X-Data-Refreshing`
+and its age. The problem list never may.
 
 ### Positive Consequences
 
 * **There is one source of truth, and it is Zabbix.** The portal cannot disagree with it.
 * No database to back up, no migration to run, no schema to version. The portal's settings are the
   exception: see the first negative consequence below.
-* Deleting the portal leaves no data behind, only its `.env` files. The compose file declares no
-  volumes at all.
+* Deleting the portal leaves no data behind, only its `.env` files and, in the hosted copy, one small
+  volume ([ADR-0015](0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)). The local-model
+  copy's compose file declares no volumes at all.
 * Freshness is a TTL, visible in one place per route, not an ETL schedule.
 
 ### Negative Consequences
@@ -58,7 +62,7 @@ headers (`X-Data-Stale`, `X-Data-Age-Seconds`); problem and acknowledgement stat
 * The 24-hour TTL is a ceiling, not a floor. Keys are parameterised: `graph:<ids>:<from>:<to>`,
   `net:interfaces:<hostid>` across 139 hosts, against a 500-entry cap, so ordinary browsing can evict a
   fresh SLA report within minutes. **Nobody has measured the real hit rate.**
-* Portal-side state has nowhere to live. `security/auth.ts:178` says it outright: *"Users come from env:
+* Portal-side state has nowhere to live. `security/auth.ts:174` says it outright: *"Users come from env:
   there is no database yet (that phase was deferred)."* Consequences: a password may still sit in
   plain text in the `.env` file (an scrypt hash is accepted since 7 October 2026), adding a user needs
   a restart, there are no saved views, and, because the single write uses one shared Zabbix token,

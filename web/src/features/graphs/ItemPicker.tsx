@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../../api';
+import { api, onSessionChange } from '../../api';
 import { useAsync } from '../../shared/hooks/useAsync';
 import type { Item } from '../../types';
 import { naturalCompare } from '../../shared/lib/sites';
 import { Loading, ErrorState } from '../../shared/components/states';
+import { MAX_UNIT_SCALES, unitFamilies } from './unitScales';
 
 /** Most rows rendered at once: a core switch has ~1,200 graphable items. */
 const RENDER_CAP = 200;
@@ -15,6 +16,8 @@ const RENDER_CAP = 200;
  */
 const ITEMS_TTL_MS = 5 * 60_000;
 const itemsCache = new Map<string, { at: number; items: Item[] }>();
+// The server cuts the list by role, so a list kept for one person is not for the next to sign in on this tab.
+onSessionChange(() => itemsCache.clear());
 
 async function graphableItems(hostid: string): Promise<Item[]> {
   const key = `${hostid}|graphable`;
@@ -93,6 +96,9 @@ export default function ItemPicker({
   const q = useAsync<Item[]>(() => (hostid ? graphableItems(hostid) : Promise.resolve([])), [hostid]);
   const [search, setSearch] = useState('');
   useEffect(() => setSearch(''), [hostid]);
+  // Why the last item was not added, until something is added or removed.
+  const [refusal, setRefusal] = useState<string | null>(null);
+  useEffect(() => setRefusal(null), [hostid]);
   // Only this host's items: while another host loads, or after it failed, the
   // list in hand is the previous host's and would reset the selection wrongly.
   useEffect(() => {
@@ -128,8 +134,20 @@ export default function ItemPicker({
   }, [groups, search]);
 
   const toggle = (id: string) => {
-    if (selected.includes(id)) onChange(selected.filter((s) => s !== id));
-    else onChange([...selected, id].slice(-max));
+    if (selected.includes(id)) {
+      setRefusal(null);
+      onChange(selected.filter((s) => s !== id));
+      return;
+    }
+    const next = [...selected, id].slice(-max);
+    // A third kind of unit has no scale to be drawn on (it would be plotted flat on the first one).
+    if (unitFamilies(next.map((i) => byId.get(i)?.units)).length > MAX_UNIT_SCALES) {
+      const held = unitFamilies(selected.map((i) => byId.get(i)?.units)).map((u) => u || 'no unit');
+      setRefusal(`A graph shows two kinds of unit at most, and this one already has ${held.join(' and ')}. Remove one to add ${byId.get(id)?.name ?? 'this item'}.`);
+      return;
+    }
+    setRefusal(null);
+    onChange(next);
   };
 
   // A failed load for this host replaces the list; a failed reload keeps it.
@@ -156,6 +174,11 @@ export default function ItemPicker({
           <span className="muted">Pick up to {max} items</span>
         )}
       </div>
+      {refusal && (
+        <div className="notice warn" role="status">
+          {refusal}
+        </div>
+      )}
       <input
         name="item-search"
         type="text"
@@ -203,7 +226,11 @@ export default function ItemPicker({
                   className={`item-row composite${
                     g.traffic.every((id) => selected.includes(id)) && selected.length === 2 ? ' on' : ''
                   }`}
-                  onClick={() => onChange([...g.traffic!])}
+                  aria-pressed={g.traffic.every((id) => selected.includes(id)) && selected.length === 2}
+                  onClick={() => {
+                    setRefusal(null); // it replaces the whole selection, so what was refused before no longer applies
+                    onChange([...g.traffic!]);
+                  }}
                 >
                   <span className="item-name">Traffic in + out</span>
                   <span className="item-units">bps</span>

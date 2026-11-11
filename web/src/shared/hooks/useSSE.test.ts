@@ -161,6 +161,111 @@ describe('useSSE', () => {
   });
 });
 
+describe('useSSE reconnecting and its watchdog (FR-25)', () => {
+  /** Closes the newest stream as the browser does when it gives up, and returns how many streams exist. */
+  const drop = () => {
+    const source = latest();
+    act(() => {
+      source.readyState = FakeEventSource.CLOSED;
+      source.onerror?.({});
+    });
+    return FakeEventSource.all.length;
+  };
+  /** The wait before the next stream opens, found by advancing a millisecond at a time in steps. */
+  const waitUntilReopened = (limitMs: number) => {
+    const before = FakeEventSource.all.length;
+    for (let waited = 0; waited <= limitMs; waited += 250) {
+      if (FakeEventSource.all.length > before) return waited;
+      act(() => vi.advanceTimersByTime(250));
+    }
+    return Infinity;
+  };
+
+  it('waits longer after every failure: about 1 to 2 s, then 2 to 4, 4 to 8, up to half a minute at the most', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    renderHook(() => useSSE('/bff/api/stream', 'problems'));
+    const waits: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      drop();
+      waits.push(waitUntilReopened(61_000));
+    }
+    // With the jitter at its lowest the wait is half the ceiling: 1, 2, 4, 8, 16, 30, 30 s (the ceiling stops at 60 s).
+    expect(waits).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
+  });
+
+  it('never waits more than the ceiling, however the jitter falls', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    renderHook(() => useSSE('/bff/api/stream', 'problems'));
+    drop();
+    expect(waitUntilReopened(5_000)).toBeLessThanOrEqual(2_000);
+    drop();
+    expect(waitUntilReopened(10_000)).toBeLessThanOrEqual(4_000);
+  });
+
+  it('starts again at about a second once a frame has arrived after the failures', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    renderHook(() => useSSE('/bff/api/stream', 'problems'));
+    for (let i = 0; i < 4; i++) {
+      drop();
+      waitUntilReopened(61_000);
+    }
+    act(() => latest().frame('problems', [1]));
+    drop();
+    expect(waitUntilReopened(61_000)).toBe(1_000);
+  });
+
+  it('does not open a second stream while one retry is already waiting', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    renderHook(() => useSSE('/bff/api/stream', 'problems'));
+    const source = latest();
+    act(() => {
+      source.readyState = FakeEventSource.CLOSED;
+      source.onerror?.({});
+      source.onerror?.({});
+      source.onerror?.({});
+    });
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(FakeEventSource.all).toHaveLength(2);
+  });
+
+  it('starts the silence watchdog when the connection opens, before any frame arrives', () => {
+    const { result } = renderHook(() => useSSE('/bff/api/stream', 'problems', 45_000));
+    const first = latest();
+    act(() => first.onopen?.());
+    act(() => vi.advanceTimersByTime(44_999));
+    expect(first.readyState).not.toBe(FakeEventSource.CLOSED);
+    act(() => vi.advanceTimersByTime(1));
+    expect(first.readyState).toBe(FakeEventSource.CLOSED);
+    expect(result.current.connected).toBe(false);
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(FakeEventSource.all.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('is pushed back by every frame, a keep-alive and an error frame included', () => {
+    renderHook(() => useSSE('/bff/api/stream', 'problems', 45_000));
+    const first = latest();
+    act(() => first.onopen?.());
+    for (const [type, data] of [['problems', []], ['ping', {}], ['problems', [1]]] as const) {
+      act(() => vi.advanceTimersByTime(40_000));
+      act(() => first.frame(type, data));
+    }
+    act(() => vi.advanceTimersByTime(40_000));
+    act(() => first.onerror?.({ data: JSON.stringify({ message: 'Zabbix read failed' }) }));
+    act(() => vi.advanceTimersByTime(40_000));
+    expect(first.readyState).not.toBe(FakeEventSource.CLOSED);
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(first.readyState).toBe(FakeEventSource.CLOSED);
+  });
+
+  it('has no watchdog when no silence limit is given', () => {
+    renderHook(() => useSSE('/bff/api/stream', 'problems'));
+    const first = latest();
+    act(() => first.onopen?.());
+    act(() => vi.advanceTimersByTime(10 * 60_000));
+    expect(first.readyState).not.toBe(FakeEventSource.CLOSED);
+  });
+});
+
 describe('useSSE with a guard (FR-16)', () => {
   const numbers: Guard<number[]> = {
     what: 'the numbers',

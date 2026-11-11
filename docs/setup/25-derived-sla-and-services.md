@@ -33,19 +33,32 @@ the report method is shown beside it so the published figure can still be checke
 4. Replay. Each trigger's events are replayed from the state it was in when the window opened:
    the same approach as Zabbix's own `calculateAvailability`. A trigger with no events in the window
    is in its current state, unless it only changed afterwards, in which case the first later event
-   says what it was. A problem still open at month end is clipped to the last second (HCML's rule).
+   says what it was. A trigger set to *multiple PROBLEM events* repeats PROBLEM while it is in problem, so its first PROBLEM in the
+   window may be a repeat: for such a trigger, and only then, the portal asks Zabbix for its last event before the window and takes the start
+   state from that (BK-46); HCML's ICMP triggers are normally single and cost no extra call. A problem still open at month end is clipped to the last second (HCML's rule).
 5. Per device. Intervals of all its triggers are merged, so overlapping loss and unavailability
    count once.
 6. Coverage (strict only). An hour counts as collected when its `icmpping` trend row holds at
-   least half the expected samples; the hour or two not yet in trends come from raw history.
+   least half the expected samples; the hour in progress, and the hours after the last trend row when that row is less than six hours old,
+   come from raw history. When the last trend row is older, only the hour in progress is read, so a stall in trend writing cannot become a
+   large read of history (BK-46).
    Downtime is only counted inside collected time, and the figure is `downtime / collected`. Hours in
    which fewer than 10% of devices collected anything are reported as estate gaps (e.g. the
    stack being stopped) rather than blamed on any device.
 7. Totals. Every group (overall, category, site, device class) is the plain mean of the
-   devices that have a figure, HCML's rule.
+   devices that have a figure, HCML's rule. A percentage is printed with two decimals, and with more only where two would put it on the wrong
+   side of the target; a figure below 100 never prints as 100.00, it is cut and not rounded up (99.9951 prints 99.99), on the page, in the PDF,
+   in the CSV and in the Excel file (BK-46).
 
 WAN legs are paired by name (`INET : SAMPANG WAN 1/2` → path `SAMPANG`); a path is down only while
 all legs are down. Web scenarios on the *Web Monitoring* host are measured from `web.test.fail`.
+
+`SLO_TARGET` is a percentage from 0 to 100 and `SLI_MIN_COVERAGE` a number from 0 to 1. A value outside its range, or one that is not a number, stops the server at
+start with a line that names the range (BK-48), where it used to run, or to fall back to the standard value without a word.
+
+One limit is known and not removed (BK-46, third point). In Zabbix a maintenance window on a parent host group also covers its nested groups. The portal reads the hosts of a
+window's groups with `hostgroup.get` and `selectHosts`, which returns direct members only, so a window on a parent group would leave out the hosts of its sub-groups. HCML's
+groups are flat and no such window exists, and it was not run against a Zabbix that has one.
 
 ## Hours declared not measured
 
@@ -79,16 +92,16 @@ workbooks and compares them with `GET /api/sli?profile=hcml-report`:
 | 2026-07 | 99.7167 % | 138 | 138 / 138 | 1,165 / 1,165 |
 | 2026-08 | 99.2313 % | 138 | 138 / 138 | 1,417 / 1,417 |
 
-Category counts (51 / 42 / 31 / 14) and category figures match within 0.005 pp. Run it with the BFF
-up: `cd server && npx tsx scripts/validate-sli.ts`. The workbooks hold real host names and event
+Category counts (51 / 42 / 31 / 14) and category figures match within 0.005 pp. Run again on 10 November 2026, against HCML's own Zabbix and the build that runs now, all three months passed with the same figures to the last digit, the same 138 devices and the same incident counts (739, 1,165 and 1,417); the first table was measured on the restored copy. Run it with the BFF
+up and sign-in off (it sends no credentials): `cd server && npx tsx scripts/validate-sli.ts`, with the spreadsheets in `~/Downloads` or in `REPORT_DIR`. The workbooks hold real host names and event
 ids, so they are read in memory and nothing from them is stored.
 
 ## Endpoints
 
 | Endpoint | Returns | Cache |
 |---|---|---|
-| `GET /api/sli?month=&profile=` | per device, category, site, class; WAN paths; web checks; gaps | closed month 24 h, current month 5 min |
-| `GET /api/sli/export?month=&format=` | both methods for the month, side by side, as a PDF or an Excel file (§18) | none of its own beyond ten seconds of reuse |
+| `GET /api/sli?month=&profile=` | per device, category, site, class; WAN paths; web checks; gaps | closed month 24 h once Zabbix has had ten minutes after the month's end (before that 5 min, so a read made too early is not kept as the final figure), current month 5 min |
+| `GET /api/sli/export?month=&format=` | both methods for the month, side by side, as a PDF, an Excel file or a zip of CSV files (§18) | none of its own beyond ten seconds of reuse |
 | `GET /api/services/derived?month=&profile=` | a service tree in `/api/services`' shape: estate → business services / sites → device classes → devices, with live status from open problems | 30 s |
 | `GET /api/sla/source` | `{ real, slas, services }`, whether Zabbix's own SLAs have anything to show | 60 s |
 | `GET /api/explain/sla?source=derived&month=&profile=&scope=` | plain language for `overall`, `site:N` or `category:NAME`; a deterministic "no data" answer without a model call when nothing was measured | 5 min |

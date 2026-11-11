@@ -2,8 +2,7 @@ import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
 import type { ServerResponse } from 'node:http';
 import type { Writable } from 'node:stream';
 import { constants as zlibConstants, createGzip, type Gzip } from 'node:zlib';
-import { getProblems, type ZbxProblem } from '../domain/queries.js';
-import { cached } from '../core/cache.js';
+import { cachedProblems, PROBLEMS_TTL_MS, type ZbxProblem } from '../domain/queries.js';
 import { config } from '../core/config.js';
 import { ZabbixApiError, ZabbixAuthError, ZabbixTimeoutError } from '../clients/zabbix.js';
 import { SOURCE_DOWN } from '../http/errors.js';
@@ -11,15 +10,15 @@ import { SOURCE_DOWN } from '../http/errors.js';
 /**
  * Live problems via SSE (setup.md §7).
  *
- * One ticker serves every connected screen. Every 5 s it reads the same cache entry as GET
- * /api/problems and sends a frame only when something a screen shows has changed: a problem opened,
- * resolved, acknowledged, suppressed or re-graded. A change in only a name or host goes out at most
- * every 30 s. A list that is identical to the last one sent is never sent again: the keep-alive
+ * One ticker serves every connected screen. Every TICK_MS it reads the list through the same cache as GET
+ * /api/problems, never taking a copy from an earlier tick, and sends a frame only when something a screen
+ * shows has changed: a problem opened, resolved, acknowledged, suppressed or re-graded. A change in only
+ * a name or host goes out at most every 30 s. A list that is identical to the last one sent is never sent again: the keep-alive
  * says the line and the data are still current. A frame carries only the fields the Dashboard reads
  * (frameJson), so no tags and no `opdata`. A screen that accepts gzip gets the frames compressed (about a tenth of the bytes),
  * flushed after every frame so that none waits in a buffer: a keep-alive stuck behind one would trip the page's 45 s watchdog.
  *
- * A timer per connection would serialise and send the whole list every 5 s whether or not anything
+ * A timer per connection would serialise and send the whole list every tick whether or not anything
  * had changed: ~450 KB per screen per tick against HCML's Zabbix.
  *
  * Screens are counted: STREAM_MAX_CLIENTS in all and STREAM_MAX_PER_USER for one signed-in user
@@ -27,9 +26,16 @@ import { SOURCE_DOWN } from '../http/errors.js';
  * is ended when its token expires, so the browser reconnects with the renewed cookie.
  */
 
-export const TICK_MS = 5_000;
+/** One read of the problem list per tick, the pace its cache keeps. */
+export const TICK_MS = PROBLEMS_TTL_MS;
+/**
+ * A tick always reads. The cache dates a list from the end of its read, so a list read for a second is 14 s old at the
+ * next tick, and any age limit above 0 would skip that tick, and every other one after a read slower than the limit.
+ */
+const EVERY_TICK = { maxAgeMs: 0 } as const;
 /** A name-only change waits until the sent list is this old. */
 export const MAX_QUIET_MS = 30_000;
+/** No screen waits longer than this for a frame; the page counts three missed as a dead line (web useSSE). */
 const KEEPALIVE_MS = 15_000;
 /** Data is required: an event with none is never delivered. */
 export function pingFrame(ageMs?: number): string {
@@ -194,7 +200,7 @@ async function refresh(force: boolean): Promise<void> {
     let problems: ZbxProblem[] | null = null;
     let failure: unknown;
     try {
-      problems = await cached('problems', 5_000, getProblems);
+      problems = await cachedProblems(EVERY_TICK);
     } catch (err) {
       failure = err;
     }
@@ -229,7 +235,8 @@ function tick(): void {
   for (const client of clients) {
     // A named event, not an SSE comment: the browser never reports comments, so
     // the page could not tell a quiet line from a dead one (useSSE's watchdog).
-    if (!client.blocked && now - client.lastWrite >= KEEPALIVE_MS) write(client, ping, now);
+    // Judged one tick ahead, as shouldSend is: a timer that fires a millisecond early must not skip a ping and leave 30 s of silence.
+    if (!client.blocked && now + TICK_MS - client.lastWrite > KEEPALIVE_MS) write(client, ping, now);
   }
   // Zabbix slower than the tick: let the read in flight finish rather than queue more.
   if (ticking) return;

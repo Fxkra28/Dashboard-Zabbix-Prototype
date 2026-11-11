@@ -9,7 +9,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 vi.hoisted(() => {
   process.env.AUTH_ENABLED = 'true';
   process.env.JWT_SECRET = 'test-only-secret-at-least-32-bytes-long';
-  process.env.PORTAL_USERS = 'olu:operator-pass:operator,adi:admin-pass:admin,ana:viewer-pass:viewer,x[y]z:bracket-pass:operator';
+  process.env.PORTAL_USERS = `olu:operator-pass:operator,adi:admin-pass:admin,ana:viewer-pass:viewer,x[y]z:bracket-pass:operator,${'u'.repeat(64)}:long-pass:operator`;
 });
 
 const { zbxWriteMock } = vi.hoisted(() => ({ zbxWriteMock: vi.fn() }));
@@ -23,7 +23,7 @@ const { setupAuth, tokenClaims } = await import('../security/auth.js');
 const { registerErrorHandler } = await import('../http/errors.js');
 const { actionRoutes } = await import('../routes/actions.js');
 const { MAX_EVENTIDS } = await import('../services/actions.js');
-const { ZabbixApiError } = await import('../clients/zabbix.js');
+const { ZabbixApiError, ZabbixRefusedError, ZabbixTimeoutError, ZabbixAuthError } = await import('../clients/zabbix.js');
 const { AJV_OPTIONS } = await import('../core/schemas.js');
 
 type Line = Record<string, unknown> & { level: number; msg: string };
@@ -95,6 +95,24 @@ describe('the message Zabbix records', () => {
     const { message } = sentToZabbix();
     expect(message).toHaveLength(2048);
     expect(message.startsWith('[portal:olu] xxx')).toBe(true);
+  });
+
+  it('never cuts a character in two where the limit falls inside it (reviewer, 11 November)', async () => {
+    const face = String.fromCodePoint(0x1f600);
+    // The tag and its space are 13 characters, so the 2048th is the first half of the first face.
+    const res = await ack({ eventids: ['109'], message: `${'x'.repeat(2034)}${face}${face}` });
+    expect(res.statusCode, res.body).toBe(200);
+    const { message } = sentToZabbix();
+    expect(message).not.toMatch(/[\ud800-\udbff]$/);
+    expect(message.startsWith('[portal:olu] xxx')).toBe(true);
+  });
+
+  it('keeps every character of the longest note the dialog allows, behind the longest name', async () => {
+    const res = await ack({ eventids: ['109'], message: `${'n'.repeat(1971)}END` }, ['u'.repeat(64), 'operator']);
+    expect(res.statusCode, res.body).toBe(200);
+    const { message } = sentToZabbix();
+    expect(message).toHaveLength(2048);
+    expect(message.endsWith('nnnEND')).toBe(true);
   });
 
   it('says anonymous with sign-in off, where nobody is named', async () => {
@@ -263,3 +281,64 @@ describe('the log', () => {
     expect(logged('zabbix write-back attempt')).toEqual([expect.objectContaining({ user: 'olu', eventids: [] })]);
   });
 });
+
+describe('what a person is told when Zabbix does not take the change (BK-43)', () => {
+  const REFUSED = 'Zabbix refused the change. It may already be closed, or this account may not be allowed to change it.';
+  const MAYBE = 'Zabbix did not answer in time, so the change may or may not have been made. Look at the problem again before you try it again.';
+  const reference = (res: { json(): { message: string } }) => /quote reference (\S+)\.$/.exec(res.json().message)?.[1];
+
+  it('says Zabbix refused the change, with the likely reasons and a reference, when Zabbix answered with an error', async () => {
+    zbxWriteMock.mockRejectedValue(new ZabbixRefusedError('event.acknowledge: {"code":-32500,"data":"Cannot close problem: no manual close."}', 'ZBX_URL=http://zabbix.internal'));
+    const res = await ack({ eventids: ['109'], acknowledge: false, close: true });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('zabbix_error');
+    expect(res.json().message).toBe(`${REFUSED} Tell an administrator and quote reference ${reference(res)}.`);
+    expect(reference(res)).toBeTruthy();
+  });
+
+  it('keeps Zabbix’s own words, the method and the address out of the answer, and puts them in the log', async () => {
+    zbxWriteMock.mockRejectedValue(new ZabbixRefusedError('event.acknowledge: {"code":-32500,"data":"Cannot close problem: no manual close."}', 'ZBX_URL=http://zabbix.internal'));
+    const res = await ack({ eventids: ['109'] });
+    expect(res.body).not.toMatch(/event\.acknowledge|-32500|manual close|zabbix\.internal/);
+    expect(JSON.stringify(lines)).toContain('Cannot close problem');
+    expect(lines.filter((l) => l.level === 50)).toEqual([expect.objectContaining({ detail: 'ZBX_URL=http://zabbix.internal', msg: expect.stringContaining('Cannot close problem') })]);
+    expect(logged('zabbix write-back failed')).toHaveLength(1);
+    expect(logged('zabbix write-back refused')).toHaveLength(0);
+  });
+
+  it('says the change may or may not have been made when Zabbix did not answer in time', async () => {
+    zbxWriteMock.mockRejectedValue(new ZabbixTimeoutError('Zabbix did not respond to event.acknowledge within 20000 ms.', 'ZBX_URL=http://zabbix.internal'));
+    const res = await ack({ eventids: ['109'] });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('zabbix_timeout');
+    expect(res.json().message).toBe(`${MAYBE} Tell an administrator and quote reference ${reference(res)}.`);
+    expect(res.body).not.toMatch(/event\.acknowledge|20000|zabbix\.internal/);
+    expect(logged('zabbix write-back failed')).toHaveLength(1);
+  });
+
+  it('still says the data source is not answering when Zabbix could not be reached at all', async () => {
+    zbxWriteMock.mockRejectedValue(new ZabbixApiError('Could not reach Zabbix for event.acknowledge (ECONNREFUSED).', 'ZBX_URL=http://zabbix.internal'));
+    const res = await ack({ eventids: ['109'] });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().message).toMatch(/^The data source is not answering\. Tell an administrator and quote reference \S+\.$/);
+  });
+
+  it('leaves a rejected write token as it was', async () => {
+    zbxWriteMock.mockRejectedValue(new ZabbixAuthError('Zabbix rejected the API token.'));
+    const res = await ack({ eventids: ['109'] });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('zabbix_auth');
+  });
+
+  it('names the same reference in the answer and in the log', async () => {
+    zbxWriteMock.mockRejectedValue(new ZabbixRefusedError('event.acknowledge: {"code":-32500}'));
+    const res = await ack({ eventids: ['109'] });
+    const id = reference(res)!;
+    expect(lines.some((l) => l.reqId === id)).toBe(true);
+  });
+
+  it('writes both sentences with no dash standing for punctuation', () => {
+    for (const s of [REFUSED, MAYBE]) expect(s).not.toMatch(new RegExp(`[${String.fromCodePoint(0x2013, 0x2014)}]`));
+  });
+});
+

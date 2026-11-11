@@ -35,7 +35,11 @@ vi.mock('../clients/zabbix.js', async (importOriginal) => ({
 }));
 
 // A screen that subscribes starts a read of the problem list: keep it away from Zabbix.
-vi.mock('../domain/queries.js', () => ({ getProblems: vi.fn().mockResolvedValue([]) }));
+vi.mock('../domain/queries.js', () => ({
+  getProblems: vi.fn().mockResolvedValue([]),
+  cachedProblems: vi.fn().mockResolvedValue([]),
+  PROBLEMS_TTL_MS: 15_000,
+}));
 
 const pkgVersion = (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
@@ -247,6 +251,8 @@ describe('GET /api/health', () => {
     return server;
   }
   const DETAIL = ['version', 'startedAt', 'build', 'ready', 'streams'] as const;
+  /** What an anonymous caller is not given. `ready` is the exception: anyone gets it as a plain true or false (IN-47). */
+  const PRIVATE = DETAIL.filter((field) => field !== 'ready');
   /** A token as sign-in issues it: the portal's own iss and aud, for a user the list holds. */
   const tokenFor = (server: FastifyInstance, sub = 'ana') =>
     server.jwt.sign({ sub, role: 'viewer', ...tokenClaims(config.auth.sessionCookie) }, { expiresIn: '1h' });
@@ -272,14 +278,37 @@ describe('GET /api/health', () => {
     await server.close();
   });
 
-  it('tells an anonymous caller nothing about the build, the restart, Zabbix or the screens (IN-09)', async () => {
+  it('tells an anonymous caller nothing about the build, the restart, why Zabbix is down or the screens (IN-09)', async () => {
     zbxMock.mockRejectedValue(new ZabbixAuthError('Zabbix rejected the API token'));
     const server = await app(createReadiness());
     const res = await server.inject({ url: '/api/health' });
     expect(res.statusCode).toBe(200);
-    for (const field of DETAIL) expect(res.json(), field).not.toHaveProperty(field);
-    // The public reply is not even the place a revoked token shows: no probe runs for it.
-    expect(zbxMock).not.toHaveBeenCalled();
+    for (const field of PRIVATE) expect(res.json(), field).not.toHaveProperty(field);
+    // Whether it can read Zabbix, never why: a revoked token reads as any other failure.
+    expect(res.json().ready).toBe(false);
+    expect(res.body).not.toMatch(/token_rejected|zabbixMs|checkedAt|model/);
+    await server.close();
+  });
+
+  it('gives anyone a plain ready: true while Zabbix answers and false while it does not, so a watcher needs no account (IN-47)', async () => {
+    const up = await app(createReadiness());
+    expect((await up.inject({ url: '/api/health' })).json().ready).toBe(true);
+    await up.close();
+
+    for (const failure of [new ZabbixAuthError('x'), new ZabbixTimeoutError('x'), new ZabbixApiError('x')]) {
+      zbxMock.mockRejectedValue(failure);
+      const down = await app(createReadiness());
+      const res = await down.inject({ url: '/api/health' });
+      expect(res.statusCode, failure.name).toBe(200);
+      expect(res.json().ready, failure.name).toBe(false);
+      await down.close();
+    }
+  });
+
+  it('keeps the signed-in caller’s ready as the whole check, and not as the plain flag', async () => {
+    const server = await app();
+    const res = await server.inject(signedIn(server));
+    expect(res.json().ready).toMatchObject({ ok: true, zabbix: 'ok', model: expect.any(String) });
     await server.close();
   });
 
@@ -294,7 +323,7 @@ describe('GET /api/health', () => {
     for (const authorization of ['Bearer not-a-jwt', `Bearer ${forged}`, `Bearer ${expired}`]) {
       const res = await server.inject({ url: '/api/health', headers: { authorization } });
       expect(res.statusCode, authorization).toBe(200);
-      for (const field of DETAIL) expect(res.json(), field).not.toHaveProperty(field);
+      for (const field of PRIVATE) expect(res.json(), field).not.toHaveProperty(field);
     }
     await server.close();
   });
@@ -303,7 +332,7 @@ describe('GET /api/health', () => {
     const server = await app();
     const res = await server.inject({ url: '/api/health', headers: { authorization: `Bearer ${tokenFor(server, 'gone')}` } });
     expect(res.statusCode).toBe(200);
-    for (const field of DETAIL) expect(res.json(), field).not.toHaveProperty(field);
+    for (const field of PRIVATE) expect(res.json(), field).not.toHaveProperty(field);
     await server.close();
   });
 
@@ -421,10 +450,10 @@ describe('GET /api/health', () => {
     await server.close();
   });
 
-  it('asks Zabbix at most once for a burst of polls, and never for an anonymous one', async () => {
+  it('asks Zabbix at most once for a burst of polls, whoever asks', async () => {
     const server = await app(createReadiness());
     await Promise.all(Array.from({ length: 30 }, () => server.inject({ url: '/api/health' })));
-    expect(zbxMock).not.toHaveBeenCalled();
+    expect(zbxMock).toHaveBeenCalledTimes(1);
     await Promise.all(Array.from({ length: 30 }, () => server.inject(signedIn(server))));
     expect(zbxMock).toHaveBeenCalledTimes(1);
     await server.close();

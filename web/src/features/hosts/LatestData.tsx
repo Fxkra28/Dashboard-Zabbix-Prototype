@@ -34,8 +34,12 @@ export default function LatestData() {
     [hostsQ.data],
   );
 
+  // The first host is chosen once, when the page opens with nothing chosen: choosing "Any" afterwards has to stay.
+  const defaulted = useRef(false);
   useEffect(() => {
-    if (!hostid && !groupid && hostGroups.length) setHostid(hostGroups[0].items[0].hostid);
+    if (defaulted.current || !hostGroups.length) return;
+    defaulted.current = true;
+    if (!hostid && !groupid) setHostid(hostGroups[0].items[0].hostid);
   }, [hostGroups, hostid, groupid, setHostid]);
 
   // A new search starts at page 1 (a new host or group does, in its onChange).
@@ -68,8 +72,21 @@ export default function LatestData() {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const first = total ? (page - 1) * pageSize + 1 : 0;
   const last = Math.min(total, page * pageSize);
+  // A page past the end (an old address, or a list that shrank at the poll) asks for the last page there is.
+  useEffect(() => {
+    if (q.data && !q.loading && !q.stale && total > 0 && page > pages) setPage(pages);
+  }, [q.data, q.loading, q.stale, total, page, pages, setPage]);
 
   const graphable = (i: LatestItem) => (i.value_type === '0' || i.value_type === '3') && i.state !== '1';
+
+  const noRowsWords =
+    total > 0
+      ? `There are no items on page ${page}.`
+      : !hostid && !groupid
+        ? 'Choose a host or a host group to list its items.'
+        : needle
+          ? `No items match “${needle}”.`
+          : 'No items for this selection.';
 
   return (
     <>
@@ -228,9 +245,14 @@ export default function LatestData() {
                 )}
               </>
             ) : (
-              <div className="state">
-                {needle ? `No items match “${needle}”.` : 'No items for this selection.'}
-              </div>
+              <>
+                <div className="state">{noRowsWords}</div>
+                {total > 0 && (
+                  <Pager page={page} pages={pages} onPage={setPage}>
+                    Page {page} of {pages}
+                  </Pager>
+                )}
+              </>
             )
           }
         </Async>

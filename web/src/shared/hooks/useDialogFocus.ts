@@ -34,6 +34,8 @@ export function useDialogFocus(dialog: RefObject<HTMLElement>, initial?: RefObje
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     (initial?.current ?? dialog.current)?.focus();
+    // The element it was told to focus can be disabled, and focus would stay behind the dialog.
+    if (!dialog.current?.contains(document.activeElement)) dialog.current?.focus();
 
     const onKey = (e: KeyboardEvent) => {
       const box = dialog.current;
@@ -58,6 +60,8 @@ export function useDialogFocus(dialog: RefObject<HTMLElement>, initial?: RefObje
       document.removeEventListener('keydown', onKey);
       if (!opener?.isConnected) return focusMain();
       opener.focus();
+      // A button the same change switched off takes no focus, and the page would be left on <body>.
+      if (document.activeElement !== opener) return focusMain();
       // Until focus moves on, catch the opener being removed by a later re-render.
       const back = opener;
       const watch = new MutationObserver(() => {

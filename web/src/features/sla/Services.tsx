@@ -36,7 +36,7 @@ import { count } from '../../shared/lib/plural';
  * "monitoring is still device-centric and reactive".
  *
  * A failure reads as *"BD FPSO, Voice path is degraded, because the agent on
- * FGR-60F-FPSO-01 stopped reporting"*, not as a bare host alert. Zabbix
+ * FGR-60F-DELTA-01 stopped reporting"*, not as a bare host alert. Zabbix
  * computes the roll-up; this makes it legible.
  *
  * When Zabbix has no services configured (HCML's has none), the page shows
@@ -278,6 +278,8 @@ function ServiceTree({
     return ids;
   }, [data]);
   const counts = useMemo(() => countDevices(data.tree), [data]);
+  // Counting the open set is not enough: it can hold a branch that left the tree, or a root with no children.
+  const allOpen = allIds.size > 0 && [...allIds].every((id) => expanded.has(id));
 
   return (
     <>
@@ -294,9 +296,10 @@ function ServiceTree({
         <FieldSpacer>
           <button
             className="btn ghost sm"
-            onClick={() => setExpanded(expanded.size >= allIds.size ? new Set() : new Set(allIds))}
+            disabled={allIds.size === 0}
+            onClick={() => setExpanded(allOpen ? new Set() : new Set(allIds))}
           >
-            {expanded.size >= allIds.size ? 'Collapse all' : 'Expand all'}
+            {allOpen ? 'Collapse all' : 'Expand all'}
           </button>
         </FieldSpacer>
       </div>

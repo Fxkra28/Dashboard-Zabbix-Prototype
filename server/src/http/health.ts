@@ -6,9 +6,10 @@ import { zbx, ZabbixAuthError, ZabbixTimeoutError } from '../clients/zabbix.js';
 import { connectedClients } from '../services/stream.js';
 
 /**
- * GET /api/health, public: no host, address or token in it. Anyone gets the
- * liveness fields; a signed-in caller also gets the version, build, start time, screens and
- * `ready`, whether Zabbix answers (one cached call, 2 s limit). The status stays 200 either way.
+ * GET /api/health, public: no host, address or token in it. Anyone gets the liveness
+ * fields and `ready`, a plain true or false for whether Zabbix answers (one cached call, 2 s limit);
+ * a signed-in caller also gets the version, build, start time, screens and `ready` as the whole
+ * check. The status stays 200 either way.
  */
 
 /** A check this old is fresh. */
@@ -165,7 +166,8 @@ export function registerHealth(app: FastifyInstance, readiness = createReadiness
     return reply.code(ready.ok ? 200 : 503).send({ ...ready, ...stack() });
   });
 
-  app.get('/api/health', async (req) => ({
+  // The container's check asks every ten seconds, so its request lines were nearly all of the log: this route logs at warning level and above (IN-64).
+  app.get('/api/health', { logLevel: 'warn' }, async (req) => ({
     ok: true,
     ts: Date.now(),
     // `ai` and `writeBack` let the UI hide actions that aren't configured, instead
@@ -185,9 +187,9 @@ export function registerHealth(app: FastifyInstance, readiness = createReadiness
       // The SLA zone (SLA_TIMEZONE): the web labels times and cuts its month lists in it, as the reports do.
       timezone: config.sla.timezone,
     },
-    // How the stack is doing is for a signed-in caller only: this route is public, and an
-    // anonymous caller must not learn the build, when it restarted, or that the Zabbix token was revoked.
-    ...(isSignedIn(req) ? { ...stack(), ready: await readiness.get() } : {}),
+    // The build, the restart and why Zabbix fails are for a signed-in caller only: this route is public. Anyone may know
+    // that it is ready or not, so a watcher needs no account (IN-47); a revoked token reads as any other failure.
+    ...(isSignedIn(req) ? { ...stack(), ready: await readiness.get() } : { ready: (await readiness.get()).ok }),
   }));
   return readiness;
 }

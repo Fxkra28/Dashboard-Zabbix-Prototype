@@ -5,7 +5,7 @@
 #   server   install from the lockfile, audit, typecheck, lint, test, build
 #   web      install from the lockfile, audit, typecheck, lint, test, build
 #   checks   what tools/check and the package scripts verify: the API contract, the ERD, the stylesheet and its tokens,
-#            the assistant's markdown parser, the unit formatters, the links, the numbers the docs state, the diagrams
+#            the assistant's markdown parser, the unit formatters, the links, the numbers the docs state, the diagrams, the handover handbook
 #   secrets  a scan of what is pushed
 #   images   both Dockerfiles build, and nginx accepts its config
 # Locally, `npm run verify` (package.json) runs every step but the install, the audit, the secret scan and the image builds.
@@ -30,10 +30,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# A newer push to the same branch makes the older run pointless.
+# A newer push to a branch makes the older run pointless. On main it does not: the secret scan reads only the
+# commits of its own push. GitHub also drops a run that is waiting when another arrives in its group, so each push to
+# main is a group of its own, named by its commit.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Nothing here pushes, comments or deploys, so the token only ever reads.
 # Every action is pinned to a full commit SHA, with the tag it was taken from in the comment
@@ -45,7 +47,7 @@ permissions:
 jobs:
   server:
     name: Server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -85,7 +87,7 @@ jobs:
 
   web:
     name: Web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -124,7 +126,7 @@ jobs:
 
   checks:
     name: Checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
@@ -168,9 +170,12 @@ jobs:
       - name: Every diagram source still matches its stamp, and has its PDF
         run: node tools/check/diagrams.check.mjs
 
+      - name: The handover handbook matches the code and follows its rules
+        run: node tools/check/handover.check.mjs
+
       # CI holds one tree, so this runs the script's own checks and skips the comparison.
       # The comparison needs the sibling copy and is run on the machine that has both.
-      - name: The two copies match
+      - name: The parity checker's own checks
         run: node tools/check/parity.check.mjs
 
   # A secret scan of what is pushed. It reads the commits of the push or
@@ -183,7 +188,7 @@ jobs:
   # first push, like the image builds.
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: github.event_name != 'workflow_dispatch'
 
@@ -201,7 +206,7 @@ jobs:
 
   images:
     name: Docker images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:

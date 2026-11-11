@@ -1,9 +1,10 @@
 import { cached } from '../core/cache.js';
 import { humanize, type OnUsage, type ProblemExplanation, type SlaExplanation } from '../clients/ai.js';
 import type { SliProfile } from '../core/config.js';
-import { getProblems, SEVERITY_NAMES } from '../domain/queries.js';
+import { cachedProblems, SEVERITY_NAMES, withOpdata } from '../domain/queries.js';
 import type { SliGroup, SliHost, SliReport } from '../sli/engine.js';
-import { getSlas, getSli } from './sla.js';
+import { snapshotClock } from './assistantSnapshot.js';
+import { slasView, sliView } from './sla.js';
 import { getMonthlySli } from './sli.js';
 
 /**
@@ -27,6 +28,25 @@ export function noDataExplanation(what: string, why: string, recommendation: str
     meetingTarget: false,
     recommendation,
     noData: true,
+  };
+}
+
+/** A percentage as people read it: a figure a hair under the target must not round up to it. */
+const pct = (n: number): string => String(Math.round(n * 1000) / 1000);
+
+/**
+ * The server compares the figure with the target and writes the pill's words; the model only explains. A small model wrote
+ * "success" beside a missed target. When its verdict is the other one, its explanation and advice are about a different
+ * result, so the server's sentences replace them too.
+ */
+function agreeWithFigure(answer: SlaExplanation, meeting: boolean, figure: string): SlaExplanation {
+  const status = meeting ? 'On target' : 'Below the target';
+  if (answer.meetingTarget === meeting) return { ...answer, status };
+  return {
+    status,
+    plain: figure,
+    meetingTarget: meeting,
+    recommendation: meeting ? 'Nothing to do for this figure.' : 'Start with the devices that have the lowest figures.',
   };
 }
 
@@ -65,34 +85,36 @@ export interface NotFound {
 
 /**
  * Tags and notification wording for one problem. The trigger name plus opdata is the notification
- * text as the team receives it, so one call covers both. A given problem's meaning doesn't
+ * text as the team receives it; the opdata is read for this problem alone. A given problem's meaning doesn't
  * change, so it is cached for an hour, per acknowledged/resolved state: the explanation says
  * which, and keyed by event alone it would go on saying "not acknowledged" for an hour after
  * someone had.
  */
 export async function explainProblem(eventid: string, onUsage: OnUsage): Promise<ProblemExplanation | NotFound> {
-  const problem = (await cached('problems', 5_000, getProblems)).find((p) => p.eventid === eventid);
-  if (!problem) return { notFound: 'No open problem with that eventid: it may have been resolved.' };
+  const listed = (await cachedProblems()).find((p) => p.eventid === eventid);
+  if (!listed) return { notFound: 'No open problem with that eventid: it may have been resolved.' };
 
-  const acknowledged = problem.acknowledged === '1';
-  const resolved = Boolean(problem.r_eventid && problem.r_eventid !== '0');
+  const acknowledged = listed.acknowledged === '1';
+  const resolved = Boolean(listed.r_eventid && listed.r_eventid !== '0');
   const state = `${acknowledged ? 'ack' : 'unack'}:${resolved ? 'resolved' : 'open'}`;
-  return cached(`explain:problem:${eventid}:${state}`, 3_600_000, () =>
-    humanize(
+  return cached(`explain:problem:${eventid}:${state}`, 3_600_000, async () => {
+    // The list leaves operational data out (queries.ts), so it is read here for this one problem.
+    const [problem] = await withOpdata([listed]);
+    return humanize(
       'problem',
       {
         host: problem.host,
         notification: problem.name,
         opdata: problem.opdata || null,
         severity: SEVERITY_NAMES[problem.severity] ?? problem.severity,
-        started: new Date(Number(problem.clock) * 1000).toISOString(),
+        started: snapshotClock(new Date(Number(problem.clock) * 1000)),
         acknowledged,
         resolved,
         tags: problem.tags ?? [],
       },
       onUsage,
-    ),
-  );
+    );
+  });
 }
 
 /** The derived monthly SLA of one scope (overall | site:N | category:NAME), in plain language. */
@@ -117,8 +139,11 @@ export async function explainDerivedSla(
   // the ICMP items are unsupported). HCML's method counts each as 100 %.
   const neverMeasured = hosts.filter((h) => h.measured === false).length;
 
-  return cached(`explain:sla:derived:${month}:${profile}:${scope}`, 300_000, () =>
-    humanize('sla', {
+  // The engine already compared the figure with the target; the model only words it, so a slip near the target cannot show green.
+  const meetingTarget = group.meeting === true;
+  const figure = `${group.name} was at ${pct(group.sli)} % in ${month}, against a target of ${pct(report.target)} %.`;
+  return cached(`explain:sla:derived:${month}:${profile}:${scope}`, 300_000, async () => ({
+    ...agreeWithFigure(await humanize('sla', {
       sla: `${group.name}: monthly availability derived from ICMP ping triggers`,
       slo_target_percent: report.target,
       reporting_period: `calendar month ${month} (${report.timezone})${report.closed ? '' : ', still in progress'}`,
@@ -149,16 +174,16 @@ export async function explainDerivedSla(
           downtime_minutes: minutes(h.downtime),
           error_budget_minutes_left: minutes(h.errorBudget),
         })),
-    }, onUsage),
-  );
+    }, onUsage), meetingTarget, figure),
+  }));
 }
 
 /** One Zabbix SLA's standing in the current period, in plain language. */
 export async function explainZabbixSla(slaid: string, serviceid: string | undefined, onUsage: OnUsage): Promise<SlaAnswer | NotFound> {
-  const sla = (await cached('sla', 60_000, getSlas)).find((s) => s.slaid === slaid);
+  const sla = (await slasView()).find((s) => s.slaid === slaid);
   if (!sla) return { notFound: 'No SLA with that slaid.' };
 
-  const sli = await cached(`sli:${slaid}:${serviceid ?? 'all'}`, 60_000, () => getSli(slaid, serviceid));
+  const sli = await sliView(slaid, serviceid);
 
   if (!sli.length) {
     return noDataExplanation(
@@ -168,9 +193,12 @@ export async function explainZabbixSla(slaid: string, serviceid: string | undefi
     );
   }
 
+  // Met only when every service is at or over the objective; the model words the verdict and does not decide it.
+  const meetingTarget = sli.every((s) => s.sli >= Number(sla.slo));
+  const figure = `The lowest service is at ${pct(Math.min(...sli.map((s) => s.sli)))} % against a target of ${pct(Number(sla.slo))} %.`;
   // Shorter TTL than problems: the SLI moves as the period progresses.
-  return cached(`explain:sla:${slaid}:${serviceid ?? 'all'}`, 300_000, () =>
-    humanize('sla', {
+  return cached(`explain:sla:${slaid}:${serviceid ?? 'all'}`, 300_000, async () => ({
+    ...agreeWithFigure(await humanize('sla', {
       sla: sla.name,
       slo_target_percent: Number(sla.slo),
       reporting_period: SLA_PERIODS[sla.period] ?? sla.period,
@@ -181,6 +209,6 @@ export async function explainZabbixSla(slaid: string, serviceid: string | undefi
         downtime_minutes: Math.round(s.downtime / 60),
         error_budget_minutes_left: Math.round(s.error_budget / 60),
       })),
-    }, onUsage),
-  );
+    }, onUsage), meetingTarget, figure),
+  }));
 }

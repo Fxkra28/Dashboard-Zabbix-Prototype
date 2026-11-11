@@ -6,6 +6,7 @@ import type { CapacityReport, CapacityRow } from '../../types';
 import { Async, Empty } from '../../shared/components/states';
 import { Field } from '../../shared/components/Field';
 import { TableWrap } from '../../shared/components/TableWrap';
+import { NoData } from '../../shared/components/NoData';
 
 /**
  * Capacity trends (HCML Goal 6). HCML's deck already shows a
@@ -41,8 +42,8 @@ function MetricPanel({
     <div className="panel">
       <div className="panel-head">
         <h2>{PANEL_TITLE[metric] ?? label}</h2>
-        {rows[0]?.source === 'history' && (
-          <span className="pill" title="No hourly trends yet: averaged from raw history">
+        {rows.some((r) => r.source === 'history') && (
+          <span className="pill" title="No hourly trends yet for some of these: averaged from raw history">
             from history
           </span>
         )}
@@ -71,24 +72,34 @@ function MetricPanel({
                   <td style={{ fontWeight: 500 }}>{r.host}</td>
                   <td className={iface ? 'mono' : 'muted'}>{r.name}</td>
                   <td>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="score-bar">
-                        <span
-                          style={{
-                            width: `${Math.min(100, Math.max(0, r.avg))}%`,
-                            background: util(r.avg),
-                          }}
-                        />
+                    {r.source === 'none' ? (
+                      <NoData />
+                    ) : (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="score-bar">
+                          <span
+                            style={{
+                              width: `${Math.min(100, Math.max(0, r.avg))}%`,
+                              background: util(r.avg),
+                            }}
+                          />
+                        </span>
+                        <strong style={{ fontSize: 12 }}>
+                          {r.avg.toFixed(1)}
+                          {r.units}
+                        </strong>
                       </span>
-                      <strong style={{ fontSize: 12 }}>
-                        {r.avg.toFixed(1)}
-                        {r.units}
-                      </strong>
-                    </span>
+                    )}
                   </td>
                   <td className="muted">
-                    {r.max.toFixed(1)}
-                    {r.units}
+                    {r.source === 'none' ? (
+                      <NoData />
+                    ) : (
+                      <>
+                        {r.max.toFixed(1)}
+                        {r.units}
+                      </>
+                    )}
                   </td>
                   <td className="sticky-end">
                     <Link className="btn ghost sm" to={`/graphs?hostid=${r.hostid}&itemid=${r.itemid}`}>
@@ -161,8 +172,8 @@ export default function Capacity() {
             <>
               {noData && (
                 <div className="notice">
-                  Some items have no stored values for this period: the host may not have been
-                  reporting. Zeros below mean “no data”, not “idle”.
+                  Rows marked “no data” have no stored values for this period: the host may not have been
+                  reporting.
                 </div>
               )}
               <div className="grid sli-grid">

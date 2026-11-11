@@ -196,3 +196,44 @@ describe('the stylesheet agrees with the hook (UX-14)', () => {
     expect(block('.app.rail {')).toMatch(/grid-template-columns:\s*68px 1fr/);
   });
 });
+
+describe('the sign-in card at a width of 320 CSS pixels (UX-40)', () => {
+  /** The declarations of the rule `selector { ... }` that stands alone in the stylesheet, outside any media query. */
+  const rule = (selector: string) => {
+    const found = new RegExp(`(?:^|\\})\\s*${selector.replace(/[.]/g, '\\.')}\\s*\\{([^}]*)\\}`, 'm').exec(styles);
+    expect(found, `${selector} is in the stylesheet`).not.toBeNull();
+    return found![1]!;
+  };
+
+  it('is as wide as its box allows up to 360 px, instead of a fixed 360 px that scrolls the page sideways', () => {
+    const card = rule('.login-card');
+    expect(card).toMatch(/width:\s*100%/);
+    expect(card).toMatch(/max-width:\s*360px/);
+    expect(card).not.toMatch(/(^|[;\s])width:\s*360px/);
+  });
+
+  it('keeps a margin to each edge of the page, so it does not touch the screen at 360 px', () => {
+    expect(rule('.login-wrap')).toMatch(/padding:\s*var\(--s-4\)/);
+  });
+
+  it('is measured with its padding inside its width, so 100% plus padding does not overflow', () => {
+    expect(styles).toMatch(/(^|\})\s*\*\s*\{[^}]*box-sizing:\s*border-box/);
+  });
+});
+
+describe('the foot of a dialog at 320 CSS pixels (reviewer, 11 November)', () => {
+  const rule = (selector: string) => {
+    const found = new RegExp(`(?:^|\\})\\s*${selector.replace(/[.>:()]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(styles);
+    expect(found, `${selector} is in the stylesheet`).not.toBeNull();
+    return found![1]!;
+  };
+
+  // A send that takes long shows three buttons (Cancel, Close the send continues, Sending): about 330 px against 248 inside the box.
+  it('lets its buttons wrap, so the way out is never pushed past the edge of the box', () => {
+    expect(rule('.modal-foot')).toMatch(/flex-wrap:\s*wrap/);
+  });
+
+  it('keeps the last button at the right edge when the row wraps, and only when there is more than one', () => {
+    expect(rule('.modal-foot > :last-child:not(:first-child)')).toMatch(/margin-left:\s*auto/);
+  });
+});

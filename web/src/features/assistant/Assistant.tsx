@@ -9,6 +9,7 @@ import Markdown from './Markdown';
 import AiDataNotice from './AiDataNotice';
 import ModelOfflineNotice from './ModelOfflineNotice';
 import { count } from '../../shared/lib/plural';
+import { useNow } from '../../shared/hooks/useNow';
 
 /**
  * The Assistant page: free-form questions about the estate, answered from a
@@ -33,12 +34,14 @@ const HISTORY = 12;
 /** Within this many pixels of the end counts as "reading the latest". */
 const NEAR_BOTTOM_PX = 80;
 
-function ago(ts: number): string {
-  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+function ago(ts: number, now: number): string {
+  const s = Math.max(0, Math.round((now - ts) / 1000));
   return s < 60 ? `${s}s ago` : `${Math.round(s / 60)} min ago`;
 }
 
-function ContextStrip({ context }: { context: ChatContext | null }) {
+export function ContextStrip({ context }: { context: ChatContext | null }) {
+  // The age is read from the clock, so it moves while the page stays open.
+  const now = useNow(10_000);
   if (!context) {
     return (
       <div className="chat-context">
@@ -63,7 +66,7 @@ function ContextStrip({ context }: { context: ChatContext | null }) {
         {context.slas} SLA{context.slas === 1 ? '' : 's'} · {context.degradedServices} degraded service
         {context.degradedServices === 1 ? '' : 's'}
       </span>
-      <span className="muted">snapshot {ago(context.generatedAt)}</span>
+      <span className="muted">snapshot {ago(context.generatedAt, now)}</span>
       {context.truncated && (
         <span className="muted" title="The estate was too large to show the model in full">
           · partial view

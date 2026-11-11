@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { resolveMail, type MailSettings } from './mailConfig.js';
 
 /**
  * The placeholder JWT secret. Named so `assertConfig` can refuse to start on it
@@ -128,6 +129,27 @@ export function parseNoDataWindows(raw: string | undefined): [number, number][] 
   return out.sort((a, b) => a[0] - b[0]);
 }
 
+/** ZBX_TLS_PIN_SHA256 and ZBX_TLS_PIN_UNTIL read together (clients/pinnedTls.ts). */
+export interface TlsPin {
+  /** Upper-case hex pairs joined by colons, the form of Node's `fingerprint256`. */
+  fingerprint256: string;
+  /** The last day, YYYY-MM-DD as written. */
+  until: string;
+  /** The end of that day in WIB. */
+  untilMs: number;
+}
+
+/** Undefined when either is blank or cannot be read: the exception is then off and an expired certificate is refused. Pure. */
+export function parseTlsPin(rawFingerprint: string | undefined, rawUntil: string | undefined): TlsPin | undefined {
+  const hex = (rawFingerprint ?? '').replace(/[\s:]/g, '').toUpperCase();
+  const until = (rawUntil ?? '').trim();
+  if (!/^[0-9A-F]{64}$/.test(hex) || !/^\d{4}-\d{2}-\d{2}$/.test(until)) return undefined;
+  // A day the calendar lacks, such as 2026-11-31, would otherwise roll over into the next month.
+  const day = Date.parse(`${until}T00:00:00Z`);
+  if (!Number.isFinite(day) || new Date(day).toISOString().slice(0, 10) !== until) return undefined;
+  return { fingerprint256: (hex.match(/../g) ?? []).join(':'), until, untilMs: Date.parse(`${until}T23:59:59.999+07:00`) };
+}
+
 const SLI_PROFILES = ['availability', 'hcml-report'] as const;
 export type SliProfile = (typeof SLI_PROFILES)[number];
 export function toSliProfile(raw: string | undefined): SliProfile | undefined {
@@ -194,6 +216,8 @@ export const config = {
    * stays strictly read-only and POST /api/problems/acknowledge (close is a flag on it) returns 503.
    */
   zbxWriteToken: process.env.ZABBIX_WRITE_TOKEN || '',
+  /** The one expired Zabbix certificate still accepted, and until when. Undefined: the normal check alone. */
+  zbxTlsPin: parseTlsPin(process.env.ZBX_TLS_PIN_SHA256, process.env.ZBX_TLS_PIN_UNTIL),
   port: envNum('PORT', 4000),
   /**
    * Interface to listen on. `0.0.0.0` (the default) is what a container needs,
@@ -296,7 +320,7 @@ export const config = {
     /** Promised availability, percent. Every row of HCML's reports uses 99. */
     target: envNum('SLO_TARGET', 99),
     /** Calendar months are cut in this zone, HCML's reports are Asia/Jakarta. */
-    timezone: process.env.SLA_TIMEZONE || 'Asia/Jakarta',
+    timezone: (process.env.SLA_TIMEZONE ?? '').trim() || 'Asia/Jakarta',
     defaultProfile: toSliProfile(process.env.SLI_PROFILE) ?? ('availability' as SliProfile),
     /** Trigger names behind HCML's published figures. */
     reportTriggers: csv(process.env.SLI_REPORT_TRIGGERS || 'High ICMP ping loss'),
@@ -326,8 +350,9 @@ export const config = {
     sessionCookie: process.env.SESSION_COOKIE || 'hcml_session',
     /**
      * How long one sign-in lasts, in hours: twelve unless SESSION_HOURS says otherwise. An open
-     * portal renews its own an hour before the end, so this bounds how long a copied or forgotten
-     * session works, not how long a wall screen stays signed in. A value outside 2 to 24 stops the
+     * portal renews its own an hour before the end, so this bounds how long a forgotten session
+     * works, not how long a wall screen stays signed in. Signing out ends the whole chain of renewals;
+     * a copy renewed after the owner only closed the tab does not end. A value outside 2 to 24 stops the
      * BFF from starting (`assertConfig`), so the default here is only read for an unset or valid
      * value.
      */
@@ -344,6 +369,11 @@ export const config = {
      * Zabbix. Off unless this is "true"; it never reaches the container (compose-env.test.ts).
      */
     allowWriteWithoutAuth: (process.env.ALLOW_WRITE_WITHOUT_AUTH ?? '').trim().toLowerCase() === 'true',
+    /**
+     * Report email and the monthly schedule with sign-in off, for the same reason: every caller is admin and could send the
+     * report to any address. Off unless this is "true"; it never reaches the container (compose-env.test.ts).
+     */
+    allowEmailWithoutAuth: (process.env.ALLOW_EMAIL_WITHOUT_AUTH ?? '').trim().toLowerCase() === 'true',
   },
   /**
    * Plain-language layer. Optional: unconfigured, the portal still serves every data endpoint and
@@ -431,6 +461,23 @@ export const config = {
       dailyTokensTotal: Math.max(0, Math.floor(envNum('AI_DAILY_TOKENS_TOTAL', 2_000_000))),
     },
   },
+  /** A folder that outlives the container, for the portal's small file of its own (core/state.ts). Empty: nothing is kept across a restart. */
+  stateDir: (process.env.PORTAL_STATE_DIR ?? '').trim(),
+
+  /** Emailing the SLA report (mailConfig.ts), off until every MAIL_ setting is usable. Each is read here by name so the compose test sees it. */
+  mail: resolveMail({
+    provider: process.env.MAIL_PROVIDER,
+    host: process.env.MAIL_HOST,
+    port: process.env.MAIL_PORT,
+    security: process.env.MAIL_SECURITY,
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS,
+    from: process.env.MAIL_FROM,
+    fromName: process.env.MAIL_FROM_NAME,
+    to: process.env.MAIL_TO,
+    allowedDomains: process.env.MAIL_ALLOWED_DOMAINS,
+    schedule: process.env.MAIL_SCHEDULE,
+  }),
 };
 
 /**
@@ -439,6 +486,56 @@ export const config = {
  */
 export function writeBackEnabled(): boolean {
   return Boolean(config.zbxWriteToken) && (config.auth.enabled || config.auth.allowWriteWithoutAuth);
+}
+
+/** Why email is refused although it is set up: sign-in is off and the opt-in is not given. Empty otherwise. Read live, like `writeBackEnabled`. */
+export function emailRefusal(): string {
+  if (!config.mail.enabled || config.auth.enabled || config.auth.allowEmailWithoutAuth) return '';
+  return (
+    'Email is off while sign-in is off, because anyone who reaches the portal would count as an administrator. ' +
+    'For local development only, set ALLOW_EMAIL_WITHOUT_AUTH=true in server/.env and restart the portal.'
+  );
+}
+
+/** The mail settings as they apply now: `enabled` is false while email is refused, and `off` says why. */
+export function mailNow(): MailSettings & { off: string } {
+  const off = emailRefusal();
+  return { ...config.mail, enabled: config.mail.enabled && off === '', off };
+}
+
+const TIMEOUT_MS_MIN = 1_000;
+/** A Node timer longer than this becomes 1 ms, which times every call out at once. */
+const TIMEOUT_MS_MAX = 2_147_483_647;
+
+/** True when the runtime knows the zone: the same call `sli/time.ts` makes to cut every month. */
+function knownZone(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The text of a setting that is set and is not a plain decimal number from `min` to `max`, the ends included. */
+function unusableNumber(name: string, min: number, max: number): string | undefined {
+  const raw = (process.env[name] ?? '').trim();
+  if (raw === '') return undefined;
+  const n = /^(\d+(\.\d*)?|\.\d+)$/.test(raw) ? Number(raw) : NaN;
+  return n >= min && n <= max ? undefined : raw;
+}
+
+const SLA_NUMBERS = [
+  { name: 'SLO_TARGET', min: 0, max: 100, what: 'a target', use: 'a percentage from 0 to 100', standard: '99' },
+  { name: 'SLI_MIN_COVERAGE', min: 0, max: 1, what: 'a share', use: 'a number from 0 to 1, where 0.5 is half of the time that was collected', standard: '0.5' },
+] as const;
+
+/** The text of a timeout setting that is set and is not a whole number of milliseconds a call can wait. */
+function unusableTimeout(name: string): string | undefined {
+  const raw = (process.env[name] ?? '').trim();
+  if (raw === '') return undefined;
+  const ms = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  return ms >= TIMEOUT_MS_MIN && ms <= TIMEOUT_MS_MAX ? undefined : raw;
 }
 
 /**
@@ -501,10 +598,49 @@ export function assertConfig(warn: (msg: string) => void): void {
         'with its zone, comma-separated, for example 2026-10-26T16:10+07:00/2026-10-26T21:03+07:00.',
     );
   }
+  // A zone Intl rejects makes every SLA page answer 500 while /api/health stays green.
+  if (!knownZone(config.sla.timezone)) {
+    throw new Error(
+      `SLA_TIMEZONE="${config.sla.timezone}" is not a time zone the portal knows. ` +
+        'Use a name from the IANA list, for example Asia/Jakarta, or leave it unset for Asia/Jakarta.',
+    );
+  }
+  // A timeout of 0 fails every call at once, and a word or a unit would otherwise fall back to the default unnoticed.
+  for (const name of ['ZABBIX_TIMEOUT_MS', 'AI_TIMEOUT_MS']) {
+    const bad = unusableTimeout(name);
+    if (bad !== undefined) {
+      throw new Error(
+        `${name}="${bad}" is not a timeout the portal can use. ` +
+          `Use a whole number of milliseconds from ${TIMEOUT_MS_MIN} to ${TIMEOUT_MS_MAX}, or leave it unset to keep the default.`,
+      );
+    }
+  }
+  // A value out of range would run, and one that is not a number would fall back to the standard, each with no word of it.
+  for (const { name, min, max, what, use, standard } of SLA_NUMBERS) {
+    const bad = unusableNumber(name, min, max);
+    if (bad !== undefined) throw new Error(`${name}="${bad}" is not ${what} the portal can use. Use ${use}, or leave it unset for ${standard}.`);
+  }
   try {
     new URL(config.zbxUrl);
   } catch {
     warn(`ZBX_URL is not a valid URL ("${config.zbxUrl}"): every Zabbix call will fail.`);
+  }
+  const pin = config.zbxTlsPin;
+  const renewed = 'Once the certificate is renewed, delete ZBX_TLS_PIN_SHA256 and ZBX_TLS_PIN_UNTIL.';
+  if (!pin && [process.env.ZBX_TLS_PIN_SHA256, process.env.ZBX_TLS_PIN_UNTIL].some((v) => v?.trim())) {
+    warn(
+      'ZBX_TLS_PIN_SHA256 and ZBX_TLS_PIN_UNTIL go together: a SHA-256 fingerprint of 64 hex digits and a date as YYYY-MM-DD. ' +
+        'One is missing or cannot be read, so an expired Zabbix certificate is refused.',
+    );
+  } else if (pin && !/^https:/i.test(config.zbxUrl)) {
+    warn('ZBX_TLS_PIN_SHA256 is set but ZBX_URL is not https, so the pin is not used.');
+  } else if (pin) {
+    warn(
+      Date.now() > pin.untilMs
+        ? `The exception for an expired Zabbix certificate ended on ${pin.until}, so that certificate is refused. ${renewed}`
+        : `ZBX_TLS_PIN_SHA256 is set: while Zabbix's certificate stays expired, that one certificate is accepted ` +
+            `until the end of ${pin.until} WIB. ${renewed}`,
+    );
   }
   if (!config.zbxToken) {
     warn('ZABBIX_API_TOKEN is not set: Zabbix calls will fail until you set it in server/.env');
@@ -552,5 +688,13 @@ export function assertConfig(warn: (msg: string) => void): void {
         : 'AI_BASE_URL is not set: /api/explain/* will return 503 and the UI hides "Explain". ' +
             'Point it at your local model, e.g. http://localhost:11434/v1',
     );
+  }
+  for (const problem of config.mail.problems) warn(`Email is off. ${problem}`);
+  if (emailRefusal()) warn(emailRefusal());
+  else if (config.mail.enabled && !config.auth.enabled) {
+    warn('ALLOW_EMAIL_WITHOUT_AUTH=true: with sign-in off, anyone who reaches this server can email the report to any address and set the monthly schedule.');
+  }
+  if (config.mail.enabled && config.mail.allowedDomains.length === 0) {
+    warn('Email can send a report to any address. Set MAIL_ALLOWED_DOMAINS (for example hcml.co.id) to limit it to your own domains.');
   }
 }

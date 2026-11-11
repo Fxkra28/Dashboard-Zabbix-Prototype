@@ -5,6 +5,7 @@ import { useUrlState } from '../../shared/hooks/useUrlState';
 import type { DimensionKey, ScorecardResponse } from '../../types';
 import { Async, Empty } from '../../shared/components/states';
 import { downloadCsv } from '../../shared/lib/csv';
+import { dayInZone } from '../../shared/lib/time';
 import { NoData } from '../../shared/components/NoData';
 import { count } from '../../shared/lib/plural';
 import { TableWrap } from '../../shared/components/TableWrap';
@@ -73,7 +74,7 @@ export default function Inventory() {
   // The rows on screen, so a filtered file says so in its name and is not mistaken for the full list.
   const download = () => {
     const shown = filter === 'all' ? '' : `-${filter}`;
-    const day = new Date().toISOString().slice(0, 10);
+    const day = dayInZone(Date.now());
     downloadCsv(`hcml-inventory-gaps${shown}-${day}.csv`, gapRows(gaps));
   };
 

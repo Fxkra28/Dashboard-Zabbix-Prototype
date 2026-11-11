@@ -56,6 +56,7 @@ function reachabilityEstate() {
       ...over,
     }));
   const at = (site: string) => [{ tag: 'site', value: site }];
+  const pings = [...ping('1', '1'), ...ping('2', '1'), ...ping('4', '0', { state: '1', lastclock: '0' }), ...ping('5', '0'), ...ping('6', '1')];
   zabbixReturns({
     'host.get': [
       zHost({ hostid: '1', name: 'A1', tags: at('Alpha'), interfaces: [{ ip: '10.0.0.1', type: '2', available: '2' }] }),
@@ -66,13 +67,9 @@ function reachabilityEstate() {
       zHost({ hostid: '6', name: 'Z2', tags: at('Zulu') }),
       zHost({ hostid: '7', name: 'Z3', tags: at('Zulu') }),
     ],
-    'item.get': [
-      ...ping('1', '1'),
-      ...ping('2', '1'),
-      ...ping('4', '0', { state: '1', lastclock: '0' }),
-      ...ping('5', '0'),
-      ...ping('6', '1'),
-    ],
+    'item.get': pings,
+    // The bulk value read (reachability.ts): each item's value, as Zabbix's history holds it.
+    'history.get': pings.filter((i) => i.lastclock !== '0').map((i) => ({ itemid: i.itemid, clock: i.lastclock, value: i.lastvalue })),
     'problem.get': [],
   });
 }
@@ -202,7 +199,7 @@ describe('problems / history / maps routes', () => {
               label: '{HOSTNAME} ({HOST.IP})\r\n',
               elements: [{ hostid: '10697' }],
             },
-            { selementid: '6', elementtype: '4', label: 'Inet Jatayu 1', elements: [] },
+            { selementid: '6', elementtype: '4', label: 'Inet Provider 1', elements: [] },
           ],
         },
       ],
@@ -229,7 +226,7 @@ describe('problems / history / maps routes', () => {
       problems: 1,
       maxSeverity: 4,
     });
-    expect(map.selements[1].labelText).toBe('Inet Jatayu 1');
+    expect(map.selements[1].labelText).toBe('Inet Provider 1');
     expect(map.selements[1]).not.toHaveProperty('problems');
     await app.close();
   });
@@ -238,7 +235,7 @@ describe('problems / history / maps routes', () => {
     const { resolveLabel } = await import('../services/maps.js');
     // The bug this replaces: every HCML host label rendered as "()".
     expect(resolveLabel('{HOSTNAME} ({HOST.IP})', { hostid: '1', host: 'h', name: 'CORE' })).toBe('CORE');
-    expect(resolveLabel('{NO.SUCH.MACRO}\r\nInet Jatayu 1')).toBe('Inet Jatayu 1');
+    expect(resolveLabel('{NO.SUCH.MACRO}\r\nInet Provider 1')).toBe('Inet Provider 1');
   });
 });
 
@@ -381,8 +378,8 @@ describe('report routes', () => {
 
     expect((await app.inject({ url: '/api/stats' })).json()).toMatchObject({ hosts: 3, items: 40, triggers: 12, groups: 2 });
     expect(zbxMock).toHaveBeenCalledWith('host.get', { countOutput: true, monitored_hosts: true });
-    expect(zbxMock).toHaveBeenCalledWith('item.get', { countOutput: true, monitored: true });
-    expect(zbxMock).toHaveBeenCalledWith('trigger.get', { countOutput: true, monitored: true });
+    expect(zbxMock).toHaveBeenCalledWith('item.get', { countOutput: true, monitored: true }, { timeoutMs: 120_000 });
+    expect(zbxMock).toHaveBeenCalledWith('trigger.get', { countOutput: true, monitored: true }, { timeoutMs: 120_000 });
     await app.close();
   });
 });

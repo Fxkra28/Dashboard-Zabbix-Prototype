@@ -5,9 +5,17 @@ import { BrowserRouter } from 'react-router-dom';
 import { api, HttpFailure } from '../../api';
 import ReportDownload, { GIVE_UP_AFTER_MS, READY_FOR_MS, REVOKE_AFTER_MS } from './ReportDownload';
 import { recentMonths } from '../../shared/lib/time';
+import { DEFAULT_REPORT_STYLE, REPORT_STYLE_KEY } from './reportStyle';
 import Availability from './Availability';
 import Sla from './Sla';
 import type { AvailabilityReport, SliGroup, SliProfile, SliReport } from '../../types';
+
+// Who is signed in, for the tests of where the Email button appears. Nobody, unless a test says.
+const auth = vi.hoisted(() => ({ role: null as string | null }));
+vi.mock('../../shared/hooks/useAuth', async () => {
+  const actual = await vi.importActual<typeof import('../../shared/hooks/useAuth')>('../../shared/hooks/useAuth');
+  return { ...actual, useAuth: () => ({ me: null, role: auth.role, pages: null, loading: false }) };
+});
 
 type ReportFile = Awaited<ReturnType<typeof api.sliExport>>;
 
@@ -28,6 +36,8 @@ let clicked: { href: string; download: string; connected: boolean }[];
 let sliExport: MockInstance<typeof api.sliExport>;
 
 beforeEach(() => {
+  auth.role = null;
+  localStorage.clear();
   clicked = [];
   // jsdom has neither, and a real click on a blob link would try to navigate.
   URL.createObjectURL = vi.fn(() => 'blob:report');
@@ -41,13 +51,29 @@ afterEach(() => vi.restoreAllMocks());
 
 const pdfButton = () => screen.getByRole('button', { name: 'PDF report' });
 const excelButton = () => screen.getByRole('button', { name: 'Excel report' });
+const csvButton = () => screen.getByRole('button', { name: 'CSV report' });
 
 describe('ReportDownload', () => {
-  it('offers the PDF and the Excel report in a group named for the month in words', () => {
+  it('offers the PDF, Excel and CSV report in a group named for the month in words', () => {
     render(<ReportDownload month="2026-08" />);
     const group = screen.getByRole('group', { name: 'Download the SLA report for August 2026, both methods' });
-    expect(within(group).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent?.replace(/Preparing.*/, ''))).toEqual(['PDF report', 'Excel report']);
-    expect(group.querySelectorAll('button.btn.ghost.sm')).toHaveLength(2);
+    expect(within(group).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent?.replace(/Preparing.*/, ''))).toEqual(['PDF report', 'Excel report', 'CSV report']);
+    expect(group.querySelectorAll('button.btn.ghost.sm')).toHaveLength(3);
+  });
+
+  it('offers the number and date style in a group of its own, after the downloads and not among them', () => {
+    render(<ReportDownload month="2026-08" />);
+    const downloads = screen.getByRole('group', { name: 'Download the SLA report for August 2026, both methods' });
+    const style = screen.getByRole('group', { name: 'Number and date style of the report files' });
+    expect(downloads.contains(style)).toBe(false);
+    expect(downloads.compareDocumentPosition(style) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(downloads).queryByRole('button', { name: 'Number and date style' })).toBeNull();
+  });
+
+  it('says in the button’s hint that the CSV report is a zip with a file for each table', () => {
+    render(<ReportDownload month="2026-08" />);
+    expect(csvButton()).toHaveAttribute('title', expect.stringContaining('one zip with a CSV file for each table'));
+    expect(pdfButton()).toHaveAttribute('title', expect.stringContaining('Both methods'));
   });
 
   it('fetches the month as a PDF and saves it under the name the BFF gave', async () => {
@@ -57,7 +83,7 @@ describe('ReportDownload', () => {
     render(<ReportDownload month="2026-08" />);
     await user.click(pdfButton());
 
-    expect(sliExport).toHaveBeenCalledWith('2026-08', 'pdf', expect.any(AbortSignal));
+    expect(sliExport).toHaveBeenCalledWith('2026-08', 'pdf', expect.any(AbortSignal), DEFAULT_REPORT_STYLE);
     await waitFor(() => expect(clicked).toEqual([{ href: 'blob:report', download: 'HCML_SLA_Report_2026-08.pdf', connected: true }]));
     expect(URL.createObjectURL).toHaveBeenCalledWith(report.blob);
     // Gone from the page once clicked.
@@ -86,8 +112,62 @@ describe('ReportDownload', () => {
     render(<ReportDownload month="2026-08" />);
     await user.click(excelButton());
 
-    expect(sliExport).toHaveBeenCalledWith('2026-08', 'xlsx', expect.any(AbortSignal));
+    expect(sliExport).toHaveBeenCalledWith('2026-08', 'xlsx', expect.any(AbortSignal), DEFAULT_REPORT_STYLE);
     await waitFor(() => expect(clicked).toEqual([{ href: 'blob:report', download: 'HCML_SLA_Report_2026-08.xlsx', connected: true }]));
+  });
+
+  it('fetches the month as the CSV files in one zip, saved under the name the BFF gave', async () => {
+    sliExport.mockResolvedValue(file('HCML_SLA_Report_2026-08_csv.zip'));
+    const user = userEvent.setup();
+    render(<ReportDownload month="2026-08" />);
+    await user.click(csvButton());
+
+    expect(sliExport).toHaveBeenCalledWith('2026-08', 'csv', expect.any(AbortSignal), DEFAULT_REPORT_STYLE);
+    await waitFor(() => expect(clicked).toEqual([{ href: 'blob:report', download: 'HCML_SLA_Report_2026-08_csv.zip', connected: true }]));
+  });
+
+  it('labels the CSV button while it prepares, announces it, and says when it is ready', async () => {
+    const pending = deferred<ReportFile>();
+    sliExport.mockReturnValue(pending.promise);
+    const user = userEvent.setup();
+    render(<ReportDownload month="2026-08" />);
+    await user.click(csvButton());
+    expect(screen.getByRole('button', { name: 'Preparing CSV…' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('Preparing the CSV report');
+    pending.resolve(file('HCML_SLA_Report_2026-08_csv.zip'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('CSV report ready'));
+  });
+
+  it('names the CSV report in the error when it fails', async () => {
+    sliExport.mockRejectedValueOnce(new Error('Zabbix rejected the API token.'));
+    const user = userEvent.setup();
+    render(<ReportDownload month="2026-08" />);
+    await user.click(csvButton());
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t prepare the CSV report: Zabbix rejected the API token.');
+  });
+
+  it('writes every file in the style the person kept, read when the button is pressed and not when the page loaded', async () => {
+    const user = userEvent.setup();
+    render(<ReportDownload month="2026-08" />);
+    const kept = { decimal: 'comma', date: 'iso', separator: 'semicolon' } as const;
+    localStorage.setItem(REPORT_STYLE_KEY, JSON.stringify(kept));
+    await user.click(csvButton());
+    await waitFor(() => expect(sliExport).toHaveBeenCalledWith('2026-08', 'csv', expect.any(AbortSignal), kept));
+    await user.click(pdfButton());
+    await waitFor(() => expect(sliExport).toHaveBeenCalledWith('2026-08', 'pdf', expect.any(AbortSignal), kept));
+    await user.click(excelButton());
+    await waitFor(() => expect(sliExport).toHaveBeenCalledWith('2026-08', 'xlsx', expect.any(AbortSignal), kept));
+  });
+
+  it('uses the style chosen in the dialog for the very next download', async () => {
+    const user = userEvent.setup();
+    render(<ReportDownload month="2026-08" />);
+    await user.click(screen.getByRole('button', { name: 'Number and date style' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Number and date style' });
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Decimal mark' }), 'comma');
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }));
+    await user.click(csvButton());
+    await waitFor(() => expect(sliExport).toHaveBeenCalledWith('2026-08', 'csv', expect.any(AbortSignal), { ...DEFAULT_REPORT_STYLE, decimal: 'comma' }));
   });
 
   it('shows the busy button and shuts the other while a report is prepared, and keeps focus on the one pressed', async () => {
@@ -164,7 +244,7 @@ describe('ReportDownload', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Couldn’t prepare the PDF report: Zabbix rejected the API token.');
     // Outside the buttons' box, so that box keeps its width and the buttons stay put when the alert appears.
-    expect(screen.getByRole('group').closest('.field')).not.toContainElement(alert);
+    expect(screen.getByRole('group', { name: /^Download the SLA report/ }).closest('.field')).not.toContainElement(alert);
     expect(alert.closest('.report-error-row')).not.toBeNull();
     expect(clicked).toEqual([]);
     expect(screen.getByRole('status')).toBeEmptyDOMElement();
@@ -233,7 +313,7 @@ describe('ReportDownload', () => {
     expect(screen.getByRole('status')).toBeEmptyDOMElement();
 
     await user.click(pdfButton());
-    expect(sliExport).toHaveBeenLastCalledWith('2026-07', 'pdf', expect.any(AbortSignal));
+    expect(sliExport).toHaveBeenLastCalledWith('2026-07', 'pdf', expect.any(AbortSignal), DEFAULT_REPORT_STYLE);
   });
 
   it('does not let an old request that ends late free the buttons the new one holds', async () => {
@@ -349,10 +429,10 @@ describe('ReportDownload', () => {
 
   it('says in a tooltip, and in the group’s name, that the file holds both methods', () => {
     render(<ReportDownload month="2026-08" />);
-    for (const button of [pdfButton(), excelButton()]) {
+    for (const button of [pdfButton(), excelButton(), csvButton()]) {
       expect(button).toHaveAttribute('title', expect.stringContaining('Both methods'));
     }
-    expect(screen.getByRole('group')).toHaveAccessibleName('Download the SLA report for August 2026, both methods');
+    expect(screen.getByRole('group', { name: /^Download the SLA report/ })).toHaveAccessibleName('Download the SLA report for August 2026, both methods');
   });
 
   it.each([
@@ -451,6 +531,8 @@ const NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', '
 const inWords = (month: string) => `${NAMES[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;
 const [, lastMonth, monthBefore] = recentMonths(3);
 const downloadGroup = (month: string) => `Download the SLA report for ${inWords(month)}, both methods`;
+const emailGroup = (month: string) => `Email the SLA report for ${inWords(month)}, both methods`;
+const emailOn = () => vi.spyOn(api, 'sliEmailInfo').mockResolvedValue({ enabled: true, from: 'portal@example.com', recipients: ['ana@example.org'], max: 10, allowedDomains: [], kept: true });
 
 /** The pages ask for the AI switch once and keep the answer, so it is the same for every test here. */
 const pageSetup = () => {
@@ -485,15 +567,19 @@ describe('on the SLA page', () => {
 
     const controls = screen.getByLabelText('Month').closest('.controls') as HTMLElement;
     const downloads = within(controls).getByRole('group', { name: downloadGroup(lastMonth) });
-    expect(within(downloads).getAllByRole('button')).toHaveLength(2);
+    expect(within(downloads).getAllByRole('button')).toHaveLength(3);
     // Nothing here is the AI's: its "Explain overall" button is not on the page at all.
     expect(screen.queryByRole('button', { name: 'Explain overall' })).toBeNull();
     expect(within(downloads).getByRole('button', { name: 'PDF report' })).toBeDisabled();
     expect(within(downloads).getByRole('button', { name: 'Excel report' })).toBeDisabled();
+    expect(within(downloads).getByRole('button', { name: 'CSV report' })).toBeDisabled();
+    // The style is a setting, not a report, so it is there from the start.
+    expect(within(controls).getByRole('button', { name: 'Number and date style' })).toBeEnabled();
 
     give(lastMonth);
     await waitFor(() => expect(within(downloads).getByRole('button', { name: 'PDF report' })).toBeEnabled());
     expect(within(downloads).getByRole('button', { name: 'Excel report' })).toBeEnabled();
+    expect(within(downloads).getByRole('button', { name: 'CSV report' })).toBeEnabled();
   });
 
   it('follows the month, off again until that month has loaded, and fetches the month shown', async () => {
@@ -510,7 +596,34 @@ describe('on the SLA page', () => {
     give(monthBefore);
     await waitFor(() => expect(screen.getByRole('button', { name: 'PDF report' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Excel report' }));
-    expect(api.sliExport).toHaveBeenCalledWith(monthBefore, 'xlsx', expect.any(AbortSignal));
+    expect(api.sliExport).toHaveBeenCalledWith(monthBefore, 'xlsx', expect.any(AbortSignal), DEFAULT_REPORT_STYLE);
+  });
+
+  it('puts Email report in the same row for an administrator, off with the downloads until the month has loaded', async () => {
+    auth.role = 'admin';
+    emailOn();
+    const { give } = serveSli();
+    openSla();
+
+    const controls = screen.getByLabelText('Month').closest('.controls') as HTMLElement;
+    const email = await within(controls).findByRole('group', { name: emailGroup(lastMonth) });
+    const button = within(email).getByRole('button', { name: 'Email report' });
+    expect(button).toBeDisabled();
+    give(lastMonth);
+    await waitFor(() => expect(button).toBeEnabled());
+    // Its own group, apart from the two downloads, so the downloads keep their label and their two buttons.
+    expect(within(controls).getByRole('group', { name: downloadGroup(lastMonth) })).not.toContainElement(button);
+  });
+
+  it('puts Email report nowhere for anyone below an administrator', async () => {
+    auth.role = 'operator';
+    const info = emailOn();
+    serveSli();
+    openSla();
+    expect(screen.getByRole('group', { name: downloadGroup(lastMonth) })).toBeInTheDocument();
+    await act(async () => undefined);
+    expect(screen.queryByRole('button', { name: 'Email report' })).toBeNull();
+    expect(info).not.toHaveBeenCalled();
   });
 
   it('waits for the method in view when that is the HCML one', async () => {
@@ -565,6 +678,22 @@ describe('on the availability page', () => {
     answer.resolve(availabilityReport(lastMonth));
     await waitFor(() => expect(within(downloads).getByRole('button', { name: 'PDF report' })).toBeEnabled());
     expect(availability).toHaveBeenCalledWith(expect.objectContaining({ month: lastMonth }));
+  });
+
+  it('offers Email report for the same calendar month to an administrator, and for no rolling window', async () => {
+    auth.role = 'admin';
+    emailOn();
+    vi.spyOn(api, 'availability').mockImplementation(async (arg) =>
+      availabilityReport(typeof arg === 'object' ? (arg.month ?? null) : null),
+    );
+    const user = userEvent.setup();
+    open(`?period=m:${lastMonth}`);
+
+    const group = await screen.findByRole('group', { name: emailGroup(lastMonth) });
+    await waitFor(() => expect(within(group).getByRole('button', { name: 'Email report' })).toBeEnabled());
+
+    await user.selectOptions(screen.getByLabelText('Period'), 'd30');
+    await waitFor(() => expect(screen.queryByRole('group', { name: /Email the SLA report/ })).toBeNull());
   });
 
   it('stays off when the month just picked fails to load, though the last month’s figures are still on screen', async () => {

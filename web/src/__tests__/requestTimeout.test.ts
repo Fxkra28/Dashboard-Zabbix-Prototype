@@ -53,15 +53,15 @@ const outcome = (p: Promise<unknown>) =>
   );
 
 describe('a read that never answers (tracker FR-11)', () => {
-  it('fails after 30 s with a sentence a person can read, not a bare AbortError', async () => {
+  it('fails after 330 s with a sentence a person can read, not a bare AbortError', async () => {
     const { api } = await load();
     stalled();
     const result = outcome(api.stats());
-    await vi.advanceTimersByTimeAsync(29_999);
+    await vi.advanceTimersByTimeAsync(329_999);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     const { error } = (await result) as { error: Error };
-    expect(error.message).toBe('No answer from the server within 30 seconds.');
+    expect(error.message).toBe('No answer from the server within 330 seconds.');
     expect(error.name).not.toBe('AbortError');
   });
 
@@ -76,7 +76,7 @@ describe('a read that never answers (tracker FR-11)', () => {
       }),
     );
     const result = outcome(api.stats());
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(330_000);
     expect(((await result) as { error: Error }).error.message).toMatch(/No answer from the server/);
   });
 
@@ -132,15 +132,48 @@ describe('a read that never answers (tracker FR-11)', () => {
     expect(used.aborted).toBe(false);
   });
 
+  it('gives an acknowledgement a deadline too, and says that the change may have been made (FR-24)', async () => {
+    const { api } = await load();
+    stalled();
+    const result = outcome(api.acknowledge({ eventids: ['1'], acknowledge: true }));
+    await vi.advanceTimersByTimeAsync(329_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const { error } = (await result) as { error: Error };
+    expect(error.message).toBe('No answer from the server within 330 seconds. Check whether the change was made before you send it again.');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('leaves an acknowledgement that is answered in time alone, with no timer left behind', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValue(json(200, { ok: true, eventids: ['1'], action: 6 }));
+    const result = outcome(api.acknowledge({ eventids: ['1'], acknowledge: true }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await result).toEqual({ value: { ok: true, eventids: ['1'], action: 6 } });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('gives an email as long as a monthly report takes to build, since a second send would be a second email', async () => {
+    const { api } = await load();
+    stalled();
+    const result = outcome(api.sliEmail('2026-08', { formats: ['pdf'] }));
+    let settled = false;
+    void result.then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(331_000); // past an ordinary write's deadline
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(119_000);
+    expect(((await result) as { error: Error }).error.message).toBe('No answer from the server within 450 seconds. Check whether the change was made before you send it again.');
+  });
+
   it('gives an explanation longer, because a language model is behind it', async () => {
     const { api } = await load();
     stalled();
     const result = outcome(api.explainProblem('42'));
     let settled = false;
     void result.then(() => (settled = true));
-    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.advanceTimersByTimeAsync(331_000); // past an ordinary read's deadline
     expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(139_000);
-    expect(((await result) as { error: Error }).error.message).toBe('No answer from the server within 170 seconds.');
+    await vi.advanceTimersByTimeAsync(119_000);
+    expect(((await result) as { error: Error }).error.message).toBe('No answer from the server within 450 seconds.');
   });
 });

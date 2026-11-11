@@ -53,8 +53,10 @@ export interface WebMonitoringResponse {
 
 export interface Stats {
   hosts: number;
-  items: number;
-  triggers: number;
+  /** Null until the first count arrives: counting every item can take Zabbix tens of seconds. */
+  items: number | null;
+  /** Null until the first count arrives, like `items`: counting the monitored triggers took HCML's Zabbix 74 s. */
+  triggers: number | null;
   groups: number;
   problems: number;
   unacknowledged: number;

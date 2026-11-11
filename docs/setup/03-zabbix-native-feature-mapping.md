@@ -7,7 +7,7 @@ portal view maps to Zabbix concepts and API methods:
 
 | Portal page (sidebar)      | Zabbix native equivalent        | BFF endpoint                      | Zabbix API methods used                     |
 |----------------------------|---------------------------------|-----------------------------------|---------------------------------------------|
-| Dashboard              | Monitoring → Dashboard          | `/api/stats`, `/api/reports/problems-by-group`, `/api/problems`; the Hosts view also `/api/devices`, `/api/reports/top-hosts` and `/api/reports/web-monitoring`; operators and admins also `/api/net/meters` | `host/item/trigger/hostgroup.get` (counts), `problem.get`, `trigger.get`; for the meters `dashboard.get`, `item.get` and `history.get` |
+| Dashboard              | Monitoring → Dashboard          | `/api/stats`, `/api/reports/problems-by-group`, `/api/problems`; the Hosts view also `/api/devices`, `/api/reports/top-hosts` and `/api/reports/web-monitoring`; wall screens, operators and admins also `/api/net/meters` | `host/item/trigger/hostgroup.get` (counts), `problem.get`, `trigger.get`; for the meters `dashboard.get`, `item.get` and `history.get` |
 | Problems               | Monitoring → Problems           | `/api/problems`                   | `problem.get`, `trigger.get` (host names)   |
 | Sites                  | *(none: see [§14](14-site-view.md#14-site-view))* | `/api/sites`                  | `host.get` (+ tags, inventory, groups), `problem.get` |
 | Hosts                  | Monitoring → Hosts              | `/api/hosts/overview`             | `host.get` (+ interface availability), `problem.get` |
@@ -15,8 +15,8 @@ portal view maps to Zabbix concepts and API methods:
 | Latest data            | Monitoring → Latest data        | `/api/latest`                     | `item.get` (lastvalue/lastclock/prevvalue)  |
 | Graphs                 | Monitoring → Hosts → Graphs     | `/api/graph`, `/api/items`        | `item.get`, `history.get`, `trend.get`      |
 | Maps                   | Monitoring → Maps               | `/api/maps`, `/api/maps/detail`   | `map.get` (selements + links)               |
-| Network                | (SNMP/ICMP hosts, §13)          | `/api/net/*`                      | `host.get`, `item.get` (icmp*, net.if.*)    |
-| Links & WAN health     | *(none: see [§17](17-link-wan-health.md#17-link--wan-health))* | `/api/links`           | `item.get` (icmpping / icmppingloss / icmppingsec) |
+| Network                | (SNMP/ICMP hosts, §13)          | `/api/net/*`                      | `host.get`, `item.get` (icmp*, net.if.*), `history.get` (ping values) |
+| Links & WAN health     | *(none: see [§17](17-link-wan-health.md#17-link--wan-health))* | `/api/links`           | `item.get` (icmpping / icmppingloss / icmppingsec), `history.get` (ping values) |
 | Services               | Services                        | `/api/services`                   | `service.get` (+ children, problem events), `sla.get`, `sla.getsli` |
 | SLA                    | Services → SLA                  | `/api/sla`, `/api/sla/sli`        | `sla.get`, `sla.getsli`, `service.get` |
 | Availability & response | *(none: see [§18](18-automated-reporting.md#18-automated-reporting))* | `/api/reports/availability`, `/api/reports/aging` | `event.get` (problem/recovery pairs) |

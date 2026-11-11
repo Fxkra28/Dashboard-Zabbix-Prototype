@@ -8,6 +8,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
+    // The number of tests, for tools/check/facts.check.mjs to hold the documents' counts to. Git ignores the file.
+    reporters: ['default', 'json'],
+    outputFile: { json: '.test-counts.json' },
     setupFiles: ['src/__tests__/setup.ts'],
     // Vitest blanks every stylesheet by default; the tests read the stylesheet as text (src/__tests__/stylesheet.ts).
     css: { include: [/styles\/.*\.css/] },

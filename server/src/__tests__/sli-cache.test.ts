@@ -88,6 +88,28 @@ describe('getMonthlySli keeps what it computes', () => {
     expect(compute).toHaveBeenCalledTimes(2);
   });
 
+  it('does not keep what was read in the first ten minutes after a month ends as its final report (BK-44)', async () => {
+    // Zabbix still gets the last values of the month for a few minutes: the monthly send waits ten minutes for them.
+    vi.setSystemTime(new Date('2026-10-31T17:00:30Z'));
+    const early = await getMonthlySli(OPEN, 'availability');
+    vi.setSystemTime(new Date('2026-10-31T17:10:01Z'));
+    const settled = await getMonthlySli(OPEN, 'availability');
+    expect(settled).not.toBe(early);
+    expect(compute).toHaveBeenCalledTimes(2);
+    // From then on it is final: kept for a day.
+    vi.setSystemTime(new Date('2026-11-01T16:00:00Z'));
+    expect(await getMonthlySli(OPEN, 'availability')).toBe(settled);
+    expect(compute).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps what was read just after a month ends only for a few minutes (BK-44)', async () => {
+    vi.setSystemTime(new Date('2026-10-31T17:00:30Z'));
+    const early = await getMonthlySli(OPEN, 'availability');
+    vi.setSystemTime(new Date('2026-10-31T17:03:00Z'));
+    expect(await getMonthlySli(OPEN, 'availability')).toBe(early);
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
   it('answers with the last report when a refresh fails, rather than with the error', async () => {
     const first = await getMonthlySli(OPEN, 'availability');
     // Past the five minutes and the five of stale answers: the next call must fetch in front of the caller.

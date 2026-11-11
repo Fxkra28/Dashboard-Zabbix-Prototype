@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { pingZabbix } from './helpers/pingZabbix.js';
 import { buildTestApp, zHost } from './helpers/app.js';
 
 /**
@@ -41,7 +42,7 @@ afterEach(async () => {
 // /api/items
 
 describe('/api/items', () => {
-  it('graphable=1 filters to enabled, supported numeric items and asks for the new fields', async () => {
+  it('graphable=1 filters to enabled, supported numeric items and asks for the new fields, but not the two Zabbix looks up item by item', async () => {
     zabbix({
       'item.get': [
         { itemid: '1', name: 'a', key_: 'a', value_type: '0', status: '0', state: '0' },
@@ -58,9 +59,10 @@ describe('/api/items', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().map((i: { itemid: string }) => i.itemid)).toEqual(['1', '5']);
     const [params] = callsOf('item.get');
-    expect(params.output).toEqual(
-      expect.arrayContaining(['state', 'status', 'delay', 'lastclock', 'flags']),
-    );
+    expect(params.output).toEqual(expect.arrayContaining(['state', 'status', 'delay', 'flags']));
+    // One lookup an item, 30 ms to 0.5 s each on HCML's Zabbix: 20 to 32 s for a host of 609 graphable items (BK-25). The picker never shows them.
+    expect(params.output).not.toContain('lastvalue');
+    expect(params.output).not.toContain('lastclock');
     expect(params).toMatchObject({ webitems: true, selectTags: ['tag', 'value'], hostids: ['10668'] });
     expect(params.filter).toMatchObject({ status: '0', state: '0' });
     await app.close();
@@ -126,6 +128,33 @@ describe('/api/latest paging', () => {
     });
     expect(details.itemids).toHaveLength(100);
     expect(details.selectHosts).toBeDefined();
+    await app.close();
+  });
+
+  it('answers the last page when a later one is asked (FR-23)', async () => {
+    zabbix({
+      'item.get': (p: Params) =>
+        p.itemids ? (p.itemids as string[]).map((id) => ({ itemid: id, name: `n${id}`, hosts: [{ hostid: '1' }] })) : [...ids],
+    });
+    const { hostRoutes } = await import('../routes/hosts.js');
+    const app = await buildTestApp(hostRoutes);
+
+    const body = (await app.inject({ url: '/api/latest?hostid=10668&page=9&pageSize=100' })).json();
+    expect(body).toMatchObject({ total: 250, page: 3, pageSize: 100 });
+    expect(body.items).toHaveLength(50);
+    expect(body.items[0].itemid).toBe('1200');
+
+    const none = (await app.inject({ url: '/api/latest?hostid=10668&search=zzz&page=4&pageSize=100' })).json();
+    expect(none.page).toBe(3);
+    await app.close();
+  });
+
+  it('answers page 1 with no items when nothing matches', async () => {
+    zabbix({ 'item.get': [] });
+    const { hostRoutes } = await import('../routes/hosts.js');
+    const app = await buildTestApp(hostRoutes);
+    const body = (await app.inject({ url: '/api/latest?hostid=10668&search=nothing&page=4&pageSize=100' })).json();
+    expect(body).toMatchObject({ items: [], total: 0, page: 1 });
     await app.close();
   });
 
@@ -428,6 +457,15 @@ describe('/api/net/devices', () => {
     // Relative to now: a value is believed only while fresh (reachability.ts).
     const recent = String(Math.floor(Date.now() / 1000) - 50);
     const hoursAgo = String(Math.floor(Date.now() / 1000) - 3 * 3600);
+    const pings = [
+      { itemid: '11', hostid: '1', key_: 'icmpping', lastvalue: '0', lastclock: '0', state: '0', delay: '1m', value_type: '3' },
+      { itemid: '12', hostid: '1', key_: 'icmppingloss', lastvalue: '0', lastclock: '0', state: '0', delay: '1m', value_type: '0' },
+      { itemid: '21', hostid: '2', key_: 'icmpping', lastvalue: '0', lastclock: recent, state: '0', delay: '1m', value_type: '3' },
+      { itemid: '22', hostid: '2', key_: 'icmppingloss', lastvalue: '100', lastclock: recent, state: '0', delay: '1m', value_type: '0' },
+      { itemid: '31', hostid: '3', key_: 'icmpping', lastvalue: '1', lastclock: recent, state: '1', delay: '1m', value_type: '3' },
+      // Collected and supported, but three hours ago: no longer "up".
+      { itemid: '41', hostid: '4', key_: 'icmpping', lastvalue: '1', lastclock: hoursAgo, state: '0', delay: '1m', value_type: '3' },
+    ];
     zabbix({
       'host.get': [
         zHost({ hostid: '1', name: '1.2.10 IDX24C' }),
@@ -436,15 +474,8 @@ describe('/api/net/devices', () => {
         zHost({ hostid: '4', name: '1.2.3 IDXSTALE' }),
         zHost({ hostid: '5', name: '1.2.4 IDXNOPING' }),
       ],
-      'item.get': [
-        { hostid: '1', key_: 'icmpping', lastvalue: '0', lastclock: '0', state: '0', delay: '1m' },
-        { hostid: '1', key_: 'icmppingloss', lastvalue: '0', lastclock: '0', state: '0', delay: '1m' },
-        { hostid: '2', key_: 'icmpping', lastvalue: '0', lastclock: recent, state: '0', delay: '1m' },
-        { hostid: '2', key_: 'icmppingloss', lastvalue: '100', lastclock: recent, state: '0', delay: '1m' },
-        { hostid: '3', key_: 'icmpping', lastvalue: '1', lastclock: recent, state: '1', delay: '1m' },
-        // Collected and supported, but three hours ago: no longer "up".
-        { hostid: '4', key_: 'icmpping', lastvalue: '1', lastclock: hoursAgo, state: '0', delay: '1m' },
-      ],
+      'item.get': pings,
+      'history.get': (params: Params) => pingZabbix(pings)('history.get', params),
     });
     const { netRoutes } = await import('../routes/net.js');
     const app = await buildTestApp(netRoutes);
@@ -464,11 +495,13 @@ describe('/api/net/devices', () => {
     expect(noPing.icmp).toBeNull();
     expect(sw2.site).toEqual({ code: 1, name: 'Jakarta' });
     expect(inet.site).toBeNull();
-    // One read for every monitored host, shared with Sites and Hosts.
+    // One read of every monitored host's ping items, shared with Sites and Hosts, then their values in bulk.
     const [params] = callsOf('item.get');
-    expect(params.output).toEqual(expect.arrayContaining(['lastclock', 'state', 'delay']));
+    expect(params.output).toEqual(expect.arrayContaining(['state', 'delay', 'value_type']));
+    expect(params.output).not.toContain('lastvalue');
     expect(params).toMatchObject({ search: { key_: 'icmpping' }, startSearch: true, monitored: true });
     expect(params.hostids).toBeUndefined();
+    expect(callsOf('history.get').map((p) => p.history).sort()).toEqual([0, 3]);
     await app.close();
   });
 });
@@ -542,10 +575,37 @@ describe('/api/net/interfaces', () => {
     expect(down.rows.map((r: { name: string }) => r.name)).toEqual(['Gi1/0/10']);
     const search = (await app.inject({ url: '/api/net/interfaces?hostid=10668&search=UPLINK' })).json();
     expect(search.total).toBe(1);
+    // A page past the end is the last page, and says so in `page` (FR-23).
     const paged = (await app.inject({ url: '/api/net/interfaces?hostid=10668&page=2&pageSize=10' })).json();
-    expect(paged).toMatchObject({ rows: [], total: 4, page: 2, pageSize: 10 });
+    expect(paged).toMatchObject({ total: 4, page: 1, pageSize: 10 });
+    expect(paged.rows.map((r: { name: string }) => r.name)).toEqual(['Gi1/0/1', 'Gi1/0/2', 'Gi1/0/3', 'Gi1/0/10']);
 
     expect((await app.inject({ url: '/api/net/interfaces' })).statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('answers the last page when a later one is asked, and the right rows for every page before it (FR-23)', async () => {
+    zabbix({ 'item.get': Array.from({ length: 25 }, (_, i) => port(i + 1, `Gi1/0/${i + 1}`, '')).flat() });
+    const { netRoutes } = await import('../routes/net.js');
+    const app = await buildTestApp(netRoutes);
+    const names = async (page: number) => {
+      const body = (await app.inject({ url: `/api/net/interfaces?hostid=10668&page=${page}&pageSize=10` })).json();
+      return { page: body.page, total: body.total, names: body.rows.map((r: { name: string }) => r.name) };
+    };
+
+    expect(await names(1)).toMatchObject({ page: 1, total: 25, names: Array.from({ length: 10 }, (_, i) => `Gi1/0/${i + 1}`) });
+    expect(await names(2)).toMatchObject({ page: 2, names: Array.from({ length: 10 }, (_, i) => `Gi1/0/${i + 11}`) });
+    expect(await names(3)).toMatchObject({ page: 3, names: Array.from({ length: 5 }, (_, i) => `Gi1/0/${i + 21}`) });
+    expect(await names(9)).toMatchObject({ page: 3, total: 25, names: Array.from({ length: 5 }, (_, i) => `Gi1/0/${i + 21}`) });
+    await app.close();
+  });
+
+  it('answers page 1 with no rows for a device with no interfaces at all', async () => {
+    zabbix({ 'item.get': [] });
+    const { netRoutes } = await import('../routes/net.js');
+    const app = await buildTestApp(netRoutes);
+    const body = (await app.inject({ url: '/api/net/interfaces?hostid=10668&page=4' })).json();
+    expect(body).toMatchObject({ rows: [], total: 0, page: 1 });
     await app.close();
   });
 });

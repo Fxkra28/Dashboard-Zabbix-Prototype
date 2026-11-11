@@ -23,7 +23,7 @@ what to call it. Where should the portal get them?
   not be committed ([SC-06](../../../tracker.md)).
 * No database ([ADR-0003](0003-no-database.md)) and no write to Zabbix
   ([ADR-0006](0006-read-only-with-one-write.md)).
-* Interface data is for operators and admins (`viewerPolicy.ts`), and the meters are interface data.
+* Interface data is for a wall screen's account, an operator and an admin (`viewerPolicy.ts`), and the meters are interface data.
 * The Zabbix on the development laptop stopped polling on 17 September
   ([ADR-0008](0008-stop-local-polling.md)), and the items behind the meters were last sampled at the backup of
   14 September. Whatever is built has to show an old reading as old and not as current.
@@ -89,7 +89,7 @@ portal's route turns them into 27 meters, 21 of them old readings.
 * **A gauge counts one direction.** As HCML set it: 21 inbound and 3 outbound, the three being on LAN-side
   interfaces, where "Out" is the site's download. The other direction and the interface's own status are
   read too, and shown when they matter (follow-ups, below).
-* **Operators and admins only.** The meters are interface data. A wall that signs in as a viewer shows the
+* **Wall accounts, operators and admins only** (operators and admins alone until the wall role of 29 October). The meters are interface data. A wall that signs in as a viewer shows the
   Overview and, since 15 October, the Hosts, which are host data (follow-ups, below).
 * **Only the last value.** Nothing is kept, so the portal can say how busy a link is now and not how busy
   it was last week. The Graphs page draws the history.
@@ -133,7 +133,7 @@ amber too, as the line is too small to read from across a room. An old reading o
   thing this decision exists to keep.
 
 **A wall that turns, and fits.** A wall has no one to click it or scroll it. So the Dashboard turns by
-itself on a wall for an operator or admin: the Overview, then the meters, 30 seconds each (`rotate=` in
+itself on a wall for a wall account, an operator or an admin: the Overview, then the meters, 30 seconds each (`rotate=` in
 the address changes the seconds, 0 stops it). An address that names a view (`view=`) holds it. A click on a
 tab, or on Pause, stops the turning until Resume. A viewer's wall has the Overview and, since 15 October, the Hosts. And the whole wall,
 its bar included, is drawn at the scale that fits the screen, all by one factor, because the height of a
@@ -160,7 +160,7 @@ the counts, and the Dashboard gets a third view, Hosts, for what it did not show
 each kind, web monitoring and the ten busiest hosts by CPU and by memory.
 
 * **For everyone.** It is host data, not interface data, so a viewer has it. A viewer's Dashboard has two tabs,
-  and a viewer's wall turns between the two. The meters stay for operators and admins.
+  and a viewer's wall turns between the two. The meters stay for wall accounts, operators and admins.
 * **Current figures only.** The portal's rule applies (`isFresh`): a value older than three intervals, and
   ten minutes at least, is not listed, and an old web result is never OK. On a copy of Zabbix that has
   stopped, the lists are empty and the scenarios Unknown, and the page says so.

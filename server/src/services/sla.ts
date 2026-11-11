@@ -1,5 +1,5 @@
 import { zbx } from '../clients/zabbix.js';
-import { cached } from '../core/cache.js';
+import { cached, SLOW_VIEW } from '../core/cache.js';
 
 /**
  * Zabbix Services → SLA, read-only. These return [] until Services
@@ -91,7 +91,7 @@ export interface SlaSource {
 
 export async function getSlaSource(): Promise<SlaSource> {
   const [slas, count] = await Promise.all([
-    cached('sla', 60_000, getSlas),
+    slasView(),
     zbx<string>('service.get', { countOutput: true }),
   ]);
   const services = Number(count) || 0;
@@ -99,9 +99,14 @@ export async function getSlaSource(): Promise<SlaSource> {
   let real = false;
   if (services > 0) {
     const slis = await Promise.all(
-      enabled.map((s) => cached(`sli:${s.slaid}:all`, 60_000, () => getSli(s.slaid)).catch(() => [])),
+      enabled.map((s) => sliView(s.slaid).catch(() => [])),
     );
     real = slis.some((rows) => rows.length > 0);
   }
   return { real, slas: slas.length, services };
 }
+
+/** The SLA list and one SLA's figures as their routes, Explain, the Assistant and the warm-up read them. */
+export const slasView = () => cached('sla', 60_000, getSlas, SLOW_VIEW);
+export const sliView = (slaid: string, serviceid?: string) =>
+  cached(`sli:${slaid}:${serviceid ?? 'all'}`, 60_000, () => getSli(slaid, serviceid), SLOW_VIEW);
