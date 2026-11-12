@@ -85,7 +85,7 @@ cached(key, ttl, fn) ──► fresh hit │ join in-flight │ stale-while-reva
 
 Four *outcomes*, not four checks: "already fetching" and "miss" are the same line of code,
 `inflight.get(key) ?? begin(key, fn, opts.pin)`. 500 entries or about 64 MB of values, whichever is
-reached first, TTLs from 5 s to 24 h, all of it gone on restart. A closed month's SLA report is pinned,
+reached first, TTLs from 15 s to 24 h, all of it gone on restart. A closed month's SLA report is pinned,
 so a run of graph keys cannot push it out.
 This is why twenty NOC screens cost one upstream read. Stale serving is never permitted for the problem
 list. A view HCML's Zabbix takes tens of seconds to build is answered from its last copy while a newer one
@@ -296,8 +296,8 @@ table anywhere: they are computed per request, cached for seconds, and gone when
 restarts.
 
 There is no database to back up, no migration to run and no schema to version, and no figure survives
-a restart, so every figure has to be cheap enough to recompute on demand. The TTLs in `DataFlow` lane 2
-are where that trade-off is set. The portal keeps two things of its own, and both
+a restart, so every figure has to be cheap enough to recompute on demand. The TTLs, each named by
+its own `cached(...)` call in `server/src`, are where that trade-off is set. The portal keeps two things of its own, and both
 [need a backup](../operations/backup-and-restore.md): its settings, which sit in the `.env` files,
 and, in this copy, the small state file on the `portal-state` volume (lane 6), which holds the saved
 recipients, the monthly schedule and a record of the sends.

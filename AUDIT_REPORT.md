@@ -449,7 +449,7 @@ files, not copied from the audit.
 | Finding | Why it was not fixed |
 |---|---|
 | **A1 / B2** deleted files unrecoverable | **Fixed.** The three "recoverable from `b4a4059`" passages were corrected on 2026-09-21, and the lost `DOCUMENTATION.md` sections (six-goals framing, Limitations, glossary) were rewritten on 2026-09-22 from the surviving audit findings, plans and logs as `setup.md` §27 to 29, each marked as reconstructed |
-| **B1** no version control here | **Still open (tracker IN-08), and only in `hcml-portal-ollama`**, which is not under git. `git` works on this machine now. Options: `git init` with a private remote, or fold that copy into `hcml-portal` as a deployment profile (IN-13) |
+| **B1** no version control here | **Done in part (tracker IN-08).** `hcml-portal-ollama` has been a git repository since 11 November 2026, with a remote of its own. Whether that remote is private is the owner's to say. The other option, folding that copy into `hcml-portal` as a deployment profile, is IN-13 |
 | **DOC-11** placeholder `JWT_SECRET` | **Fixed 2026-10-13 (tracker SC-04).** Both dev `server/.env` files now hold a random 64-character secret of their own, so a BFF started with sign-in on no longer refuses on it |
 
 ## Caveat on this record
