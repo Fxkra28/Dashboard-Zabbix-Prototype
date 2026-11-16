@@ -1,8 +1,8 @@
 # Documentation
 
-A branded, read-only operations portal over HCML's Zabbix 7.0: 139 monitored hosts across 14 sites.
+A branded, read-only operations portal over HCML's Zabbix 7.0. The September 2026 copy it was built on held 139 monitored hosts across 14 sites; the live count is HCML's own.
 The portal presents things Zabbix has no table for: sites, WAN links, incidents, host reachability and
-a monthly availability figure validated against HCML's own published reports.
+a monthly availability figure whose HCML report method matches HCML's own June to August reports to the last digit.
 
 **This copy is `hcml-portal`.** Its plain-language layer is hosted Claude over the Anthropic API, so
 estate data crosses the network when someone clicks *Explain*. The sibling `hcml-portal-ollama` runs
@@ -32,7 +32,7 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 | Find out what filled a disk, and what is safe to remove | [`operations/full-disk.md`](operations/full-disk.md) |
 | Call it | [`api/openapi.yaml`](api/openapi.yaml), 51 endpoints · [how to view it](api/README.md) |
 | Download the monthly SLA report | [`setup/18-automated-reporting.md`](setup/18-automated-reporting.md) for the buttons, the endpoint and how the files are built |
-| Understand why it is shaped this way | [`architecture/adr/`](architecture/adr/): fifteen decisions |
+| Understand why it is shaped this way | [`architecture/adr/`](architecture/adr/): sixteen decisions |
 | See how it works | [`architecture/`](architecture/): diagrams and the subsystem index |
 | See what it looks like | [`screenshots/README.md`](screenshots/README.md): the main pages as images, with every name replaced |
 | See who uses it | [`ux/README.md`](ux/README.md): the four roles and the acknowledge journey, derived from the code |
@@ -46,12 +46,12 @@ cache, auth, where a number comes from, both AI paths and the one write) in
 
 | | |
 |---|---|
-| Front end | React 18 + TypeScript + Vite, ECharts. 19 pages, 1769 tests, linted with eslint |
-| Back end | Fastify 5 + TypeScript on Node 24. 24 route modules, 51 endpoints, 2976 tests, linted with eslint |
-| Data source | The Zabbix JSON-RPC API. Nothing else: no database, and no data file but the small state file in the State row |
+| Front end | React 18 + TypeScript + Vite, ECharts. 18 pages, 2045 tests, linted with eslint |
+| Back end | Fastify 5 + TypeScript on Node 24. 24 route modules, 51 endpoints, 3412 tests, linted with eslint |
+| Data source | The Zabbix JSON-RPC API. Nothing else: no database, and no data file but the small state file in the State row and the server's own copy of its log |
 | Writes | Exactly one: acknowledge/close, behind a separate token and the operator role |
 | Downloads | The monthly SLA report as a PDF, an Excel file or a zip of CSV files, in the number and date style chosen, built when asked from the cached figures and never stored |
-| State | One in-process `Map`, 500 entries or about 64 MB, TTLs from 15 s to 24 h, lost on restart. The hosted copy also keeps one small file on the Docker volume `portal-state`: the saved report recipients, the monthly schedule and the last 24 sends ([ADR-0015](architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)) |
+| State | One in-process `Map`, 500 entries or about 64 MB, TTLs from 15 s to 24 h, lost on restart. Both copies keep small files on the Docker volume `portal-state`: the hosted copy's saved report recipients, monthly schedule and last 24 sends ([ADR-0015](architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)), and in each the web check figures of closed months ([ADR-0016](architecture/adr/0016-keep-the-web-check-figures-of-closed-months.md)) |
 | Settings | Untracked `.env` files: users, roles, tokens, the signing secret and the SLA settings. **What to back up**: [`operations/backup-and-restore.md`](operations/backup-and-restore.md), which also covers the hosted copy's small state file |
 
 ## Two facts to know first
@@ -63,9 +63,9 @@ What it does keep is its configuration. The users and their roles, the Zabbix an
 `JWT_SECRET` and the SLA settings live in untracked `.env` files that git ignores. Lose them and the
 portal cannot start until someone writes them again, so keep an encrypted copy of each:
 [`operations/backup-and-restore.md`](operations/backup-and-restore.md).
-The hosted copy also keeps a small state file on the `portal-state` volume (the saved recipients, the monthly schedule and the
-record of sends, [ADR-0015](architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)), which survives a deploy
-and is in that page too.
+Both copies keep small files on the `portal-state` volume (the hosted copy's saved recipients, monthly schedule and record of sends,
+[ADR-0015](architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md), and in each the web check figures of closed months,
+[ADR-0016](architecture/adr/0016-keep-the-web-check-figures-of-closed-months.md)), which survive a deploy and are in that page too.
 
 **The data is HCML's own, and current.** Since 29 October 2026 both portals read HCML's Zabbix through its
 API. Before that they read a copy restored on a laptop and frozen at 17 September 2026 at 16:59:37, because a
@@ -89,7 +89,7 @@ docs/
   contributing.md          the house rules, and why each one exists
   setup/                   the deep reference, one file for each subsystem (indexed by setup.md)
   api/openapi.yaml         the contract: 51 endpoints
-  architecture/adr/        why it is the way it is: 15 decisions
+  architecture/adr/        why it is the way it is: 16 decisions
   schema/  flow/  erd/     the diagrams; erd/erd.md is the data model in prose
   screenshots/             the main pages as images, with host names, addresses, interface descriptions and web check names replaced
   ux/                      who uses it: the four roles and the acknowledge journey (derived, not interviewed)
@@ -100,7 +100,7 @@ deploy/
   rebuild.sh               rebuilds the portals from the commit, then checks what came up
   watch.sh                 tells someone when a portal or a container stops: a LaunchAgent on the Mac, cron elsewhere
 .github/
-  workflows/ci.yml         five jobs: server, web, the eleven checkers, a secret scan, both Docker builds
+  workflows/ci.yml         five jobs: server, web, the checkers, a secret scan, both Docker builds
   dependabot.yml           weekly pull requests for the actions, the npm packages and the base images
 ```
 

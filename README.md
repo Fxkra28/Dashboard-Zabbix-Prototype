@@ -31,7 +31,7 @@ New to the abbreviations? The [Glossary](#glossary) at the end explains the ten 
 Host names, addresses and interface descriptions in these images are stand-ins; the counts,
 severities, times and site names are real. The Dashboard's Hosts view, the Devices page,
 Show data with its CSV download, the dark theme, the narrow-screen layout and the Network page (all taken from
-HCML's own Zabbix on 11 November, with the names replaced) are in
+HCML's own Zabbix on 12 November, with the names replaced) are in
 [`docs/screenshots/`](docs/screenshots/README.md), with how the names were replaced.
 
 ### How the parts connect
@@ -61,7 +61,7 @@ pipeline, the cache, sign-in, where a number comes from, both AI paths and the o
 - [Layout](#layout): the folders, and where the handbook describes every file
 - [Quick start (local dev)](#quick-start-local-dev): run it on your own machine
 - [Deploy (Docker, next to Zabbix)](#deploy-docker-next-to-zabbix): run it in containers
-- [Usage](#usage): signing in, the 19 pages, and where the rest is described
+- [Usage](#usage): signing in, the 18 pages, and where the rest is described
 - [Configuration](#configuration): every setting the BFF reads
 - [Testing](#testing)
 - [Milestones](#milestones)
@@ -73,7 +73,7 @@ pipeline, the cache, sign-in, where a number comes from, both AI paths and the o
 
 ## Tech stack
 
-41 direct dependencies in total, 18 in the BFF and 23 in the web app, of which 14 ship: the
+43 direct dependencies in total, 19 in the BFF and 24 in the web app, of which 14 ship: the
 rest are build, test and lint tools. The two heaviest categories
 of dependency a project like this usually carries are deliberately absent: there is no ORM or
 database driver (the portal owns no data: everything comes from Zabbix over the API) and no
@@ -83,7 +83,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 
 | Piece | Version | What it does here |
 |---|---|---|
-| Node | 24 LTS (`node:24.22-alpine`, pinned by digest) | Picked for native `fetch` and `AbortSignal.timeout`. The Zabbix client is under 200 lines and the model client about 750, both written straight onto them, so there is no HTTP-client dependency at all |
+| Node | 24 LTS (`node:24.22-alpine`, pinned by digest) | Picked for native `fetch` and `AbortSignal.timeout`. The Zabbix client is about 215 lines and the model client about 765, both written straight onto them, so there is no HTTP-client dependency at all |
 | TypeScript | ^5.9 | ESM throughout: `"type": "module"`, `NodeNext` resolution, ES2022 target, `strict: true`. Tests live under `src/` (same imports as the code) but are excluded from the shipped `dist/` and typechecked by a second config |
 | Fastify | ^5.12 | Plugin-scoped hooks are the reason the RBAC guard is a single `onRequest` at the root rather than a check repeated in every handler. 24 route modules register onto it → 45 endpoints, and `security/auth.ts` and `http/health.ts` add the other six: sign-in, `/api/auth/me`, `/api/auth/refresh`, `/api/auth/logout`, health and ready |
 | `@fastify/helmet` | ^13.1 | Security headers. CSP is off: nginx serves the SPA, and Fastify serves data, not pages: JSON, the event streams and the report files, which download as attachments |
@@ -95,7 +95,7 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | `dotenv` | ^16.4 | `.env` in dev. In Docker, Compose passes the environment directly |
 | `@anthropic-ai/sdk` | ^0.124 | The `anthropic` backend of the AI layer, and nothing else. The OpenAI-compatible backend is hand-rolled on `fetch`: one response shape to maintain instead of a second SDK to keep current |
 | Report writers | not a package | `src/export/` writes the monthly SLA report as a PDF and as an Excel workbook, on request, with Node's built-in `zlib` and `crypto` modules and no PDF or spreadsheet library. ADR-0011 (`docs/architecture/adr/0011-build-the-sla-report-files-in-the-bff.md`) has the trade-off |
-| Vitest | ^5.0 | 3097 tests in 122 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
+| Vitest | ^5.0 | 3494 tests in 145 files. Zabbix is mocked at `src/clients/zabbix.ts` (the single module all API traffic funnels through) so the suite needs no live instance |
 | tsx | ^4.16 | `npm run dev` watch mode only. Production runs plain `node dist/index.js` |
 | ESLint (with `@eslint/js`, `typescript-eslint` and `globals`) | ^10.13 | Dev only, never shipped. `npm run lint` in `server/`: the recommended rules of ESLint and of typescript-eslint, and no warning allowed. The first run, on 19 October 2026, found 22 findings; the eight `eslint-disable` lines left each say why |
 
@@ -105,11 +105,11 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 |---|---|---|
 | React | ^18.3 | The library every screen of the web app is written in |
 | Vite | ^8.3 | Dev server proxies `/bff` → `:4000`, so dev and prod hit the same paths. The production build is static files |
-| `react-router-dom` | ^7.18 | All 19 pages are `lazy()`. The initial bundle is 222 kB JS + 58 kB CSS (73 kB of the JS gzipped); a page after that costs between 1 and 28 kB, the Dashboard being the largest, and the chart library (612 kB, 206 kB gzipped) loads only with a chart. Raw sizes of the 20 October build |
+| `react-router-dom` | ^7.18 | All 18 pages are `lazy()`. The initial bundle is 222 kB JS + 58 kB CSS (73 kB of the JS gzipped); a page after that costs between 1 and 28 kB, the Dashboard being the largest, and the chart library (612 kB, 206 kB gzipped) loads only with a chart. Raw sizes of the 20 October build |
 | ECharts + `echarts-for-react` | ^6.1 / ^3.0 | Registered selectively (line chart, grid, tooltip, legend, data zoom, canvas renderer) instead of the barrel, which pulls in roughly a megabyte of chart types nothing draws. Drawn with the `v5` theme ECharts 6 ships, so the parts the portal does not colour itself look as they did on 5.x. Imported only by `TimeSeriesChart`, so its 612 kB chunk loads on Graphs and Network and nowhere else |
 | Custom CSS | not a package | One stylesheet in 20 numbered parts (`web/src/styles/`). HCML blue `#2B5584`, measured from the company logo, with Inter for text and IBM Plex Mono for IDs and figures. Light and dark come from one set of CSS variables, per [`DESIGN.md`](DESIGN.md). `web/scripts/tokens.check.mjs` computes the contrast of every pair in both themes and fails on a raw value used where a token exists |
 | Hand-rolled, on purpose | not a package | `shared/hooks/useSSE.ts` over native `EventSource`; `shared/hooks/useAsync.ts` for server state, in place of a query library; `features/assistant/parseMarkdown.ts` in about 150 lines, because the assistant's answers are the only markdown in the app and a full renderer is a large attack surface for a small job |
-| Vitest + Testing Library | ^5.0 / ^16.3 | 1844 tests in 119 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api/`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
+| Vitest + Testing Library | ^5.0 / ^16.3 | 2045 tests in 141 files, run in jsdom: the sign-in return path, the CSRF header and 401 handling in `api/`, `useAsync`, `useSSE`, `useUrlState`, the wall highlight, the live list, `lib/time`, the report download buttons, the data-age and stale-copy notices, the CSV writer and the Assistant's chat storage. `npm test` in `web/` |
 | ESLint | ^9.39 | `npm run lint` in `web/`: typescript-eslint, the two classic react-hooks rules and jsx-a11y's recommended set. On 9 because jsx-a11y does not support ESLint 10 yet |
 | `openapi-typescript` | ^7.13 | Dev only, never shipped. `npm run gen:api` in `web/` turns `docs/api/openapi.yaml` into `web/src/generated/openapi.ts`. A test holds the app's hand-written types (`types/`) to those: a response schema that promises less than a page needs, or a kind the page cannot hold, fails `npm run typecheck` and names the place, such as `/api/hosts[].status` |
 
@@ -122,10 +122,10 @@ component library (the UI is plain CSS, so the app runs with zero extra setup).
 | nginx | alpine | Serves the build and reverse-proxies `/bff`, with buffering off on the live stream and the assistant (SSE never arrives without it) and a 360 s read timeout elsewhere (480 s for explanations and for the monthly SLA and its download, an hour for the two live streams), a resolver so recreating the BFF alone does not leave `/bff` on 502, a one-year immutable cache on `/assets/`, and SPA fallback to `index.html`. It runs as an unprivileged user and listens on 8080 inside the container, with a read-only root filesystem (setup.md, section 23). It also adds security headers to the app's pages and files (the CSP, enforced since 14 October), gzips them, hides its version and writes `token=redacted` in its access log, for pages opened before the session cookie |
 | The model | set in `.env` | One switch, `AI_PROVIDER`, over two backends that get the same prompt and the same JSON Schemas. See *Plain-language layer* below |
 
-Deliberately not used: no ORM or database driver (the portal owns no database; the hosted copy keeps one small file of its own, ADR-0015), no state-management
+Deliberately not used: no ORM or database driver (the portal owns no database; each copy keeps small files of its own, ADR-0015 and ADR-0016), no state-management
 library (server state is two small hooks), no component library, no PDF or spreadsheet library (the
 report writers are hand-rolled on `zlib` and `crypto`), and no second HTTP client: the Zabbix client
-(under 200 lines) and model client (`ai.ts`, about 750) are both hand-rolled around native `fetch`.
+(about 215 lines) and model client (`ai.ts`, about 765) are both hand-rolled around native `fetch`.
 
 ### The two copies of this portal
 
@@ -139,7 +139,7 @@ each copy's point of view. None of them is code:
 
 - the two `.env` files and the two `.env.example` templates
 - `docker-compose.yml` and `docs/api/openapi.yaml`, which name each copy's web port
-- `docs/setup/11-running-deploying.md` and `19-authentication-rbac.md`, where three lines name the port and one the session cookie
+- `docs/setup/11-running-deploying.md`, where three lines name the web port and two sentences say what the copy rebuilds and what it keeps on a volume, and `19-authentication-rbac.md`, where the admin row says whether email is on and one line names the session cookie
 - `README.md`, `docs/index.md`, and `AUDIT_REPORT.md` (each copy holds a different audit)
 - `docs/architecture/adr/0005-*`, the decision record about the AI layer
 - `docs/schema/CDM.mmd`, `ERD.mmd` and `PDM.mmd`, their three PDFs, and `docs/schema/README.md`
@@ -163,9 +163,9 @@ Every folder and file is described, from the code, in the handover handbook: [th
 map](docs/handover/1-folders/repository-map.md) says what each one is for, and
 [`docs/handover/README.md`](docs/handover/README.md) says where to start reading.
 
-19 pages: Dashboard · Problems · Sites · Hosts · Devices · Graphs · Latest data · Maps · Network ·
-Links & WAN health · Services · SLA · Availability & response · Capacity trends · Alert noise ·
-Top 100 triggers · Inventory & ownership scorecard · Assistant · Login
+18 pages: Dashboard · Problems · Sites · Hosts · Devices · Graphs · Latest data · Maps · Network ·
+Links & WAN health · Services · SLA · Capacity trends · Alert noise · Top 100 triggers ·
+Inventory & ownership scorecard · Assistant · Login
 
 ---
 
@@ -187,12 +187,12 @@ cd server
 cp .env.example .env          # set ZBX_URL + ZABBIX_API_TOKEN; auth needs JWT_SECRET + PORTAL_PASS
 npm install
 npm run dev                   # http://localhost:4000
-npm test                      # 3097 tests, no live Zabbix needed
+npm test                      # 3412 tests, no live Zabbix needed
 
-curl localhost:4000/api/health   # { ok, ts, ai, aiProvider, aiExternal, writeBack, defaults, ready: true|false } and, signed in, version, startedAt, build, streams, ready as an object
+curl localhost:4000/api/health   # { ok, ts, ai, aiProvider, aiExternal, writeBack, defaults, ready: true|false } and, signed in, version, startedAt, build, streams, logFile, ready as an object
 ```
 
-`/api/health` answers 200 even while Zabbix is down: `ok` means the process is up, and `ready` says whether it can read Zabbix (one `host.get` with a 2 s limit, cached 15 s). An anonymous caller gets `ready` as a plain `true` or `false`, so that a monitor needs no account (IN-47); a signed-in caller gets it as an object (`ready.ok` and, when that is false, `ready.zabbix` with the reason) together with `version`, `startedAt`, `build` and `streams` (every caller when sign-in is off). Outside Docker `build` reads `unknown`, since the commit and time come from Docker build arguments.
+`/api/health` answers 200 even while Zabbix is down: `ok` means the process is up, and `ready` says whether it can read Zabbix (one `host.get` with a 2 s limit, cached 15 s). An anonymous caller gets `ready` as a plain `true` or `false`, so that a monitor needs no account (IN-47); a signed-in caller gets it as an object (`ready.ok` and, when that is false, `ready.zabbix` with the reason) together with `version`, `startedAt`, `build`, `streams` and `logFile` (whether the server's own log file is being written; every caller when sign-in is off). Outside Docker `build` reads `unknown`, since the commit and time come from Docker build arguments.
 
 ### 2. Frontend
 
@@ -221,12 +221,12 @@ docker compose up -d --build
 ```
 
 `JWT_SECRET` and `PORTAL_PASS` have no default: Compose refuses to start without `JWT_SECRET`, and the BFF refuses to
-start on a published or short secret or an empty or `admin` password. The rules are under
+start on a published or short secret, an empty or `admin` password, or a plain password shorter than 8 characters. The rules are under
 [Access control](#access-control). To have `/api/health` show which build is running, build with `BUILD_COMMIT` and
 `BUILD_TIME` as Docker build arguments; they read `unknown` when left out.
 `deploy/rebuild.sh` does the whole rebuild: the rollback tags, those arguments, the wait for both containers of each copy to be
 healthy, the checks an anonymous caller can make, and the tag that says what is live. `--dry-run` shows what it would do,
-and before it tags anything it checks that Docker can read each copy's `.env`. `deploy/watch.sh --install` makes this Mac
+it first asks whether Docker is installed and answers (20 seconds, `REBUILD_DOCKER_TIMEOUT`), and before it tags anything it checks that Docker can read each copy's settings. `deploy/watch.sh --install` makes this Mac
 check both portals every minute and show a notification when one stops answering, comes back, or has a container that
 restarts in a loop; on a server, run `--once` from a timer.
 [Deploy, rebuild and roll back](docs/handover/4-working/deploy-rebuild-rollback.md) has the steps, and
@@ -280,7 +280,7 @@ The sidebar hides what your role cannot reach, but that is cosmetic: the guard i
 returns 403 whatever the browser shows. The rules are `ROUTE_RULES` in `server/src/security/auth.ts`, and
 [`docs/setup/19-authentication-rbac.md`](docs/setup/19-authentication-rbac.md) explains them.
 
-### The 19 pages
+### The 18 pages
 
 Grouped by the question each one answers, not by the order they appear in the sidebar.
 
@@ -290,7 +290,7 @@ Grouped by the question each one answers, not by the order they appear in the si
 | Problems · Alert noise · Top 100 triggers | `/problems` · `/reports/noise` · `/reports/top-triggers` | What is firing, and what fires so often that nobody reads it any more |
 | Sites · Hosts · Devices · Latest data · Graphs · Maps | `/sites` · `/hosts` · `/devices` · `/latest` · `/graphs` · `/maps` | Where a device is, what kind it is, what it is reporting, and what it looked like an hour ago. Graphs can show the points of a chart as a table (Show data) and download them as a CSV file |
 | Network · Links & WAN health | `/network` · `/links` | Wall role and above (wall screens, operators and admins). The WAN view: which links are up, and what they cost in latency and loss |
-| Services · SLA · Availability & response | `/services` · `/sla` · `/reports/availability` | The monthly figure. Derived in the portal, validated against HCML's own published reports, and downloadable as a PDF or an Excel file |
+| Services · SLA | `/services` · `/sla` | The monthly figure, and the last 7 or 30 days. Derived in the portal, with the HCML report method matching HCML's June to August reports to the last digit, and downloadable as a PDF or an Excel file for a month. The SLA page also has a Response tab: the problems nobody has acknowledged, by age. The old address `/reports/availability` opens the SLA page |
 | Capacity trends | `/reports/capacity` | What is filling up, and roughly when it runs out |
 | Inventory & ownership scorecard | `/reports/inventory` | Admin role. How complete the inventory data actually is |
 | Assistant | `/assistant` | Plain-language questions over the estate |
@@ -322,7 +322,7 @@ All of these are read by the BFF. `.env.example` is committed and must never con
 credential; `.env` and `server/.env` are gitignored.
 
 Those two files hold the portal's secrets and settings: the users, the tokens and `JWT_SECRET` are in them, and
-nothing else holds a copy. The hosted copy also keeps one small state file on the Docker volume `portal-state` (the backup page named below covers it). Keep an encrypted copy of each, off this computer, and see
+nothing else holds a copy. Both copies also keep small state files on the Docker volume `portal-state` (the backup page named below covers it). Keep an encrypted copy of each, off this computer, and see
 [`docs/operations/backup-and-restore.md`](docs/operations/backup-and-restore.md) for the restore
 checklist. [`deploy/settings.example`](deploy/settings.example) lists every non-secret setting with
 its default, versioned.
@@ -342,6 +342,7 @@ its default, versioned.
 | `RATE_LIMIT_PER_MINUTE` | `300` | Per-IP request cap. `/api/stream`, `/api/health` and `POST /api/auth/logout` are exempt, and the stream is capped by the two settings below |
 | `STREAM_MAX_CLIENTS` | `100` | Live screens (`/api/stream`) allowed at once. One more gets `429 too_many_streams` and quietly falls back to polling |
 | `STREAM_MAX_PER_USER` | `5` | Live screens for one signed-in user, or for one client address when auth is off. A NOC wall of more than five screens on one shared login needs this raised |
+| `ACTION_EVENTS_PER_MINUTE` | `200` | Events one person may acknowledge or close in a minute, the two together (at least 50, which is one full request). Over it the portal answers 429 with the seconds to wait, so a slip or a script cannot close the estate in minutes. Counted in memory, for each signed-in user, or for each client address when auth is off |
 
 ### Access control
 
@@ -349,12 +350,15 @@ its default, versioned.
 |---|---|---|
 | `AUTH_ENABLED` | `true` | Secure by default: unset or empty is on, `true`, `1` and `yes` are on, `false`, `0` and `no` are off, and anything else stops the server at start. Set it off only for local dev: the server then answers only to a localhost `Host`, and refuses write-back unless `ALLOW_WRITE_WITHOUT_AUTH=true` |
 | `JWT_SECRET` | none, required when login is on | Token signing secret. With auth on, the server refuses to start on either value published in this repo or one shorter than 32 bytes |
-| `PORTAL_USER` / `PORTAL_PASS` | `admin` / none | Single-user fallback. With auth on, the server refuses to start while any user's password, here or in `PORTAL_USERS`, is empty or `admin` |
+| `PORTAL_USER` / `PORTAL_PASS` | `admin` / none | Single-user fallback. With auth on, the server refuses to start while any user's password, here or in `PORTAL_USERS`, is empty, `admin`, or a plain password shorter than 8 characters. A `$` in a password needs single quotes in `.env`, because compose cuts the value at it |
 | `PORTAL_USERS` | none | `name:password:role` triples, comma-separated. Roles: `viewer`, `wall`, `operator`, `admin`. A password is plain text or an scrypt hash (`scrypt.N.r.p.salt.hash`, made with `server/scripts/hash-password.ts`) and may contain `:`. Names ignore case |
 | `ALLOW_WRITE_WITHOUT_AUTH` | none | Dev only. With `AUTH_ENABLED=false` acknowledge and close are refused unless this is `true`. Not passed to the containers |
 | `ALLOW_EMAIL_WITHOUT_AUTH` | none | Dev only. With `AUTH_ENABLED=false` report email, the monthly schedule and the saved list of recipients are refused unless this is `true`, since every caller would count as an administrator and could send the report to any address. Not passed to the containers |
 | `SESSION_HOURS` | `12` | How long one sign-in lasts, a number from 2 to 24. An open portal renews its token an hour before the end, so this limits how long a forgotten session works, not how long a wall screen stays signed in. Signing out ends the whole chain of renewals of that sign-in and closes its live streams. A copy that someone keeps renewing after the owner only closed the tab, without signing out, works until the user is removed from `PORTAL_USERS`, `SESSION_EPOCH` is raised or `JWT_SECRET` is changed. The server refuses to start on a value outside that range or one that is not a number |
 | `SESSION_EPOCH` | `1` | A label of 1 to 32 letters, digits, `.`, `_` or `-`, stamped into every token. A token is refused under any other label, so raising it and recreating the BFF's container (`docker compose up -d`; a plain restart keeps the old settings) signs everyone out without a new `JWT_SECRET`. The server refuses to start on a label outside that pattern |
+| `LOG_DIR` | empty; compose sets `/var/log/portal` | The folder where the BFF writes its own copy of its log. Empty: the log goes to the container's own log alone. Docker sets it to the `portal-logs` volume and does not read it from `.env`; set it yourself only to run the BFF outside Docker. |
+| `LOG_FILE_MAX_MB` | `20` | Megabytes one log file of the BFF may hold before the next is started. The BFF keeps its own copy of its log in the `portal-logs` volume (`/var/log/portal`), so what was logged outlives a rebuild; the container's own log still goes to Docker as before (setup page 11). |
+| `LOG_FILE_KEEP` | `10` | How many log files are kept, the current one included, the oldest dropped first, from 1 to 100 (a higher number is read as 100): 10 files of 20 MB is about 200 MB at most. How long logs are to be kept is HCML's to set; raise this to keep more, or have HCML's log server collect the folder. |
 | `SESSION_COOKIE` | `hcml_session` | Name of the httpOnly cookie that holds the sign-in token. Cookies ignore ports, so two portals on one host need different names: hcml-portal-ollama's compose sets `hcml_session_ollama`. The server refuses to start on a name a cookie cannot carry |
 
 ### Grouping and scoring
@@ -371,7 +375,7 @@ its default, versioned.
 
 | Var | Default | Purpose |
 |---|---|---|
-| `AVAILABILITY_MIN_SEVERITY` | `2` | Severity floor for the availability report. 2, not 3: HCML's estate alarms at Warning, and a floor of 3 makes the page open empty |
+| `AVAILABILITY_MIN_SEVERITY` | `2` | Severity floor of the original any-problem availability report (`basis=all-problems`), which no page of the portal asks for now; the SLA figures do not use it. 2, not 3: HCML's estate alarms at Warning, and a floor of 3 makes that report open empty |
 | `LINK_LOSS_WARN` / `LINK_LOSS_CRIT` | `2` / `10` | Packet-loss thresholds, percent |
 | `INTERNET_METERS_DASHBOARD` | `Global view` | The Zabbix dashboard whose gauge widgets are the internet traffic meters on the Dashboard. Each gauge names a link and gives its capacity and colour zones |
 | `NOISE_SHORT_SECONDS` | `300` | Below this, a cleared incident counts as flapping |
@@ -403,13 +407,15 @@ are directly comparable on the same problem.
 | `AI_PROVIDER` | `anthropic` | `anthropic` (hosted Claude) or `openai-compatible` (a local model, Ollama, vLLM, llama.cpp) |
 | `ANTHROPIC_API_KEY` | none | The `anthropic` backend. Blank ⇒ `/api/explain/*` returns 503 and the UI hides the buttons. Everything else still works |
 | `AI_BASE_URL` | none | The `openai-compatible` backend, e.g. `http://localhost:11434/v1`. Blank ⇒ same 503 rule |
+| `AI_LOCAL_ONLY` | none | `true` in the local-model copy's compose file, and not a setting to put in `.env`. The server then refuses to start when `AI_BASE_URL` names a model outside this machine and its own network. Local means a loopback address, `host.docker.internal`, a private, link-local or single-label address, or a name ending `.local`, `.internal`, `.lan`, `.home.arpa` or `.localdomain` (SC-53) |
+| `AI_ALLOW_REMOTE` | none | `true` is the owner's word that a model outside the network is meant, in a copy that has `AI_LOCAL_ONLY`. The server then starts with a warning, and the page says beside every answer that the question left the network. Any other value keeps the refusal |
 | `AI_API_KEY` | none | Optional, and only for a hosted OpenAI-compatible gateway. A local Ollama wants none |
 | `AI_MODEL` | `claude-sonnet-4-6` / `qwen3:8b` | Per backend |
 | `AI_TIMEOUT_MS` | `30000` / `120000` | Per backend. The SDK's 10-minute default is far too long for a request a human is waiting on; a local model generates more slowly and loads from disk when cold, so it gets more headroom. A whole number of milliseconds from 1000 to 2147483647 when set; the server refuses to start on any other value |
 | `AI_MAX_RETRIES` | `1` | Anthropic only: the SDK implements it. The local backend does not retry |
 | `AI_CHAT_PER_MINUTE` / `AI_EXPLAIN_PER_MINUTE` | `10` / `10` | Assistant questions and explanations a minute for each signed-in user (or client address with sign-in off). Over it is `429 rate_limited` |
 | `AI_MAX_CONCURRENT` | `4` | Hosted calls in flight at once. A local model takes one at a time |
-| `AI_DAILY_TOKENS_PER_USER` / `AI_DAILY_TOKENS_TOTAL` | `500000` / `2000000` | Daily token budget for the hosted API only, reset at midnight in `SLA_TIMEZONE`. Used up is `429 ai_budget`. `0` switches a budget off |
+| `AI_DAILY_TOKENS_PER_USER` / `AI_DAILY_TOKENS_TOTAL` | `500000` / `2000000` | Daily token budget, counted for the hosted API and for a model outside the machine's network (its own numbers when it sends them, else an estimate of what went in and out), and never for a model on the machine, reset at midnight in `SLA_TIMEZONE`. Used up is `429 ai_budget`. `0` switches a budget off |
 | `AI_KEEP_ALIVE` | `30m` | Local model only: how long Ollama keeps it loaded after its last use (~5 GB for `qwen3:8b`) |
 | `AI_OLLAMA_NATIVE` | `auto` | `auto` asks `AI_BASE_URL` without `/v1` for `/api/version` and, if Ollama answers, uses its native `/api/chat` for chat, explain, warm-up and prefill: the only API that takes a context size and honours `AI_KEEP_ALIVE` (each `/v1` call resets the expiry to 5 min). `true` / `false` skip the check; any other server keeps `/v1` |
 | `AI_NUM_CTX` | `8192` | Native Ollama only. Context window in tokens, sent with every request: Ollama restarts the model, and drops its prompt cache, whenever a request asks for a different size. The cache for 8192 tokens takes ~0.6 GB, twice that of Ollama's default of 4096 |
@@ -422,7 +428,7 @@ are directly comparable on the same problem.
 | `MAIL_FROM` / `MAIL_TO` | none | The sender (blank means `MAIL_USER`) and the list the portal starts with, at most 10 addresses separated by commas. It may be blank: the people who get a report are chosen in the portal by an administrator, and once the portal has a saved list, that one is used |
 | `MAIL_ALLOWED_DOMAINS` | none | The only domains a report may go to, such as `hcml.co.id`, at most 20. Blank means any address, and the start-up log warns of it. Set it: it keeps a stolen administrator sign-in from sending the report anywhere |
 | `MAIL_SCHEDULE` | on | `off` keeps the monthly send from running on this machine (the one for a second copy that must not send) |
-| `PORTAL_STATE_DIR` | none | The folder for the portal's small file of its own: the saved recipients, the monthly schedule and a record of the last 24 sends ([ADR-0015](docs/architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)). The compose file sets it to `/data`, the volume `portal-state`. Blank: nothing is kept across a restart and the schedule cannot be used |
+| `PORTAL_STATE_DIR` | none | The folder for the portal's small files of its own: the saved recipients, the monthly schedule and a record of the last 24 sends ([ADR-0015](docs/architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)), and in both copies the web check figures of closed months ([ADR-0016](docs/architecture/adr/0016-keep-the-web-check-figures-of-closed-months.md)). The compose file sets it to `/data`, the volume `portal-state`. Blank: nothing is kept across a restart, the schedule cannot be used and a closed month's web check figures are not kept |
 
 > **The governance question depends on which backend you pick.** With `AI_PROVIDER=anthropic` the
 > portal sends host names, trigger names and problem descriptions to an external API, and every HCML
@@ -466,8 +472,9 @@ It is rebuilt at once when a problem opens, closes, is acknowledged or re-graded
 state change has held for a minute (links that flap every few seconds do not force a rebuild).
 Opening the Assistant page pre-reads the current snapshot. Questions naming a site get a short
 per-host focus block after it, and questions naming a host get its open problems and their count.
-Hosted Claude takes `AI_MAX_CONCURRENT` (4) requests at once and a local model takes one; a request
-that waits more than 20 s gets `503 ai_busy` with `Retry-After`.
+Hosted Claude takes `AI_MAX_CONCURRENT` (4) requests at once and a local model takes one. A request
+that waits more than 20 s is told the assistant is busy: Explain answers `503 ai_busy` with `Retry-After`, and
+the Assistant, whose stream has already begun with a 200, sends the same sentence as an `error` event.
 
 The limit is the model's context window. Against Ollama the BFF asks for `AI_NUM_CTX` (8 192
 tokens) on every request, so nothing needs setting in Ollama's own environment; through `/v1`
@@ -481,12 +488,12 @@ Ollama. Either way the snapshot is capped (20 problems, a budget per section) an
 
 ```bash
 cd server
-npm test          # 3097 tests
+npm test          # 3412 tests
 npm run lint      # eslint
 npm run typecheck # app and tests
 
 cd ../web
-npm test          # 1844 tests, in jsdom
+npm test          # 2045 tests, in jsdom
 npm run lint      # eslint
 npm run typecheck # app and tests
 ```
@@ -522,7 +529,7 @@ copied from the web app drifts from its original.
 | [`docs/getting-started.md`](docs/getting-started.md) | From a fresh clone to a running portal, step by step |
 | [`docs/handover/README.md`](docs/handover/README.md) | The handover handbook: the folders, the code function by function, the integrations, and a part for people who do not read code |
 | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | The API contract: all 51 endpoints, checked against the code |
-| [`docs/architecture/adr/`](docs/architecture/adr/) | Why the system is shaped this way: 15 decision records |
+| [`docs/architecture/adr/`](docs/architecture/adr/) | Why the system is shaped this way: 16 decision records |
 | [`setup.md`](setup.md) | How each part works and why, in 40 parts (the index of `docs/setup/`) |
 | [`docs/schema/`](docs/schema/) | The data model on three pages |
 | [`docs/flow/`](docs/flow/) | The same system in motion, on three more pages |
@@ -550,17 +557,19 @@ Kept short and honest; the full list is [`docs/setup/27-limitations-and-known-ga
 - Almost nothing persists. The portal keeps no audit trail of its own (who acknowledged what is in the text
   Zabbix stores, `[portal:<user>]`, and in the BFF's log, which also has a line for each use of the AI, `ai_call`, each report
   downloaded, `report_download`, and each report emailed, `report_email`, naming the person and never the question, the answer, the addresses or the file; `deploy/rebuild.sh` saves a
-  compressed copy of the logs before it replaces the containers), no saved views, no user table, and
-  a closed month's SLA is recomputed from scratch after every restart. The one exception is the hosted copy's small state file on the
-  Docker volume `portal-state`: the saved report recipients, the monthly schedule and a record of the last 24 sends (ADR-0015).
+  compressed copy of the logs before it replaces the containers, and the BFF keeps its own copy of its log in the Docker volume
+  `portal-logs`), no saved views, no user table, and a closed month's SLA is recomputed from scratch after every restart, apart from its web check figures. The other
+  exceptions are the small state files on the Docker volume `portal-state`: the hosted copy's saved report recipients, monthly schedule and record of the last 24 sends (ADR-0015), and in both copies the web check figures of closed months (ADR-0016).
 - The SLA report files are new. The August workbook was opened in Microsoft Excel on 26 October 2026 with no repair
   prompt, and its render was read page by page; what Excel shows for a download from the live portal itself has
   not been seen. Both files were also downloaded from the running portal, on 12 and 15 October and (October's
   workbook) on 27 October, where only their size and shape were looked at. The PDF prints text outside Western
   European letters, Cyrillic or Chinese for example, as `?`. The report also comes as a zip of CSV files, and
   an administrator can email it or set a monthly send. The email was tried against a small stand-in mail server first. On 9 November 2026 it went through a real Gmail account twice, and both messages reached the recipient's spam folder (tracker IN-62). No monthly send has run on a real first of the month yet (tracker IN-61).
-- Every performance figure is single-user and single-shot. No p95, no concurrency data, and the
-  cache hit rate has never been measured.
+- Every performance figure is single-user and single-shot, except one load test: the cached endpoints took
+  6,715 requests a second from 20 clients with no error (median 2.4 ms, 99th percentile 11.6 ms), straight at the
+  BFF on one Mac with a warm cache. It says nothing about a cold read, a slow Zabbix, the browser, or a number of
+  people on the screen, and the cache hit rate has never been measured.
 
 ---
 

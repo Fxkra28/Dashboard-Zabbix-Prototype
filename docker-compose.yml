@@ -58,6 +58,8 @@ services:
       # Live screens allowed at once, overall and per signed-in user (services/stream.ts).
       STREAM_MAX_CLIENTS: ${STREAM_MAX_CLIENTS:-100}
       STREAM_MAX_PER_USER: ${STREAM_MAX_PER_USER:-5}
+      # Events one person may acknowledge or close in a minute, the two together (at least 50, one full request).
+      ACTION_EVENTS_PER_MINUTE: ${ACTION_EVENTS_PER_MINUTE:-200}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8081}
       NET_GROUP_IDS: ${NET_GROUP_IDS:-}
       SITE_TAG: ${SITE_TAG:-site}
@@ -131,8 +133,13 @@ services:
       # The domains a report may go to (blank: any), and "off" to keep the monthly send from running on this machine.
       MAIL_ALLOWED_DOMAINS: ${MAIL_ALLOWED_DOMAINS:-}
       MAIL_SCHEDULE: ${MAIL_SCHEDULE:-}
-      # Where the portal keeps its small file of its own (core/state.ts): the volume at the bottom of this file.
+      # Where the portal keeps its small files of its own (core/state.ts, services/closedWebStore.ts): the volume at the bottom of this file.
       PORTAL_STATE_DIR: /data
+      # The BFF's own copy of its log, in the volume at the bottom of this file, so what was logged outlives a rebuild
+      # (core/logFile.ts). The two numbers set how much it keeps: this many files of this many megabytes each.
+      LOG_DIR: /var/log/portal
+      LOG_FILE_MAX_MB: ${LOG_FILE_MAX_MB:-20}
+      LOG_FILE_KEEP: ${LOG_FILE_KEEP:-10}
       # Deployed, not scaffolded: default auth ON here.
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
       # No default on purpose. The BFF refuses to start on the placeholder
@@ -165,13 +172,14 @@ services:
       start_period: 15s
     # Least privilege. This container holds both Zabbix tokens and the AI key, so it
     # runs as the image's non-root node user, with every Linux capability dropped, a
-    # read-only root filesystem and no way to gain privileges. It writes one small file,
-    # in the volume at /data; /tmp is a small in-memory scratch space.
+    # read-only root filesystem and no way to gain privileges. It writes only to two volumes,
+    # its small files at /data and its own copy of the log at /var/log/portal; /tmp is a small in-memory scratch space.
     read_only: true
     tmpfs:
       - /tmp:size=16m
     volumes:
       - portal-state:/data
+      - portal-logs:/var/log/portal
     cap_drop:
       - ALL
     security_opt:
@@ -235,6 +243,11 @@ services:
   #   restart: unless-stopped
 
 # The portal's small file of its own (core/state.ts): the saved recipients, the monthly schedule and a record of what was
-# sent. A named volume, so it outlives a rebuild. `docker compose down -v` deletes it, and so does removing the volume by hand.
+# sent; and beside it the web check figures of the months that have closed (services/closedWebStore.ts, ADR 0016).
+# A named volume, so it outlives a rebuild. `docker compose down -v` deletes it, and so does removing the volume by hand.
 volumes:
   portal-state:
+
+# The BFF's own copy of its log (core/logFile.ts), kept by size and by count. A named volume, so it outlives a rebuild.
+# `docker compose down -v` deletes it, and so does removing the volume by hand.
+  portal-logs:

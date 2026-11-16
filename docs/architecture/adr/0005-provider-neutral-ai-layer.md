@@ -50,10 +50,10 @@ sibling repo the same box is green and there is no boundary at all.
 to compare a hosted API model with a local one head to head, and the local side of that comparison is
 `hcml-portal-ollama`. The two safeguards offered with the decision were held back at first and went in
 on 7 October 2026 (tracker SC-01 and SC-09). Under every AI answer a line names Anthropic as the
-external service the question was sent to. The portal shows it only when `AI_PROVIDER` is `anthropic`,
-so a local model shows nothing. Both copies limit Explain and the assistant for each signed-in user,
+external service the question was sent to. The portal shows it when the model is outside the machine's own network (`aiExternal`, SC-53),
+naming Anthropic when the provider is Anthropic and an external AI service otherwise, so a local model shows nothing. Both copies limit Explain and the assistant for each signed-in user,
 the same in both so the comparison stays fair: 10 calls a minute each, at most 4 hosted calls at once,
-and a daily token budget for the hosted API only (500,000 a user, 2,000,000 in all). Each number has
+and a daily token budget for the hosted API and for a model outside the machine's network (500,000 a user, 2,000,000 in all). Each number has
 an environment variable (`AI_CHAT_PER_MINUTE`, `AI_EXPLAIN_PER_MINUTE`, `AI_MAX_CONCURRENT`,
 `AI_DAILY_TOKENS_PER_USER`, `AI_DAILY_TOKENS_TOTAL`) and a default, so none is required. The API key
 flagged on 10 September is still to be rotated. This closes audit item FE-02 as a decision rather than
