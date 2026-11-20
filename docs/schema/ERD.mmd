@@ -18,8 +18,8 @@ erDiagram
     %%  Green  derived by the portal: built per request, cached for
     %%         seconds to minutes, never stored anywhere.
     %%  Red    leaves this machine. In hcml-portal the explanation is
-    %%         written by hosted Claude, so the problem, its host and
-    %%         its tags are sent to the Anthropic API.
+    %%         written by hosted Claude, so the problem and its host are
+    %%         sent to the Anthropic API, without its tags (SC-72).
 
     %%  Crow's foot: || exactly one, o| zero or one,
     %%               o{ zero or many, |{ one or many.
@@ -194,4 +194,4 @@ erDiagram
     class SITE_HOST derived
 
     class AI_EXPLANATION external
-%% source-hash: e176bda92c9e
+%% source-hash: d6cce8110b06

@@ -34,10 +34,10 @@ flowchart TB
 
     %%  In this copy the plain-language layer is hosted Claude over the
     %%  Anthropic API, so the red box is real: a problem's host name,
-    %%  trigger name and tags cross the network when someone clicks
-    %%  Explain. The local-model copy is hcml-portal-ollama, where the
-    %%  same box is green, and which has no lane 6: it passes no MAIL_
-    %%  settings and declares no volume. Nothing else differs.
+    %%  trigger name, opdata and severity cross the network when
+    %%  someone clicks Explain, and its tags do not (SC-72). The local-model copy is hcml-portal-ollama, where the
+    %%  same box is green. Its lane 6 is the same: it passes the MAIL_
+    %%  settings and keeps the same volume. Nothing else differs.
 
     %%  Careful when editing: the subgraph IDs do not match the lane
     %%  numbers. Lane 3 "Plain language" is `subgraph D4` and lane 4
@@ -50,9 +50,9 @@ flowchart TB
     %%  describes two features and neither has both properties: Explain
     %%  is cached 1 h per (eventid, state) and returns one buffered JSON
     %%  reply; the Assistant chat is streamed token by token and is
-    %%  never cached. (2) The arrow into SNAP carries no tags: the
-    %%  chat snapshot emits severity, host, trigger name, opdata, age
-    %%  and ack state only. Tags cross on /api/explain/problem alone.
+    %%  never cached. (2) No tags cross: the chat snapshot emits
+    %%  severity, host, trigger name, opdata, age and ack state only,
+    %%  and Explain gives a model outside the machine none (SC-72).
 
     %%  Also note the lane-5 fork runs in sequence, not in parallel:
     %%  event.acknowledge is awaited first, and only then does the
@@ -121,7 +121,7 @@ flowchart TB
     ZAPI ==>|"JSON-RPC, read"| RTOK
     SHAPE ==>|"HTTP + brotli"| NGINX
     SHAPE -.->|"SSE on each tick: a frame<br>only when something changed"| LIVE
-    DERIVE -.->|"host, trigger, severity, opdata,<br>plus tags on the Explain path only"| SNAP
+    DERIVE -.->|"host, trigger, severity, opdata"| SNAP
     ANSWER -.-> SCREEN
     SCREEN -->|"acknowledge / close<br>operator role"| WTOK
     SCREEN -->|"Email report, Schedule<br>administrator role"| SEND
@@ -149,4 +149,4 @@ flowchart TB
     class WTOK,ZWRITE written
     class MODEL,LEAVES,MAILOUT external
     class STATE kept
-%% source-hash: bad9b5f21b05
+%% source-hash: ed65f7df0686

@@ -18,11 +18,11 @@ PDM's *Hosts & inventory* frame.
 ## What this copy's perspective is
 
 This is `hcml-portal`: the plain-language layer is written by hosted Claude through the Anthropic API.
-So the estate data a problem carries (its host name, trigger name and tags) **leaves this machine** when
+So the estate data a problem carries (its host name, trigger name and severity, but not its tags) **leaves this machine** when
 someone clicks *Explain*. That is why `AI EXPLANATION` is drawn in red in the CDM and the ERD.
 
 The sibling repo `hcml-portal-ollama` has the same three models drawn from its own perspective: there the
-model is `qwen3:8b` running on the host, the same entity is green, and nothing crosses the network. The
+model is the one `AI_MODEL` names (`gemma4:12b`) running on the host, the same entity is green, and nothing crosses the network. The
 two sets are not copies of each other. Compare `schema/CDM.pdf` in both to see the difference stated in one
 box.
 
@@ -55,7 +55,7 @@ writes to.
 |---|---|
 | Blue | Zabbix stores it; the portal reads it over JSON-RPC |
 | Green | The portal derives it. No table exists: built per request, cached briefly, gone on restart |
-| Amber | Local to the portal (the sign-in user, from an environment variable) |
+| Amber | Local to the portal (the sign-in user: from `PORTAL_USERS` in the environment and from the portal's own users file) |
 | Red | It leaves this machine |
 | Grey | An association diamond (CDM), or a table Zabbix reads internally and never returns (PDM) |
 

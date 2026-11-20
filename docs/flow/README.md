@@ -98,11 +98,12 @@ in `X-Data-Stale`; both carry `X-Data-Age-Seconds`. `cached` in `server/src/core
 POST /api/auth/login ──► JWT, 12 h by default, in an httpOnly cookie ──cookie │ Authorization: Bearer (scripts)──► onRequest: forgery check, then guard ──ROUTE_RULES──► 200 │ 401 │ 403
 ```
 
-Users come from the environment, not a table: `PORTAL_USERS` as `name:password:role` triples, or
-`PORTAL_USER`/`PORTAL_PASS` as the single-admin shorthand. Four rules set the roles above the default:
-admin for `/api/reports/inventory`, `/api/sli/email` and `/api/sli/schedule`, wall for `/api/links` and `/api/net`, and operator for the acknowledge
-write, and anything unmatched needs viewer, so a new route is protected by default rather than
-accidentally public. `/api/health`, `/api/auth/login`, `/api/auth/me` and `/api/auth/logout` are the
+Users come from two places: the environment (`PORTAL_USERS` as `name:password:role` triples, or
+`PORTAL_USER`/`PORTAL_PASS` as the single-admin shorthand, whose first admin is the break-glass account) and, on a portal with a data folder, a users file on
+the state volume that administrators manage on the Users page. A table of routes (`security/modules.ts`) gives each route the pages that own it and the lowest role:
+admin for `/api/users`, `/api/reports/inventory`, `/api/sli/email`, `/api/sli/schedule` and `/api/sli/recipients`, operator for the acknowledge
+write, and guest for the rest. A route that has no row is for administrators only, so a new route is protected by default rather than
+accidentally public. `/api/health`, `/api/auth/login`, `/api/auth/me`, `/api/auth/logout` and `/api/auth/request` are the
 only exemptions, matched exactly against the route the router matched, so an encoded path such as
 `/%61pi/hosts` is guarded like `/api/hosts`. Sign-in allows 10 attempts a minute per account and
 address. The forgery check runs first: a POST sent with the cookie, and every sign-in and sign-out,
@@ -132,8 +133,8 @@ ExplainPanel ──GET /api/explain/problem──► ai.ts ──HTTPS──► 
 ```
 
 Reached on demand only, never on page load, and only if the layer is configured at all. One
-problem crosses: host, trigger name, opdata, severity, start time, the acknowledged/resolved flags
-and that problem's tags. `/api/explain/sla` is the second route on this path and is cached 5 minutes,
+problem crosses: host, trigger name, opdata, severity, start time and the acknowledged/resolved flags,
+and no tags (SC-72). `/api/explain/sla` is the second route on this path and is cached 5 minutes,
 not an hour. `explainRoutes` in `server/src/routes/explain.ts`; `explainProblem`, `explainDerivedSla` and `explainZabbixSla` in `server/src/services/explain.ts`.
 
 ### 8 · AI: the Assistant
@@ -143,9 +144,9 @@ Assistant ──POST /api/chat──► estate snapshot + ≤3,000 chars of hist
 ```
 
 The Assistant is the larger of the two AI paths by a wide margin: Explain sends one problem, this
-sends a rollup of the whole estate: every host by site, the open problems, unreachable-host lists
-and derived SLA figures. Streamed token by token and never cached, where Explain is buffered and
-cached. Two caps bound the prompt: `HISTORY_CHAR_BUDGET`, 3,000 characters of earlier turns, and `SNAPSHOT_CHAR_CAP`, 5,500 characters of the snapshot.
+sends a rollup of the whole estate: the open problems, unreachable-host lists by site
+and derived SLA figures, and, for a question that asks for more, detail blocks the portal reads for it (past problems, a device's latest values, the SLA of a window, a host's state, groups and templates, WAN links, web checks, maintenance, maps and report summaries; up to 2,800 characters, [ADR-0019](../architecture/adr/0019-let-the-portal-read-what-a-question-needs.md)). Streamed token by token and never cached, where Explain is buffered and
+cached. Two caps bound the prompt: `HISTORY_CHAR_BUDGET`, 3,000 characters of earlier turns, and `SNAPSHOT_CHAR_CAP`, 6,200 characters of the snapshot.
 `HISTORY_CHAR_BUDGET` in `server/src/services/chat.ts`, `SNAPSHOT_CHAR_CAP` in `server/src/services/assistantSnapshot.ts`, `chatRoutes` in `server/src/routes/chat.ts`.
 
 ### 9 · The one write
@@ -166,29 +167,28 @@ sequence: `event.acknowledge` is awaited first.
 
 This is `hcml-portal`: the plain-language layer is hosted Claude over the Anthropic API. That
 is why `DataFlow` carries a red box and a second red box next to it reading *LEAVES THIS MACHINE*:
-when someone clicks *Explain*, a problem's host name, trigger name, tags and severity cross the
-network to a third party. Lane 6 ends in a third red box with the same words, for the report by
+when someone clicks *Explain*, a problem's host name, trigger name, opdata and severity cross the
+network to a third party, and its tags do not (SC-72). Lane 6 ends in a third red box with the same words, for the report by
 email: the month's figures, the files and the addresses go to a mail server, and only once the
 `MAIL_` settings are usable.
 
 The two AI paths send different amounts, and Explain is the smaller one. Explain sends one problem:
-host, trigger name, opdata, severity, start time, the acknowledged/resolved flags and that problem's
-tags. The Assistant sends the *entire estate snapshot*: up to 5,500 characters covering every host
-rolled up by site, up to 20 open problems with host and trigger text, unreachable-host lists and
-derived SLA figures, plus optional 800-character focus blocks for a site or a host and up to 3,000 characters of
+host, trigger name, opdata, severity, start time and the acknowledged/resolved flags, and no tags. The Assistant sends the *entire estate snapshot*: up to 6,200 characters covering the estate
+counted by site, up to 20 open problems with host and trigger text, unreachable-host lists and
+derived SLA figures, plus optional 800-character focus blocks for a site or a host, up to 2,800 characters of
+detail blocks that the question asked for ([ADR-0019](../architecture/adr/0019-let-the-portal-read-what-a-question-needs.md); a model outside the machine is not given addresses, tags, inventory, contacts or the other free text that staff write) and up to 3,000 characters of
 prior conversation. The `LEAVES` box's own wording ("host names, trigger names and problem text")
 summarises both.
 
 The sibling repo `hcml-portal-ollama` has the same three diagrams drawn from its own perspective:
-there the model is `qwen3:8b` on the host, the same box is green, and there is no boundary box at
-all because nothing crosses one. It has no lane 6 either: it passes no `MAIL_` settings, and its state volume holds only the web check figures of closed months.
+there the model is the one `AI_MODEL` names, on the host, the same box is green, and there is no boundary box at
+all because nothing crosses one. Its lane 6 is the same: it passes the `MAIL_` settings too, and its state volume holds the same file.
 
 `WebFlow.mmd` and `ServerFlow.mmd` are byte-identical in both repos. Verify with `diff`, not by
 eye. The browser and the request pipeline do not know or care which model answers.
 Inside this folder only `DataFlow.mmd`, `DataFlow.pdf` and this README differ. `DataFlow` differs in
-the `MODEL` box, the `LEAVES` box, the `class` lines that colour them, and lane 6 with the grey `kept`
-colour it needs, which only this copy has. (Outside this folder the repos also differ in `README.md`,
-`AUDIT_REPORT.md`, `docker-compose.yml`, the `.env` files and the
+the `MODEL` box, the `LEAVES` box and the `class` lines that colour them. (Outside this folder the repos also differ in `README.md`,
+`docker-compose.yml`, the `.env` files and the
 `schema/` diagrams, so "the repos differ only in DataFlow" is true of *this folder*, not of the
 whole tree.)
 
@@ -249,8 +249,8 @@ Zabbix API; the arrow is omitted because one cycle is enough to make the layout 
 reading order of every other lane. Lane 5's two leaves are drawn as a parallel fork but run in
 sequence: `event.acknowledge` is awaited first, and only then does the invalidate + push run.
 
-Lane 6 is off until the `MAIL_` settings are usable, and it is where the portal keeps its one small
-file: `portal-state.json` on the `portal-state` volume holds the saved recipients, the monthly
+Lane 6 is off until the `MAIL_` settings are usable, and it is where the portal keeps its mail state:
+`portal-state.json` on the `portal-state` volume holds the saved recipients, the monthly
 schedule and a record of each send, and no figure, no report and no password
 ([ADR-0015](../architecture/adr/0015-keep-a-small-state-file-for-recipients-and-the-schedule.md)).
 The send takes the month's SLA from the derived layer (the dotted arrow), builds the files, and hands
@@ -260,9 +260,8 @@ would be a cycle.
 
 Two things lane 3 is easy to misread. The answer box describes two different features and neither
 has both properties: *Explain* is cached 1 h per problem-and-state and returns one buffered JSON
-reply, while the *Assistant* is streamed token by token and is never cached. And the arrow into the
-snapshot carries no tags: the chat snapshot emits severity, host, trigger name, opdata, age and
-ack state; tags cross on the per-problem Explain path alone. When editing the source, note the
+reply, while the *Assistant* is streamed token by token and is never cached. And no tags cross: the chat snapshot emits severity, host, trigger name, opdata, age and
+ack state, and Explain gives a model outside the machine none (SC-72). When editing the source, note the
 subgraph IDs do not match the lane numbers: lane 3 is `D4` and lane 4 is `D3`. Go by the titles.
 
 ### Colours, in all three
@@ -298,8 +297,8 @@ There is no database to back up, no migration to run and no schema to version, a
 a restart, so every figure has to be cheap enough to recompute on demand. The TTLs, each named by
 its own `cached(...)` call in `server/src`, are where that trade-off is set. The portal keeps two things of its own, and both
 [need a backup](../operations/backup-and-restore.md): its settings, which sit in the `.env` files,
-and, in this copy, the small state file on the `portal-state` volume (lane 6), which holds the saved
-recipients, the monthly schedule and a record of the sends.
+and, in both copies, the `portal-state` volume (lane 6 draws its mail file), which holds the users made on the Users page, the saved
+recipients, the monthly schedule and a record of the sends, and the web check figures of closed months.
 
 ---
 

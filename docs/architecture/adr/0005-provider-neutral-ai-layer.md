@@ -3,6 +3,7 @@
 * Status: accepted
 * Deciders: HCML internship project
 * Date: 2026-09-18 (recorded as an ADR 2026-09-22)
+* Amended: 2026-11-19: what the Assistant reads for a question goes beyond the snapshot ([ADR-0019](0019-let-the-portal-read-what-a-question-needs.md), built 18 November), and a model name ending in `-cloud` is refused while `AI_LOCAL_ONLY` is on, since a signed-in Ollama can forward such a model off the machine while the address still reads as local (SC-70); the model requests are sent with `redirect: 'error'`, so that an answer from a local address cannot send the portal on to another
 
 ## Context and Problem Statement
 
@@ -31,17 +32,21 @@ rather than assert an answer?
 Chosen: **one provider-neutral layer (`server/src/clients/ai.ts`), switched by `AI_PROVIDER`, deployed as two
 repositories that share a byte-identical source tree.**
 
-`hcml-portal` runs hosted Claude. `hcml-portal-ollama` runs `qwen3:8b` on the host. `server/src` and
+`hcml-portal` runs hosted Claude. `hcml-portal-ollama` runs a local model on the host: the code's default for that backend is `qwen3:8b`, and `AI_MODEL` in `.env` names the one that runs (`gemma4:12b` since 18 November 2026, IN-96). `server/src` and
 `web/src` are byte-identical between them: verified with `diff -rq`, not by eye. Which model
 answers is a line of `.env`.
 
 ### This copy's perspective
 
 **This is `hcml-portal`: the plain-language layer is hosted Claude over the Anthropic API.** When
-someone clicks *Explain*, a problem's host name, trigger name, opdata, severity and tags cross the
-network to a third party. The assistant sends more: the whole estate snapshot, up to ~5,500
+someone clicks *Explain*, a problem's host name, trigger name, opdata and severity cross the
+network to a third party, and its tags do not: they are free text that staff write (SC-72). The assistant sends more: the whole estate snapshot, up to ~6,200
 characters covering all hosts rolled up by site, open problems with host and trigger text, and derived
-SLA figures.
+SLA figures. A question that names a site or a host adds a focus block of up to 800 characters, and one that asks for more than the snapshot holds adds up to 2,800 characters more
+of what it asks for: the problems of a past window, the latest values of a device, the SLA of a window, a host's state, groups and templates, WAN links, web checks, maintenance windows,
+maps and summaries of the reports. Those are read on the spot, only for the pages the person holds, and up to 3,000 characters of the conversation travel with them. A model outside
+this machine is not given addresses, tags, inventory, contacts or the other free text that staff write. [ADR-0019](0019-let-the-portal-read-what-a-question-needs.md) lists them, and so does
+the handbook's [data in and out](../../handover/0-everyone/data-in-and-out.md).
 
 `flow/DataFlow.pdf` draws that boundary in red, with a box reading LEAVES THIS MACHINE. In the
 sibling repo the same box is green and there is no boundary at all.
@@ -69,7 +74,7 @@ a fix.
 
 ### Negative Consequences
 
-* **Two deployments to keep in step, forever.** The divergence is now 22 files and both READMEs state
+* **Two deployments to keep in step, forever.** The divergence is now 21 files and both READMEs state
   the count, so both have to be updated whenever it changes, and that count has already drifted once
   (audit finding DOC-10).
 * **`AI_PROVIDER` falls back to `anthropic` for any unrecognised value, with only a warning in the

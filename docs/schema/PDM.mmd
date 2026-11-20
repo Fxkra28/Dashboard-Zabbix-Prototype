@@ -29,8 +29,8 @@ erDiagram
     %%  Every bigint is bigint unsigned.
 
     %%  Where the rows go afterwards: in this copy the explanation
-    %%  layer sends a problem, its host and its tags to the Anthropic
-    %%  API. The local-model copy is hcml-portal-ollama/schema/PDM.pdf.
+    %%  layer sends a problem and its host, without its tags (SC-72),
+    %%  to the Anthropic API. The local-model copy is hcml-portal-ollama/schema/PDM.pdf.
 
     subgraph P_HOSTS["Hosts &amp; inventory"]
         hosts {
@@ -270,4 +270,4 @@ erDiagram
     class acknowledges written
 
     class event_recovery,functions internal
-%% source-hash: a34f33906d59
+%% source-hash: d93831015a84
